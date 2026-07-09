@@ -5,7 +5,7 @@
   ╠══════════════════════════════════════════════════════════════════════════╣
   ║  A custom Home Assistant dashboard designed for wall-mounted tablets.    ║
   ║                                                                          ║
-  ║  SETUP                                                                   ║
+  ║  Manual SETUP                                                            ║
   ║  1. Place both homie-dashboard.html and config.js in your Home           ║
   ║     Assistant /www/ folder (or serve them from the same directory).      ║
   ║  2. Open config.js and follow the instructions in each section to        ║
@@ -15832,9 +15832,69 @@ function applyTheme(id, _fromTod) {
 }
 
 /**
- * applyThemeBg — generates and applies a layered radial-gradient background
- * to both hero elements (#hero-bg and #ov2-hero-bg) using the active theme's
- * accent (ar,ag,ab) and hi (hr,hg,hb) RGB components.
+ * _getActiveBackgroundImage — returns the path of the picture to use for the
+ * Overview background, or null if no background photos are configured.
+ * Falls back to the first entry in BACKGROUND_IMAGES if the saved choice no
+ * longer exists in the list (e.g. the file was removed from config.js).
+ */
+function _getActiveBackgroundImage() {
+  const list = (typeof BACKGROUND_IMAGES !== "undefined" && Array.isArray(BACKGROUND_IMAGES)) ? BACKGROUND_IMAGES : [];
+  if (!list.length) return null;
+  const chosen = _settings.bgImage;
+  return (chosen && list.includes(chosen)) ? chosen : list[0];
+}
+
+/**
+ * _applyPictureBg — paints a chosen photo (from BACKGROUND_IMAGES) onto the
+ * hero background elements, with a dark scrim underneath so overlaid text
+ * and stats stay legible.
+ */
+function _applyPictureBg() {
+  const img = _getActiveBackgroundImage();
+  if (!img) return;
+  document.body.style.background = '#07080a';
+  const layered = `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url("${img}")`;
+
+  const ids = ['hero-bg', 'ov2-hero-bg'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.background         = 'none';
+      el.style.backgroundImage    = layered;
+      el.style.backgroundSize     = 'cover';
+      el.style.backgroundPosition = 'center';
+      el.style.backgroundRepeat   = 'no-repeat';
+    }
+  });
+
+  const ov3 = document.getElementById('overview3');
+  if (ov3) {
+    ov3.style.background         = 'none';
+    ov3.style.backgroundImage    = layered;
+    ov3.style.backgroundSize     = 'cover';
+    ov3.style.backgroundPosition = 'center';
+    ov3.style.backgroundRepeat   = 'no-repeat';
+  }
+}
+
+/**
+ * applyThemeBg — entry point used everywhere the hero background needs to be
+ * (re)painted. Delegates to either the picture background (if the user has
+ * selected Settings → Background → Picture, and at least one photo is
+ * configured) or the themed gradient generator below.
+ */
+function applyThemeBg(ar, ag, ab, hr, hg, hb) {
+  if ((_settings.bgSource || 'themed') === 'picture' && _getActiveBackgroundImage()) {
+    _applyPictureBg();
+    return;
+  }
+  _applyThemeGradientBg(ar, ag, ab, hr, hg, hb);
+}
+
+/**
+ * _applyThemeGradientBg — generates and applies a layered radial-gradient
+ * background to both hero elements (#hero-bg and #ov2-hero-bg) using the
+ * active theme's accent (ar,ag,ab) and hi (hr,hg,hb) RGB components.
  *
  * Design: a near-black canvas with three soft light blooms so the background
  * reads as "atmospheric" without competing with UI elements. Opacities are
@@ -15846,7 +15906,7 @@ function applyTheme(id, _fromTod) {
  *  • Bloom 3 — smaller hi-colour bloom, top-right (colour accent)
  *  • Base — very dark near-black base so dark UI elements have contrast
  */
-function applyThemeBg(ar, ag, ab, hr, hg, hb) {
+function _applyThemeGradientBg(ar, ag, ab, hr, hg, hb) {
   const bgMode = _settings.bgMode || 'vivid';
 
   // Bloom opacities — three intensity levels (same dark base, varying bloom strength)
@@ -15885,14 +15945,23 @@ function applyThemeBg(ar, ag, ab, hr, hg, hb) {
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      el.style.backgroundImage = 'none';
-      el.style.background      = gradient;
+      el.style.backgroundImage    = 'none';
+      el.style.background         = gradient;
+      // Clear any size/position/repeat left over from picture mode
+      el.style.backgroundSize     = '';
+      el.style.backgroundPosition = '';
+      el.style.backgroundRepeat   = '';
     }
   });
 
   // Also paint directly onto #overview3 since its bg div is z-index:-1
   const ov3 = document.getElementById('overview3');
-  if (ov3) ov3.style.background = gradient;
+  if (ov3) {
+    ov3.style.background         = gradient;
+    ov3.style.backgroundSize     = '';
+    ov3.style.backgroundPosition = '';
+    ov3.style.backgroundRepeat   = '';
+  }
 
   // Decorative SVG lines removed — hue blend only
 }
@@ -18946,6 +19015,8 @@ const SETTINGS_DEFAULTS = {
   clockFormat:         '24h',   // '24h' | '12h'
   startupMode:         "overview1",
   bgMode:              "vivid",  // "vivid" | "subtle" | "radiant"
+  bgSource:            "themed", // "themed" | "picture"
+  bgImage:             null,     // path from BACKGROUND_IMAGES, null = first available
   locale:              "",       // "" = browser default, or e.g. "de-DE"
   showModeLauncher:    true,
   showNowPlayingButton:true,
@@ -19290,6 +19361,32 @@ function openSettings() {
         </span>
       </label>`).join('');
   }
+
+  // Build background picture picker dynamically from BACKGROUND_IMAGES
+  const bgImageList = document.getElementById("st-bg-image-list");
+  if (bgImageList) {
+    const bgList = (typeof BACKGROUND_IMAGES !== "undefined" && Array.isArray(BACKGROUND_IMAGES)) ? BACKGROUND_IMAGES : [];
+    if (!bgList.length) {
+      bgImageList.innerHTML = `<p class="settings-hint">No images found — add paths to <code>BACKGROUND_IMAGES</code> in config.js.</p>`;
+    } else {
+      const activeImg = _getActiveBackgroundImage();
+      bgImageList.innerHTML = bgList.map(path => {
+        const name = path.split('/').pop();
+        return `
+        <label class="startup-mode-option" onclick="applySetting('bgImage', '${escapeHtml(path)}')">
+          <input type="radio" name="bgImage" value="${escapeHtml(path)}" id="st-bgimg-${escapeHtml(name)}" ${activeImg === path ? 'checked' : ''}>
+          <span class="startup-mode-label" style="display:flex;align-items:center;gap:8px">
+            <img src="${escapeHtml(path)}" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,0.06)" onerror="this.style.visibility='hidden'">
+            ${escapeHtml(name)}
+          </span>
+          <span class="startup-mode-check">
+            <svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg>
+          </span>
+        </label>`;
+      }).join('');
+    }
+  }
+
   // Build time-of-day theme rows — derived dynamically from CONFIG.greetingSlots
   const todRowsEl = document.getElementById("st-tod-rows");
   if (todRowsEl) {
@@ -19351,6 +19448,9 @@ function openSettings() {
   // Sync background mode radio buttons
   const bgModeEl = document.querySelector(`input[name="bgMode"][value="${_settings.bgMode || 'vivid'}"]`);
   if (bgModeEl) bgModeEl.checked = true;
+  // Sync background source radio buttons (Themed / Picture)
+  const bgSourceEl = document.querySelector(`input[name="bgSource"][value="${_settings.bgSource || 'themed'}"]`);
+  if (bgSourceEl) bgSourceEl.checked = true;
   // Sync locale radio buttons
   const localeVal = _settings.locale || '';
   const localeEl = document.querySelector(`input[name="dashLocale"][value="${localeVal}"]`);
@@ -20734,6 +20834,32 @@ _applyDailyI18n();
     </div>
     <div class="settings-section-body">
       <div class="startup-mode-list" id="st-theme-list"></div>
+    </div>
+
+    <hr class="settings-divider">
+    <div class="settings-section-title" onclick="toggleSettingsSection(this)">
+      BACKGROUND
+      <span class="settings-section-chevron"><svg width="12" height="12" aria-hidden="true"><use href="#icon-chevron-down"/></svg></span>
+    </div>
+    <div class="settings-section-body">
+      <div class="startup-mode-list">
+        <label class="startup-mode-option" onclick="applySetting('bgSource','themed')">
+          <input type="radio" name="bgSource" value="themed" id="st-bgsrc-themed">
+          <span class="startup-mode-label">Themed</span>
+          <span class="startup-mode-check">
+            <svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg>
+          </span>
+        </label>
+        <label class="startup-mode-option" onclick="applySetting('bgSource','picture')">
+          <input type="radio" name="bgSource" value="picture" id="st-bgsrc-picture">
+          <span class="startup-mode-label">Picture</span>
+          <span class="startup-mode-check">
+            <svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg>
+          </span>
+        </label>
+      </div>
+      <p class="settings-hint">Picture uses a photo from <code>photos/background/</code> instead of the themed gradient. Add images to <code>BACKGROUND_IMAGES</code> in config.js.</p>
+      <div class="startup-mode-list" id="st-bg-image-list"></div>
     </div>
 
     <hr class="settings-divider">

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
- * HOMIE DASHBOARD CONFIGURATION v4.0.0
+ * HOMIE DASHBOARD CONFIGURATION v4.1.0
  * ═══════════════════════════════════════════════════════════════════════════
  * This is the main configuration file. Edit the sections below to customise the dashboard for your home.
  * Both homie-dashboard.html and config.js must be in the same folder.
@@ -51,6 +51,22 @@ const PHOTO_FRAME_IMAGES = [
 ];
 
 const PHOTO_FRAME_INTERVAL = 20; // seconds per photo
+
+
+/* ─── OVERVIEW BACKGROUND PICTURE ────────────────────────────────────────────
+ * Place images in a photos/background/ folder alongside this file.
+ * Supported formats: jpg, jpeg, png, webp, gif.
+ * Filenames are case-sensitive.
+ *
+ * These show up as selectable options in Settings → Background, where you can
+ * choose "Picture" and pick one of the images below to use as a static
+ * background on the Overview screens instead of the themed gradient.
+ * ─────────────────────────────────────────────────────────────────────────── */
+const BACKGROUND_IMAGES = [
+  "photos/background/test1.jpg",
+  "photos/background/test2.jpg",
+  // "photos/background/photo3.jpg",
+];
 
 
 const CONFIG = {
