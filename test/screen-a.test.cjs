@@ -23,6 +23,13 @@ function loadCustomizations() {
   return require(modulePath);
 }
 
+function cssDeclarations(source, selector) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`));
+  assert.ok(match, `${selector} CSS rule must exist`);
+  return match[1];
+}
+
 test("Screen A has the agreed balanced status grid", () => {
   const config = loadConfig();
   assert.deepEqual(
@@ -38,6 +45,12 @@ test("Screen A has the agreed balanced status grid", () => {
       ["EV", "sensor.homie_ev_status", ""],
     ],
   );
+});
+
+test("Overview B inherits Overview A's four-column center grid", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  assert.match(cssDeclarations(source, ".hero-stats"), /grid-template-columns:\s*repeat\(4,\s*1fr\)/);
+  assert.doesNotMatch(cssDeclarations(source, ".ov2-stats"), /grid-template-columns/);
 });
 
 test("condition pills contain only agreed zone and solar readings", () => {
