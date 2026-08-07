@@ -88,9 +88,17 @@ New `test/screen-a.test.cjs` cases for `floorThermostatEntity`:
 - Returns the North zone entity for index 1 (Office Wing).
 - Returns `null` for an out-of-range index and for a floor entry with no `entity` field.
 
-No new DOM-level test for `_openFloorsThermostat` itself; it is a thin wrapper over already-tested
-pieces (`floorThermostatEntity`, `openThermostat`), consistent with how the existing Overview C
-launcher wiring is tested at the view-model level rather than the DOM-event level.
+No new DOM-level test for `_openFloorsThermostat` itself. The existing Overview C launcher
+(`#ov3-ac-card`) does have a DOM-level test that extracts its real `onclick` handler from the
+rendered HTML and executes it against the real `CONFIG` and `openThermostat`; that launcher's
+`onclick` is effectively self-contained, so the test setup is cheap. `_openFloorsThermostat` is not
+as cheap to test the same way: it reads from `_ov3FloorsList` and `_ov3FloorsActiveIndex`, both of
+which only exist after `_buildOv3FloorsCard()` has run against a stubbed floors section of the DOM.
+Setting that up was judged not worth it for this phase, so this test suite instead covers
+`_openFloorsThermostat` indirectly, through the pure-function test on `floorThermostatEntity` plus
+the markup-presence test confirming the button and its `onclick` wiring exist. This leaves a gap
+the existing launcher precedent does not have, and a DOM-level test for `_openFloorsThermostat` is
+a reasonable candidate for a later pass.
 
 ## Verification and rollback
 

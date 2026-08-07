@@ -667,6 +667,15 @@ test("floorThermostatEntity resolves the visible floor's climate entity", () => 
   assert.equal(custom.floorThermostatEntity(null, 0), null);
 });
 
+test("configured floors resolve to the real thermostat entities", () => {
+  const custom = loadCustomizations();
+  const SENSOR_TYPES = ["temp", "humidity", "pm25"];
+  const floors = loadConfig().floorSensors
+    .filter(f => f.label !== "Solar" && (f.sensors || []).some(s => SENSOR_TYPES.includes(s.type)));
+  assert.equal(custom.floorThermostatEntity(floors, 0), "climate.casasolar_south_zone_1");
+  assert.equal(custom.floorThermostatEntity(floors, 1), "climate.casasolar_north_zone_1");
+});
+
 test("Overview C places Garden in the center and Floors in the right column", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const elements = dashboardElementsById(source);
