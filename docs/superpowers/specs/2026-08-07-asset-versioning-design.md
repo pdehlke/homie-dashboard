@@ -6,10 +6,10 @@ Prevent wall-mounted kiosk browsers from mixing stale Homie HTML, configuration,
 
 ## Design
 
-Use one explicit release token, currently `20260807.5`, at both cache boundaries:
+Use one explicit release token, currently `20260807.6`, at both cache boundaries:
 
-- The supported Home Assistant Lovelace iframe strategy loads `/local/community/homie-dashboard/homie-dashboard.html?v=20260807.5`.
-- The HTML loads `config.js?v=20260807.5` and `homie-custom.js?v=20260807.5`.
+- The supported Home Assistant Lovelace iframe strategy loads `/local/community/homie-dashboard/homie-dashboard.html?v=20260807.6`.
+- The HTML loads `config.js?v=20260807.6` and `homie-custom.js?v=20260807.6`.
 
 The HTML defines the token once and dynamically loads both dependencies in order. Every future Homie deployment increments the token and updates the Lovelace iframe URL through Home Assistant's supported WebSocket API. No Home Assistant source, internal implementation, or `.storage` file is edited directly.
 

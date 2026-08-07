@@ -230,10 +230,16 @@ test("customization docs make Fahrenheit permanent for every temperature display
   assert.match(source, /future[^.]*convert[^.]*Fahrenheit/i);
 });
 
+test("Overview C uses the available Home Assistant weather source", () => {
+  const config = loadConfig();
+  assert.equal(config.weather.entity, "weather.forecast_home");
+  assert.equal(config.weather.tempUnit, "°F");
+});
+
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.5");
+  assert.equal(version, "20260807.6");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);

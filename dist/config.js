@@ -49,7 +49,7 @@ const CONFIG = {
   security: [],
 
   weather: {
-    entity: "weather.openweathermap",
+    entity: "weather.forecast_home",
     tempUnit: "°F",
   },
   sun: {

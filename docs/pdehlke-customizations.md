@@ -19,6 +19,7 @@ The accepted Screen A configuration provides:
 - Main House and Office Wing thermostat zones
 - Five irrigation zones, retaining Back Yard while its controller is offline
 - Classic Gold, Screen A, vivid gradient, and 12-hour browser defaults
+- Weather from Home Assistant's available `weather.forecast_home` entity in Fahrenheit
 
 Several `sensor.homie_*` entities are Home Assistant template helpers created
 for the dashboard. The alarm helper intentionally reports `Not Configured`
