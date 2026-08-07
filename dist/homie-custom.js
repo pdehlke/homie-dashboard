@@ -150,28 +150,6 @@
     return { temperature: shifted(base) };
   }
 
-  function thermostatLauncherView(state) {
-    if (!state || state.state === "unknown" || state.state === "unavailable") {
-      return { temperature: "— °F", targetTemperature: "— °F", mode: "Unavailable", modeClass: "" };
-    }
-    const modeViews = {
-      cool: { mode: "Cool", modeClass: "mode-cool" },
-      heat: { mode: "Heat", modeClass: "mode-heat" },
-      fan_only: { mode: "Fan Only", modeClass: "mode-fan" },
-      heat_cool: { mode: "Auto", modeClass: "" },
-      dry: { mode: "Dry", modeClass: "mode-dry" },
-      auto: { mode: "Auto", modeClass: "" },
-      off: { mode: "Off", modeClass: "" },
-    };
-    const view = modeViews[state.state] || { mode: "Unavailable", modeClass: "" };
-    const temperatures = thermostatTemperatureView(state);
-    return {
-      temperature: temperatures.currentTemperature,
-      targetTemperature: temperatures.targetTemperature,
-      ...view,
-    };
-  }
-
   function requiresStartConfirmation(control, isOn) {
     return Boolean(control && control.confirmStart && !isOn);
   }
@@ -391,7 +369,6 @@
     startConfirmationMessage,
     statColumns,
     sunEventTimes,
-    thermostatLauncherView,
     thermostatSetTemperaturePayload,
     thermostatStepSize,
     thermostatTemperatureUnit,

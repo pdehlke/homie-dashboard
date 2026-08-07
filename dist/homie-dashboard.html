@@ -6022,69 +6022,6 @@
     backdrop-filter: blur(4px);
   }
 
-  /* ── OV3 Main House thermostat launcher (col 3, fourth card) ────────────── */
-  .ov3-ac-card {
-    flex: 0 0 212px;
-    border-radius: 20px;
-    background-color: rgba(8,18,36,0.95);
-    border: 1px solid rgba(100,160,255,0.12);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    transition: background-color 0.5s ease, border-color 0.5s ease;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 18px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .ov3-ac-card.mode-cool { background-color: rgba(12,36,48,0.97); border-color: rgba(92,160,184,0.4);  }
-  .ov3-ac-card.mode-heat { background-color: rgba(48,16,10,0.97); border-color: rgba(220,90,60,0.45);  }
-  .ov3-ac-card.mode-fan  { background-color: rgba(10,38,32,0.97); border-color: rgba(80,190,160,0.45); }
-  .ov3-ac-card.mode-dry  { background-color: rgba(40,32,8,0.97);  border-color: rgba(200,165,60,0.45); }
-
-  .ov3-ac-name {
-    font-size: 10px;
-    letter-spacing: 0.22em;
-    font-weight: 500;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.72);
-  }
-  .ov3-ac-current {
-    font-size: 2.6rem;
-    font-weight: 300;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    color: #fff;
-  }
-  .ov3-ac-target {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-  }
-  .ov3-ac-target-label {
-    font-size: 9px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.42);
-  }
-  .ov3-ac-target-value {
-    font-size: 1.2rem;
-    font-weight: 400;
-    letter-spacing: 0.08em;
-    color: var(--accent-hi);
-    line-height: 1;
-  }
-  .ov3-ac-mode {
-    font-size: 9px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.55);
-  }
-
   /* ─── OV3 PURIFIER CARD ────────────────────────────────────────────────── */
   .ov3-pur-card {
     border-radius: 20px;
@@ -8274,17 +8211,6 @@
             <!-- slides injected by _buildOv3PurifierCard() -->
           </div>
           <div class="ov3-pur-dots" id="ov3-pur-dots"></div>
-        </div>
-
-        <!-- Main House thermostat launcher (4th) -->
-        <div class="ov3-ac-card" id="ov3-ac-card" onclick="openThermostat('climate.casasolar_south_zone_1')">
-          <div class="ov3-ac-name" id="ov3-ac-name">Main House</div>
-          <span class="ov3-ac-current" id="ov3-ac-current">—</span>
-          <div class="ov3-ac-target" id="ov3-ac-target">
-            <span class="ov3-ac-target-label">Target</span>
-            <span class="ov3-ac-target-value" id="ov3-ac-target-value">—</span>
-          </div>
-          <span class="ov3-ac-mode" id="ov3-ac-mode">Unavailable</span>
         </div>
 
       </div><!-- /.ov3-col3 -->
@@ -16730,7 +16656,7 @@ function switchOverview(idx) {
 
 /* Elements where a horizontal drag should NOT switch overview screens —
  * shared by both the touch and mouse-drag handlers below. */
-const OV3_SWIPE_EXCLUDE_SELECTOR = ".popup-overlay.open, #daily-overlay, #thermostat-overlay, #photoframe-overlay, #nowplaying-fs-overlay, .sensor-row, .ov2-sensor-strip, .ov3-wx-hourly, .ov3-wx-scroll, .ov3-floors-scroll, .ov3-garden-scroll, .ov3-sec-scroll, .mush-ac-card, #ov3-ac-card, #ov3-pur-viewport, #ov3-pur-card";
+const OV3_SWIPE_EXCLUDE_SELECTOR = ".popup-overlay.open, #daily-overlay, #thermostat-overlay, #photoframe-overlay, #nowplaying-fs-overlay, .sensor-row, .ov2-sensor-strip, .ov3-wx-hourly, .ov3-wx-scroll, .ov3-floors-scroll, .ov3-garden-scroll, .ov3-sec-scroll, .mush-ac-card, #ov3-pur-viewport, #ov3-pur-card";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Swipe gesture — swipe left anywhere on the screen to go to screen 2,
@@ -17172,7 +17098,6 @@ function _ensureOv3Built() {
   }
 
   _buildOv3SidebarControls();
-  _buildOv3AcCard();
   _buildOv3PurifierCard();
   _buildOv3FloorsCard();
   _buildOv3GardenCard();
@@ -17534,28 +17459,6 @@ function _refreshOv3PurifierCard() {
     _ov3PurRefreshSlide(idx, isOn, pct);
   });
   _ov3PurRefreshCard();
-}
-
-function _buildOv3AcCard() {
-  _refreshOv3AcCard();
-}
-
-function _refreshOv3AcCard() {
-  const card = document.getElementById("ov3-ac-card");
-  const currentEl = document.getElementById("ov3-ac-current");
-  const targetEl = document.getElementById("ov3-ac-target-value");
-  const modeEl = document.getElementById("ov3-ac-mode");
-  if (!card || !currentEl || !targetEl || !modeEl) return;
-
-  const state = haGetCached("climate.casasolar_south_zone_1");
-  const view = HOMIE_CUSTOM.thermostatLauncherView(state);
-  currentEl.textContent = view.temperature;
-  targetEl.textContent = view.targetTemperature;
-  modeEl.textContent = view.mode;
-  ["mode-cool", "mode-heat", "mode-fan", "mode-dry"].forEach(modeClass => {
-    card.classList.remove(modeClass);
-  });
-  if (view.modeClass) card.classList.add(view.modeClass);
 }
 
 /* Tracks the last-rendered greeting label so the shrink-to-fit loop in
@@ -18416,7 +18319,6 @@ function _refreshOv3() {
   _refreshOv3Garden();
   _refreshOv3Greeting();
   _refreshOv3SidebarControls();
-  _refreshOv3AcCard();
   _refreshOv3PurifierCard();
   _refreshOv3FloorsCard();
   _refreshOv3MusicCard();

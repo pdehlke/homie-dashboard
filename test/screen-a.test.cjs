@@ -64,6 +64,8 @@ function loadThermostatOverlay() {
     source.indexOf("let _thermEntities"),
     source.indexOf("/** _buildThermTabs"),
   );
+  const openerStart = source.indexOf("function _openFloorsThermostat");
+  const openerSource = source.slice(openerStart, source.indexOf("}", openerStart) + 1);
   const overlayClasses = new Set();
   const context = {
     CONFIG: loadConfig(),
@@ -81,10 +83,14 @@ function loadThermostatOverlay() {
   };
   vm.createContext(context);
   vm.runInContext(
-    `${thermostatSource}\nglobalThis.__thermostat = { openThermostat, closeThermostat, entities: () => _thermEntities };`,
+    `${thermostatSource}\n` +
+      `let _ov3FloorsList = []; let _ov3FloorsActiveIndex = 0;\n` +
+      `${openerSource}\n` +
+      `globalThis.__thermostat = { openThermostat, closeThermostat, entities: () => _thermEntities };\n` +
+      `globalThis.__floors = { open: _openFloorsThermostat, setState: (list, idx) => { _ov3FloorsList = list; _ov3FloorsActiveIndex = idx; } };`,
     context,
   );
-  return { context, overlayClasses, thermostat: context.__thermostat };
+  return { context, overlayClasses, thermostat: context.__thermostat, floors: context.__floors };
 }
 
 test("Screen A has the agreed balanced status grid", () => {
@@ -469,18 +475,6 @@ test("thermostat filtering keeps all entries by default and selects an exact ent
   assert.deepEqual(custom.filterThermostats(entities, "climate.invalid"), []);
 });
 
-test("thermostat launcher formats live cooling state and setpoint", () => {
-  const custom = loadCustomizations();
-
-  assert.deepEqual(
-    custom.thermostatLauncherView({
-      state: "cool",
-      attributes: { current_temperature: 78.4, temperature: 72.4 },
-    }),
-    { temperature: "78 °F", targetTemperature: "72 °F", mode: "Cool", modeClass: "mode-cool" },
-  );
-});
-
 test("thermostat view normalizes Fahrenheit display and range setpoints", () => {
   const custom = loadCustomizations();
 
@@ -639,19 +633,6 @@ test("thermostat step size follows the entity's declared target_temp_step", () =
   assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 0 } }), 0.5);
 });
 
-test("thermostat launcher treats unavailable and missing states as unavailable", () => {
-  const custom = loadCustomizations();
-
-  assert.deepEqual(
-    custom.thermostatLauncherView({ state: "unavailable", attributes: {} }),
-    { temperature: "— °F", targetTemperature: "— °F", mode: "Unavailable", modeClass: "" },
-  );
-  assert.deepEqual(
-    custom.thermostatLauncherView(null),
-    { temperature: "— °F", targetTemperature: "— °F", mode: "Unavailable", modeClass: "" },
-  );
-});
-
 test("floorThermostatEntity resolves the visible floor's climate entity", () => {
   const custom = loadCustomizations();
   const floors = [
@@ -707,12 +688,15 @@ test("Overview C places Garden in the center and Floors in the right column", ()
   assert.match(elements.get("ov3-floors-card").parent.className, /\bov3-col3\b/);
 });
 
-test("Overview C launcher opens only Main House, while Overview A remains unfiltered after close", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
-  const launcher = dashboardElementsById(source).get("ov3-ac-card");
-  const { context, overlayClasses, thermostat } = loadThermostatOverlay();
+test("Overview C floors button opens only Main House, while Overview A remains unfiltered after close", () => {
+  const { overlayClasses, thermostat, floors } = loadThermostatOverlay();
+  const floorsList = [
+    { label: "Main House", entity: "climate.casasolar_south_zone_1" },
+    { label: "Office Wing", entity: "climate.casasolar_north_zone_1" },
+  ];
 
-  vm.runInContext(launcher.onclick, context);
+  floors.setState(floorsList, 0);
+  floors.open();
   assert.equal(overlayClasses.has("open"), true);
   assert.deepEqual(
     Array.from(thermostat.entities(), (entry) => entry.entity),
