@@ -32,6 +32,7 @@ until a real alarm integration replaces it.
 - replace Pet Stats with a Lights launcher
 - show the unconfigured alarm state without placeholder alarm controls
 - route A/V to the Music Assistant browser and player selector
+- render Overview C's A/V sidebar control with the Now Playing circle-and-play icon
 - route the bottom Climate control to the dedicated thermostat overlay
 - confirm irrigation starts while allowing immediate stops
 - render the Screen A status grid as four columns by two rows
@@ -41,6 +42,13 @@ until a real alarm integration replaces it.
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
 Fahrenheit `heat_cool` thermostat entities.
+
+## Temperature Display Convention
+
+All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations
+that expose another unit must convert their values to Fahrenheit before displaying them. The two
+Solar inverter cards intentionally remain unbound as `— °F` until the Left Inverter and Right
+Inverter entities are available.
 
 ## Verification
 

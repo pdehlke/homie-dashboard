@@ -4,7 +4,7 @@
  */
 
 const HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN";
-const WS_URL = "ws://192.168.4.125:8123/api/websocket";
+const WS_URL = "ws://homeassistant.local:8123/api/websocket";
 const BASE = WS_URL
   .replace(/^wss:\/\//, "https://")
   .replace(/^ws:\/\//, "http://")
@@ -131,7 +131,17 @@ const CONFIG = {
       { type: "power", entity: "sensor.homie_whole_house_load", unit: "kW", decimal: true },
       { type: "export", entity: "sensor.homie_grid_flow", unit: "kW", decimal: true },
     ],
-    stats: [],
+    stats: [
+      { type: "live-consumption", entity: "sensor.sense_287516_energy" },
+      { type: "solar", entity: "sensor.sense_287516_production" },
+      { type: "export", entity: "sensor.homie_grid_flow" },
+      { type: "daily-consumption", entity: "sensor.sense_287516_daily_energy" },
+      { type: "monthly-kwh", entity: "sensor.sense_287516_monthly_energy" },
+      { type: "net-today", entity: "sensor.sense_287516_daily_net_production" },
+      { type: "fossil-percentage", entity: "sensor.electricity_maps_grid_fossil_fuel_percentage" },
+      { type: "co2-intensity", entity: "sensor.electricity_maps_co2_intensity" },
+      { type: "solar-temp", entity: "" },
+    ],
   },
 
   musicPlayers: [

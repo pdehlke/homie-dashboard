@@ -8257,7 +8257,7 @@
         </div>
         <div class="ov3-energy-stat-row">
           <div class="ov3-energy-stat-item">
-            <div class="ov3-energy-stat-label">Today</div>
+            <div class="ov3-energy-stat-label">Net Today</div>
             <div class="ov3-energy-stat-value" id="ov3-energy-today">—</div>
           </div>
           <div class="ov3-energy-stat-item">
@@ -8766,8 +8766,11 @@ const ICONS = {
      live in config.js. Edit that file — never this one — to customise the
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
-<script src="config.js"></script>
-<script src="homie-custom.js"></script>
+<script>
+      const HOMIE_ASSET_VERSION = "20260807.5";
+document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
+document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
+</script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -9827,32 +9830,19 @@ function _sfsRefresh() {
     ? CONFIG.floorSensors.find(f => f.label === "Solar")
     : null;
 
-  function _val(type) {
-    const stats = (CONFIG.solar && CONFIG.solar.stats) || (cfg ? cfg.sensors : []);
-    const s = stats.find(x => x.type === type);
-    if (!s) return null;
-    const d = haGetCached(s.entity);
-    let v = d ? parseFloat(d.state) : null;
-    if ((!v && v !== 0) || isNaN(v)) return null;
-    // Auto-convert W → kW if the sensor reports in watts
-    const unit = d?.attributes?.unit_of_measurement;
-    if (unit === "W") v = v / 1000;
-    return v;
-  }
-
-  const solar = _val("solar");
-  const home  = _val("power");
-  const bat   = _val("battery");
-  const exp   = _val("export");
-  const temp  = _val("solar-temp");
+  const stats = (CONFIG.solar && CONFIG.solar.stats) || (cfg ? cfg.sensors : []);
+  const statesByType = Object.fromEntries(stats.map(s => [s.type, s.entity ? haGetCached(s.entity) : null]));
+  const view = HOMIE_CUSTOM.solarFullscreenView(statesByType);
+  const solar = view.solarKw;
+  const home = view.homeKw;
+  const exp = view.gridKw;
 
   // Update stat values
   const fmt = (v, dec) => v === null ? "—" : (dec ? v.toFixed(2) : Math.round(v));
   document.getElementById("sfs-stat-solar").textContent   = fmt(solar, true);
-  document.getElementById("sfs-stat-home").textContent    = fmt(home, true);
-  document.getElementById("sfs-stat-battery").textContent = fmt(bat, false);
   document.getElementById("sfs-stat-export").textContent  = fmt(exp, true);
-  document.getElementById("sfs-stat-temp").textContent    = fmt(temp, true);
+  document.getElementById("sfs-stat-left-inverter").textContent  = view.inverterTemp;
+  document.getElementById("sfs-stat-right-inverter").textContent = view.inverterTemp;
 
   // Update outdoor weather temperature
   const _wxData = haGetCached(CONFIG.weather.entity);
@@ -9863,96 +9853,54 @@ function _sfsRefresh() {
   document.getElementById("sfs-stat-weather-unit").textContent = " " + _wxUnit;
 
   // Update consumption & cost row — entities sourced from CONFIG.solar.stats
-  const _solarStats    = (CONFIG.solar && CONFIG.solar.stats) || [];
-  const _findEnt       = type => { const s = _solarStats.find(x => x.type === type); return s ? haGetCached(s.entity) : null; };
-  const _liveConData   = _findEnt("live-consumption");
-  const liveCon        = _liveConData ? parseFloat(_liveConData.state) : null;
-  const _monthlyKwhData = _findEnt("monthly-kwh");
-  const monthlyKwh     = _monthlyKwhData ? parseFloat(_monthlyKwhData.state) : null;
-  const _todayCostData = _findEnt("today-cost");
-  const todayCost      = _todayCostData ? parseFloat(_todayCostData.state) : null;
-  const _monthlyCostData = _findEnt("monthly-cost");
-  const monthlyCost    = _monthlyCostData ? parseFloat(_monthlyCostData.state) : null;
-  document.getElementById("sfs-stat-live-con").textContent    = (liveCon === null || isNaN(liveCon)) ? "—" : Math.round(liveCon);
-  document.getElementById("sfs-stat-monthly-kwh").textContent = monthlyKwh === null ? "—" : monthlyKwh.toFixed(1);
-  document.getElementById("sfs-stat-today-cost").textContent  = todayCost  === null ? "—" : todayCost.toFixed(2);
-  document.getElementById("sfs-stat-monthly-cost").textContent = monthlyCost === null ? "—" : monthlyCost.toFixed(2);
+  document.getElementById("sfs-stat-live-con").textContent = view.liveWatts;
+  document.getElementById("sfs-stat-home").textContent = view.dailyUsage;
+  document.getElementById("sfs-stat-monthly-kwh").textContent = view.monthlyUsage;
+  document.getElementById("sfs-stat-low-carbon").textContent = view.lowCarbon;
+  document.getElementById("sfs-stat-co2-intensity").textContent = view.co2Intensity;
 
-  // Update grid stat icon arrow: left = exporting (positive), right = importing (negative)
+  // House-centric sign: negative exports, positive imports.
   const exportIconEl = document.getElementById("sfs-stat-export-icon");
   if (exportIconEl && exp !== null) {
-    exportIconEl.innerHTML = exp > 0
+    exportIconEl.innerHTML = exp < -0.01
       ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 5 5 12 12 19"/></svg>`
       : `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><polyline points="12 5 19 12 12 19"/></svg>`;
   }
 
   // Update node labels
   document.getElementById("sfs-node-solar-val").textContent = solar !== null ? solar.toFixed(2) + " kW" : "—";
-  document.getElementById("sfs-node-bat-val").textContent   = bat !== null ? bat + "%" : "—";
   document.getElementById("sfs-node-home-val").textContent  = home !== null ? home.toFixed(2) + " kW" : "—";
-  document.getElementById("sfs-node-grid-val").textContent  = exp !== null ? Math.abs(exp).toFixed(2) + " kW" : "—";
-
-  // Battery fill bar (SVG rect width proportional to %)
-  if (bat !== null) {
-    const w = Math.max(1, Math.round((bat / 100) * 20));
-    document.getElementById("sfs-bat-fill")?.setAttribute("width", w);
-  }
+  document.getElementById("sfs-node-grid-val").textContent  = view.gridMagnitude === "—" ? "—" : view.gridMagnitude + " kW";
 
   // Trigger hourly chart refresh (non-blocking)
   _sfsRefreshChart(cfg);
 
   // Show/hide flow animations based on values
   const solarFlowing = solar !== null && solar > 0.05;
-  const batCharging  = solar !== null && bat !== null && solar > 0.2;
-  const exporting    = exp !== null && exp > 0.05;
+  const exporting = exp !== null && exp < -0.05;
+  const importing = exp !== null && exp > 0.05;
 
   const setFlow = (ids, active) => ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.opacity = active ? null : "0";
   });
   setFlow(["sfs-ani-solar-home", "sfs-ani-solar-home-2", "sfs-ani-home", "sfs-ani-home-2"], solarFlowing);
-  setFlow(["sfs-ani-solar-bat", "sfs-ani-solar-bat-2"], batCharging);
   setFlow(["sfs-ani-solar-grid", "sfs-ani-solar-grid-2"], exporting);
+  setFlow(["sfs-ani-grid-home", "sfs-ani-grid-home-2"], importing);
 
   // Show/hide flow labels
   const expLbl = document.getElementById("sfs-lbl-export");
-  const chgLbl = document.getElementById("sfs-lbl-charge");
-  if (expLbl) expLbl.style.opacity = exporting ? "1" : "0.2";
-  if (chgLbl) chgLbl.style.opacity = batCharging ? "1" : "0.2";
+  if (expLbl) {
+    expLbl.textContent = view.gridLabel.toUpperCase();
+    expLbl.style.opacity = exporting || importing ? "1" : "0.2";
+  }
 }
 
 /* ─── OV3 ENERGY CARD ─── */
 function _updateOv3EnergyCard() {
   const _solarStats = (CONFIG.solar && CONFIG.solar.stats) || [];
-  const _findEnt = type => { const s = _solarStats.find(x => x.type === type); return s ? haGetCached(s.entity) : null; };
-
-  // Live consumption (W)
-  const liveConData = _findEnt("live-consumption");
-  const liveCon = liveConData ? parseFloat(liveConData.state) : null;
-
-  // Today's usage (kWh via "power" type, auto-convert W→kW)
-  const powerData = _findEnt("power");
-  let todayKw = powerData ? parseFloat(powerData.state) : null;
-  if (todayKw !== null && !isNaN(todayKw)) {
-    const unit = powerData?.attributes?.unit_of_measurement;
-    if (unit === "W") todayKw = todayKw / 1000;
-  } else todayKw = null;
-
-  // Solar production (kW)
-  const solarData = _findEnt("solar");
-  let solarKw = solarData ? parseFloat(solarData.state) : null;
-  if (solarKw !== null && !isNaN(solarKw)) {
-    const unit = solarData?.attributes?.unit_of_measurement;
-    if (unit === "W") solarKw = solarKw / 1000;
-  } else solarKw = null;
-
-  // Grid export/import (kW, positive = export, negative = import)
-  const exportData = _findEnt("export");
-  let gridKw = exportData ? parseFloat(exportData.state) : null;
-  if (gridKw !== null && !isNaN(gridKw)) {
-    const unit = exportData?.attributes?.unit_of_measurement;
-    if (unit === "W") gridKw = gridKw / 1000;
-  } else gridKw = null;
+  const statesByType = Object.fromEntries(_solarStats.map(s => [s.type, s.entity ? haGetCached(s.entity) : null]));
+  const view = HOMIE_CUSTOM.solarCardView(statesByType);
 
   // Update elements
   const elLive  = document.getElementById("ov3-energy-live");
@@ -9961,19 +9909,15 @@ function _updateOv3EnergyCard() {
   const elGrid  = document.getElementById("ov3-energy-grid");
   const elGridLbl = document.getElementById("ov3-energy-grid-label");
 
-  if (elLive)  elLive.textContent  = liveCon !== null && !isNaN(liveCon) ? Math.round(liveCon) : "—";
-  if (elToday) elToday.textContent = todayKw !== null ? todayKw.toFixed(2) + " kW" : "—";
-  if (elSolar) elSolar.textContent = solarKw !== null ? solarKw.toFixed(2) + " kW" : "—";
-  if (elGrid && gridKw !== null) {
-    const isExport = gridKw > 0.01;
-    const isImport = gridKw < -0.01;
-    elGrid.textContent = Math.abs(gridKw).toFixed(2) + " kW";
-    elGrid.style.color = isExport ? "rgba(249,115,22,0.9)" : isImport ? "rgba(96,165,250,0.9)" : "rgba(255,255,255,0.82)";
-    if (elGridLbl) elGridLbl.textContent = isExport ? "Export" : isImport ? "Import" : "Grid";
-  } else if (elGrid) {
-    elGrid.textContent = "—";
-    elGrid.style.color = "";
+  if (elLive) elLive.textContent = view.liveWatts;
+  if (elToday) elToday.textContent = view.netToday;
+  if (elSolar) elSolar.textContent = view.solar;
+  if (elGrid) {
+    elGrid.textContent = view.grid;
+    elGrid.style.color = view.gridMode === "export" ? "rgba(249,115,22,0.9)"
+      : view.gridMode === "import" ? "rgba(96,165,250,0.9)" : "rgba(255,255,255,0.82)";
   }
+  if (elGridLbl) elGridLbl.textContent = view.gridLabel;
 }
 
 // Initial call after short delay
@@ -9990,13 +9934,16 @@ async function _sfsRefreshChart(cfg) {
     return;
   }
 
-  const solarSensor = cfg.sensors.find(x => x.type === 'solar');
-  const powerSensor = cfg.sensors.find(x => x.type === 'power');
+  const stats = (CONFIG.solar && CONFIG.solar.stats) || (cfg ? cfg.sensors : []);
+  const solarSensor = stats.find(x => x.type === 'solar');
+  const powerSensor = stats.find(x => x.type === 'live-consumption');
   if (!solarSensor || !powerSensor || !HA_TOKEN) return;
 
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date();
+
+  let historyFailed = false;
 
   // For instantaneous sensors (e.g. solar W): average readings per hour
   async function fetchHourlyAvg(entity) {
@@ -10005,59 +9952,20 @@ async function _sfsRefreshChart(cfg) {
         `${BASE}/api/history/period/${start.toISOString()}?filter_entity_id=${entity}&end_time=${end.toISOString()}&minimal_response`,
         { headers: { Authorization: `Bearer ${HA_TOKEN}` } }
       );
-      if (!r.ok) return null;
+      if (!r.ok) {
+        historyFailed = true;
+        return null;
+      }
       const raw = await r.json();
       if (!raw || !raw[0]) return null;
       // Detect unit from the cached entity (attributes.unit_of_measurement)
       const cachedEntity = haGetCached(entity);
       const isWatts = cachedEntity?.attributes?.unit_of_measurement === "W";
-      const buckets = {};
-      for (const entry of raw[0]) {
-        const v = parseFloat(entry.state);
-        if (isNaN(v) || v < 0) continue;
-        const h = new Date(entry.last_changed).getHours();
-        if (!buckets[h]) buckets[h] = { sum: 0, n: 0 };
-        buckets[h].sum += v;
-        buckets[h].n++;
-      }
-      const result = [];
-      for (let h = 0; h < 24; h++) {
-        let avg = buckets[h] ? buckets[h].sum / buckets[h].n : 0;
-        if (isWatts) avg = avg / 1000; // convert W → kW
-        result.push(avg);
-      }
-      return result;
-    } catch { return null; }
-  }
-
-  // For cumulative sensors (e.g. consumption kWh): delta per hour
-  async function fetchHourlyDelta(entity) {
-    try {
-      const r = await fetch(
-        `${BASE}/api/history/period/${start.toISOString()}?filter_entity_id=${entity}&end_time=${end.toISOString()}&minimal_response`,
-        { headers: { Authorization: `Bearer ${HA_TOKEN}` } }
-      );
-      if (!r.ok) return null;
-      const raw = await r.json();
-      if (!raw || !raw[0]) return null;
-      const lastPerHour = {};
-      for (const entry of raw[0]) {
-        const v = parseFloat(entry.state);
-        if (isNaN(v) || v < 0) continue;
-        const h = new Date(entry.last_changed).getHours();
-        lastPerHour[h] = v;
-      }
-      const result = [];
-      for (let h = 0; h < 24; h++) {
-        if (lastPerHour[h] == null) { result.push(0); continue; }
-        let prevVal = null;
-        for (let p = h - 1; p >= 0; p--) {
-          if (lastPerHour[p] != null) { prevVal = lastPerHour[p]; break; }
-        }
-        result.push(prevVal != null ? Math.max(0, lastPerHour[h] - prevVal) : 0);
-      }
-      return result;
-    } catch { return null; }
+      return HOMIE_CUSTOM.hourlyPowerAverages(raw[0], isWatts ? "W" : "kW");
+    } catch {
+      historyFailed = true;
+      return null;
+    }
   }
 
   const loading = document.getElementById('sfs-chart-loading');
@@ -10065,11 +9973,18 @@ async function _sfsRefreshChart(cfg) {
 
   const [solarH, powerH] = await Promise.all([
     fetchHourlyAvg(solarSensor.entity),
-    fetchHourlyDelta(powerSensor.entity)
+    fetchHourlyAvg(powerSensor.entity)
   ]);
 
+  const historyMessage = HOMIE_CUSTOM.chartHistoryMessage(solarH, powerH, historyFailed);
+  if (historyMessage) {
+    if (loading) {
+      loading.textContent = historyMessage;
+      loading.style.display = 'flex';
+    }
+    return;
+  }
   if (loading) loading.style.display = 'none';
-  if (!solarH && !powerH) return;
 
   const data = { solar: solarH || Array(24).fill(0), power: powerH || Array(24).fill(0) };
   _sfsChartCache = data;
@@ -10121,8 +10036,8 @@ function _sfsDraw(data) {
     const y = PAD_T + (chartH / Y_STEPS) * i;
     html += `<text x="${PAD_L - 4}" y="${y + 3}" text-anchor="end" font-size="7" fill="#ffffff" font-family="inherit" opacity="0.85">${val.toFixed(1)}</text>`;
   }
-  // kWh unit label (rotated)
-  html += `<text x="7" y="${PAD_T + chartH / 2}" text-anchor="middle" font-size="7" fill="#ffffff" font-family="inherit" opacity="0.85" transform="rotate(-90, 7, ${PAD_T + chartH / 2})">kWh</text>`;
+  // Average power unit label (rotated)
+  html += `<text x="7" y="${PAD_T + chartH / 2}" text-anchor="middle" font-size="7" fill="#ffffff" font-family="inherit" opacity="0.85" transform="rotate(-90, 7, ${PAD_T + chartH / 2})">kW</text>`;
 
   for (let h = 0; h < hours; h++) {
     const cx   = PAD_L + h * barGroupW + barGroupW / 2;
@@ -17419,6 +17334,9 @@ function _buildOv3SidebarControls() {
 
   /* Domain → sidebar icon SVG (18×18) */
   function _sbIcon(ctrl) {
+    if (ctrl.action === "media_browser") {
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>`;
+    }
     const subs = ctrl.subGroups
       ? ctrl.subGroups.flatMap(g => g.subEntities || [])
       : (ctrl.subEntities || []);
@@ -21388,12 +21306,8 @@ _applyDailyI18n();
         <!-- ═══ FLOW LINES (background tracks) ═══ -->
         <!-- Solar → Home (top center to right center) -->
         <path id="sfs-path-solar-home" d="M350,87 L350,140 L530,140" class="sfs-flow-line" stroke="#ffd700"/>
-        <!-- Solar → Battery -->
-        <path id="sfs-path-solar-bat" d="M350,87 L350,140 L170,140" class="sfs-flow-line" stroke="#00dc64"/>
         <!-- Solar → Grid export -->
         <path id="sfs-path-solar-grid" d="M350,87 L350,213" class="sfs-flow-line" stroke="#f97316"/>
-        <!-- Battery → Home -->
-        <path id="sfs-path-bat-home" d="M170,140 L530,140" class="sfs-flow-line" stroke="#00dc64"/>
         <!-- Grid → Home (import) -->
         <path id="sfs-path-grid-home" d="M350,213 L530,213 L530,140" class="sfs-flow-line" stroke="#60a5fa"/>
 
@@ -21401,12 +21315,12 @@ _applyDailyI18n();
         <!-- Solar → Home -->
         <path d="M350,87 L350,140 L530,140" class="sfs-flow-dot sfs-dot-solar" stroke="#ffd700" id="sfs-ani-solar-home"/>
         <path d="M350,87 L350,140 L530,140" class="sfs-flow-dot sfs-dot-solar-2" stroke="#ffd700" id="sfs-ani-solar-home-2"/>
-        <!-- Solar → Battery -->
-        <path d="M350,87 L350,140 L170,140" class="sfs-flow-dot sfs-dot-battery" stroke="#00dc64" id="sfs-ani-solar-bat"/>
-        <path d="M350,87 L350,140 L170,140" class="sfs-flow-dot sfs-dot-battery-2" stroke="#00dc64" id="sfs-ani-solar-bat-2"/>
         <!-- Solar → Grid export -->
         <path d="M350,87 L350,213" class="sfs-flow-dot sfs-dot-grid-exp" stroke="#f97316" id="sfs-ani-solar-grid"/>
         <path d="M350,87 L350,213" class="sfs-flow-dot sfs-dot-grid-exp-2" stroke="#f97316" id="sfs-ani-solar-grid-2"/>
+        <!-- Grid → Home -->
+        <path d="M350,213 L530,213 L530,140" class="sfs-flow-dot sfs-dot-grid-exp" stroke="#60a5fa" id="sfs-ani-grid-home"/>
+        <path d="M350,213 L530,213 L530,140" class="sfs-flow-dot sfs-dot-grid-exp-2" stroke="#60a5fa" id="sfs-ani-grid-home-2"/>
         <!-- Home load dots -->
         <path d="M350,140 L530,140" class="sfs-flow-dot sfs-dot-home" stroke="#ffffff" id="sfs-ani-home"/>
         <path d="M350,140 L530,140" class="sfs-flow-dot sfs-dot-home-2" stroke="#ffffff" id="sfs-ani-home-2"/>
@@ -21431,22 +21345,6 @@ _applyDailyI18n();
           <text y="30" text-anchor="middle" font-size="8" letter-spacing="0.22em" fill="rgba(255,215,0,0.7)" font-family="inherit">SOLAR</text>
           <!-- Value -->
           <text id="sfs-node-solar-val" y="-26" text-anchor="middle" font-size="11" font-weight="500" fill="#ffd700" font-family="inherit">—</text>
-        </g>
-
-        <!-- ═══ NODE: BATTERY (left) ═══ -->
-        <g transform="translate(170,140)">
-          <circle r="52" fill="rgba(0,0,0,0.6)" stroke="rgba(0,220,100,0.45)" stroke-width="1.5"/>
-          <circle r="56" fill="rgba(0,220,100,0.05)" filter="url(#sfs-glow-green)"/>
-          <!-- Battery icon -->
-          <g fill="none" stroke="#00dc64" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
-            <rect x="-12" y="-9" width="22" height="14" rx="2"/>
-            <line x1="10" y1="-4" x2="14" y2="-4"/>
-            <line x1="10" y1="1" x2="14" y2="1"/>
-            <!-- Charge fill (dynamic via JS) -->
-            <rect id="sfs-bat-fill" x="-10" y="-7" width="8" height="10" rx="1" fill="rgba(0,220,100,0.5)" stroke="none"/>
-          </g>
-          <text y="30" text-anchor="middle" font-size="8" letter-spacing="0.22em" fill="rgba(0,220,100,0.7)" font-family="inherit">BATTERY</text>
-          <text id="sfs-node-bat-val" y="-26" text-anchor="middle" font-size="11" font-weight="500" fill="#00dc64" font-family="inherit">—</text>
         </g>
 
         <!-- ═══ NODE: HOME (right) ═══ -->
@@ -21482,11 +21380,10 @@ _applyDailyI18n();
 
         <!-- ═══ FLOW LABELS ═══ -->
         <text id="sfs-lbl-export" x="385" y="158" font-size="8" fill="rgba(249,115,22,0.6)" font-family="inherit" letter-spacing="0.1em">EXPORT</text>
-        <text id="sfs-lbl-charge" x="215" y="132" font-size="8" fill="rgba(0,220,100,0.6)" font-family="inherit" letter-spacing="0.1em">CHARGE</text>
       </svg>
     </div>
 
-    <!-- Consumption & Cost stats row -->
+    <!-- Consumption and grid-impact stats row -->
     <div class="sfs-consumption-row">
       <!-- Live Consumption -->
       <div class="sfs-con-card">
@@ -21501,16 +21398,16 @@ _applyDailyI18n();
         <div class="sfs-stat-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-home">—</span><span class="sfs-stat-unit"> kW</span></div>
+        <div class="sfs-stat-value"><span id="sfs-stat-home">—</span><span class="sfs-stat-unit"> kWh</span></div>
         <div class="sfs-stat-label">Today's Usage</div>
       </div>
-      <!-- Today's Cost -->
+      <!-- Low-carbon grid mix -->
       <div class="sfs-con-card">
         <div class="sfs-stat-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.5A7 7 0 1 0 17 17.5"/><line x1="5" y1="11" x2="13" y2="11"/><line x1="5" y1="14" x2="13" y2="14"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 3.2C14 3.5 7.2 5.8 4.5 11.1c-1.6 3.1-.7 6.8 2.2 8.7 2.9-5.4 7.2-9.2 12.8-11.5-4.7 3-8.2 7-10.5 12.1 3.3.7 6.7-.9 8.3-4 2.7-5.3 3.4-9.4 3.5-13.2z"/></svg>
         </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-today-cost">—</span><span class="sfs-stat-unit"> €</span></div>
-        <div class="sfs-stat-label">Today's Cost</div>
+        <div class="sfs-stat-value"><span id="sfs-stat-low-carbon">—</span><span class="sfs-stat-unit"> %</span></div>
+        <div class="sfs-stat-label">Low Carbon</div>
       </div>
       <!-- Monthly Consumption -->
       <div class="sfs-con-card">
@@ -21520,13 +21417,13 @@ _applyDailyI18n();
         <div class="sfs-stat-value"><span id="sfs-stat-monthly-kwh">—</span><span class="sfs-stat-unit"> kWh</span></div>
         <div class="sfs-stat-label">Monthly Usage</div>
       </div>
-      <!-- Monthly Cost -->
+      <!-- Grid carbon intensity -->
       <div class="sfs-con-card">
         <div class="sfs-stat-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.5A7 7 0 1 0 17 17.5"/><line x1="5" y1="11" x2="13" y2="11"/><line x1="5" y1="14" x2="13" y2="14"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1 .4-8A6 6 0 0 1 19 12a3 3 0 0 1-1 5.8"/><path d="M9 21h6M12 17v4"/></svg>
         </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-monthly-cost">—</span><span class="sfs-stat-unit"> €</span></div>
-        <div class="sfs-stat-label">Monthly Cost</div>
+        <div class="sfs-stat-value"><span id="sfs-stat-co2-intensity">—</span><span class="sfs-stat-unit"> gCO2/kWh</span></div>
+        <div class="sfs-stat-label">CO2 Intensity</div>
       </div>
     </div>
 
@@ -21548,21 +21445,21 @@ _applyDailyI18n();
         <div class="sfs-stat-value"><span id="sfs-stat-export">—</span><span class="sfs-stat-unit"> kW</span></div>
         <div class="sfs-stat-label">Grid</div>
       </div>
-      <!-- Battery -->
-      <div class="sfs-stat-card">
-        <div class="sfs-stat-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00dc64" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="10" x2="23" y2="14"/><line x1="5" y1="9" x2="5" y2="15"/><line x1="9" y1="9" x2="9" y2="15"/><line x1="13" y1="9" x2="13" y2="15"/></svg>
-        </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-battery">—</span><span class="sfs-stat-unit"> %</span></div>
-        <div class="sfs-stat-label">Battery</div>
-      </div>
-      <!-- Inverter Temp -->
+      <!-- Left Inverter -->
       <div class="sfs-stat-card">
         <div class="sfs-stat-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
         </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-temp">—</span><span class="sfs-stat-unit"> °C</span></div>
-        <div class="sfs-stat-label">Inverter Temp</div>
+        <div class="sfs-stat-value"><span id="sfs-stat-left-inverter">—</span><span class="sfs-stat-unit"> °F</span></div>
+        <div class="sfs-stat-label">Left Inverter</div>
+      </div>
+      <!-- Right Inverter -->
+      <div class="sfs-stat-card">
+        <div class="sfs-stat-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+        </div>
+        <div class="sfs-stat-value"><span id="sfs-stat-right-inverter">—</span><span class="sfs-stat-unit"> °F</span></div>
+        <div class="sfs-stat-label">Right Inverter</div>
       </div>
       <!-- Weather Temp -->
       <div class="sfs-stat-card">
@@ -21577,7 +21474,7 @@ _applyDailyI18n();
     <!-- Hourly chart -->
     <div class="sfs-chart-row">
       <div class="sfs-chart-header">
-        <span class="sfs-chart-title">HOURLY ENERGY</span>
+        <span class="sfs-chart-title">HOURLY AVERAGE POWER</span>
         <div class="sfs-chart-legend">
           <span class="sfs-legend-dot" style="background:#ffd700"></span><span class="sfs-legend-lbl">Solar</span>
           <span class="sfs-legend-dot" style="background:#60a5fa"></span><span class="sfs-legend-lbl">Consumption</span>
