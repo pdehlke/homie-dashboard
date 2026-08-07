@@ -30,6 +30,12 @@
     return configured.filter((entry) => entry && entry.entity === entityId);
   }
 
+  function floorThermostatEntity(floors, index) {
+    const list = Array.isArray(floors) ? floors : [];
+    const floor = list[index];
+    return floor && floor.entity ? floor.entity : null;
+  }
+
   function thermostatTemperatureUnit(state) {
     return state && state.attributes && state.attributes.temperature_unit === "°C" ? "°C" : "°F";
   }
@@ -362,6 +368,7 @@
     controlIndex,
     controlOnClick,
     filterThermostats,
+    floorThermostatEntity,
     installDefaults,
     gridDirection,
     futureForecastDays,

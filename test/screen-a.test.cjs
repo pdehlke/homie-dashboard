@@ -652,6 +652,21 @@ test("thermostat launcher treats unavailable and missing states as unavailable",
   );
 });
 
+test("floorThermostatEntity resolves the visible floor's climate entity", () => {
+  const custom = loadCustomizations();
+  const floors = [
+    { label: "Main House", entity: "climate.casasolar_south_zone_1", sensors: [] },
+    { label: "Office Wing", entity: "climate.casasolar_north_zone_1", sensors: [] },
+  ];
+
+  assert.equal(custom.floorThermostatEntity(floors, 0), "climate.casasolar_south_zone_1");
+  assert.equal(custom.floorThermostatEntity(floors, 1), "climate.casasolar_north_zone_1");
+  assert.equal(custom.floorThermostatEntity(floors, 2), null);
+  assert.equal(custom.floorThermostatEntity(floors, -1), null);
+  assert.equal(custom.floorThermostatEntity([{ label: "Solar", sensors: [] }], 0), null);
+  assert.equal(custom.floorThermostatEntity(null, 0), null);
+});
+
 test("Overview C places Garden in the center and Floors in the right column", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const elements = dashboardElementsById(source);
