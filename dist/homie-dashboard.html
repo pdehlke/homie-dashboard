@@ -6041,6 +6041,25 @@
     line-height: 1;
     color: #fff;
   }
+  .ov3-ac-target {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .ov3-ac-target-label {
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.42);
+  }
+  .ov3-ac-target-value {
+    font-size: 1.2rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    color: var(--accent-hi);
+    line-height: 1;
+  }
   .ov3-ac-mode {
     font-size: 9px;
     letter-spacing: 0.18em;
@@ -8234,6 +8253,10 @@
         <div class="ov3-ac-card" id="ov3-ac-card" onclick="openThermostat('climate.casasolar_south_zone_1')">
           <div class="ov3-ac-name" id="ov3-ac-name">Main House</div>
           <span class="ov3-ac-current" id="ov3-ac-current">—</span>
+          <div class="ov3-ac-target" id="ov3-ac-target">
+            <span class="ov3-ac-target-label">Target</span>
+            <span class="ov3-ac-target-value" id="ov3-ac-target-value">—</span>
+          </div>
           <span class="ov3-ac-mode" id="ov3-ac-mode">Unavailable</span>
         </div>
 
@@ -8537,7 +8560,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260807.11";
+      const HOMIE_ASSET_VERSION = "20260807.13";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -16273,22 +16296,27 @@ function _renderThermRoom(i) {
   const attrs = d ? (d.attributes || {}) : {};
   const state = d ? d.state : "off";          // off | cool | heat | fan_only | dry | auto
   const isOn  = state !== "off" && state !== "unavailable";
-
-  const current = attrs.current_temperature ?? null;
-  const target  = attrs.temperature         ?? null;
+  const temps = HOMIE_CUSTOM.thermostatTemperatureView
+    ? HOMIE_CUSTOM.thermostatTemperatureView(d)
+    : {
+        currentTemperature: attrs.current_temperature != null ? `${Math.round(attrs.current_temperature)} °F` : "— °F",
+        targetTemperature: attrs.temperature != null ? `${Math.round(attrs.temperature)} °F` : "— °F",
+        currentTemperatureValue: attrs.current_temperature ?? null,
+        targetTemperatureValue: attrs.temperature ?? null,
+      };
 
   // Use HA value as canonical setpoint
-  _thermSetpoint = target;
+  _thermSetpoint = temps.targetTemperatureValue;
 
   // ── Current temperature ──
   const curEl = document.getElementById("therm-current-temp");
-  if (curEl) curEl.textContent = current != null ? `${Math.round(current)}` : "—";
+  if (curEl) curEl.textContent = temps.currentTemperatureValue != null ? `${Math.round(temps.currentTemperatureValue)}` : "—";
 
   // ── Target / setpoint display ──
   _updateThermSetpointDisplay();
 
   // ── Dial arc fill ──
-  _updateThermDial(current, target, state);
+  _updateThermDial(temps.currentTemperatureValue, temps.targetTemperatureValue, state);
 
   // ── Mode badge inside dial ──
   _updateThermModeBadge(state, isOn);
@@ -16307,7 +16335,7 @@ function _renderThermRoom(i) {
  */
 function _updateThermSetpointDisplay() {
   const small = document.getElementById("therm-set-temp-display");
-  const val   = _thermSetpoint != null ? `${_thermSetpoint}` : "—";
+  const val   = _thermSetpoint != null ? `${Math.round(_thermSetpoint)}` : "—";
   if (small) small.textContent = val;
 }
 
@@ -16334,7 +16362,7 @@ function _updateThermDial(current, target, state) {
   fill.setAttribute("stroke", modeColors[state] || "var(--accent)");
 
   // Arc fill: use target temp to set arc length; fallback to current
-  const MIN = 16, MAX = 32;
+  const MIN = 60, MAX = 90;
   const refTemp = (target ?? current) ?? MIN;
   const pct = Math.max(0, Math.min(1, (refTemp - MIN) / (MAX - MIN)));
 
@@ -16351,9 +16379,9 @@ function _updateThermModeBadge(state, isOn) {
   const badge = document.getElementById("therm-mode-badge");
   if (!badge) return;
 
-  const labels = { cool: "Cooling", heat: "Heating", fan_only: "Fan Only", dry: "Drying", auto: "Auto", off: "" };
-  const colors = { cool: "rgba(120,200,255,0.18)", heat: "rgba(255,140,80,0.18)", fan_only: "rgba(255,255,255,0.1)", dry: "rgba(180,220,255,0.15)", auto: "var(--accent-glow)", off: "" };
-  const textColors = { cool: "#78c8ff", heat: "#ff8c50", fan_only: "rgba(255,255,255,0.55)", dry: "#b4dcff", auto: "var(--accent-hi)", off: "transparent" };
+  const labels = { cool: "Cooling", heat: "Heating", fan_only: "Fan Only", dry: "Drying", auto: "Auto", heat_cool: "Auto", off: "" };
+  const colors = { cool: "rgba(120,200,255,0.18)", heat: "rgba(255,140,80,0.18)", fan_only: "rgba(255,255,255,0.1)", dry: "rgba(180,220,255,0.15)", auto: "var(--accent-glow)", heat_cool: "var(--accent-glow)", off: "" };
+  const textColors = { cool: "#78c8ff", heat: "#ff8c50", fan_only: "rgba(255,255,255,0.55)", dry: "#b4dcff", auto: "var(--accent-hi)", heat_cool: "var(--accent-hi)", off: "transparent" };
 
   badge.textContent        = isOn ? (labels[state] || state) : "";
   badge.style.background   = isOn ? (colors[state]     || "transparent") : "transparent";
@@ -16367,6 +16395,7 @@ function _updateThermModeBadge(state, isOn) {
     fan_only: "radial-gradient(ellipse at 50% 0%, rgba(160,160,180,0.15) 0%, transparent 65%)",
     dry:      "radial-gradient(ellipse at 50% 0%, rgba(80,160,230,0.18) 0%, transparent 65%)",
     auto:     "radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 65%)",
+    heat_cool:"radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 65%)",
     off:      "none",
   };
   const tint = document.getElementById("thermostat-overlay-tint");
@@ -16374,10 +16403,17 @@ function _updateThermModeBadge(state, isOn) {
 }
 
 /**
- * thermAdjust — increments or decrements the pending setpoint and schedules
- * a debounced HA call so rapid taps batch into one request.
+ * thermAdjust — increments or decrements the pending setpoint by one of the
+ * entity's own steps and schedules a debounced HA call so rapid taps batch
+ * into one request.
+ *
+ * `direction` is -1 or +1, not a degree delta: set_temperature calls that
+ * don't land on a multiple of the entity's target_temp_step are silently
+ * dropped by at least the lennoxs30 integration (200 response, no state
+ * change, nothing in the logbook), so the actual delta sent is always
+ * direction * the entity's real step, never a hardcoded 0.5°.
  */
-function thermAdjust(delta) {
+function thermAdjust(direction) {
   haptic("light");
   const ent   = _thermEntities[_thermActive];
   if (!ent) return;
@@ -16388,17 +16424,27 @@ function thermAdjust(delta) {
   // Can't adjust if off
   if (state === "off" || state === "unavailable") return;
 
-  const min = attrs.min_temp ?? 16;
-  const max = attrs.max_temp ?? 32;
+  const step  = HOMIE_CUSTOM.thermostatStepSize ? HOMIE_CUSTOM.thermostatStepSize(d) : 0.5;
+  const delta = direction * step;
 
-  if (_thermSetpoint == null) _thermSetpoint = attrs.temperature ?? 22;
-  _thermSetpoint = Math.max(min, Math.min(max, _thermSetpoint + delta));
+  if (_thermSetpoint == null) {
+    _thermSetpoint = HOMIE_CUSTOM.thermostatTemperatureView
+      ? HOMIE_CUSTOM.thermostatTemperatureView(d)?.targetTemperatureValue
+      : (attrs.temperature ?? 22);
+  }
+  _thermSetpoint = Math.round((_thermSetpoint + delta) / step) * step;
 
   _updateThermSetpointDisplay();
-  _updateThermDial(attrs.current_temperature ?? null, _thermSetpoint, state);
+  const payload = HOMIE_CUSTOM.thermostatSetTemperaturePayload
+    ? HOMIE_CUSTOM.thermostatSetTemperaturePayload(d, delta)
+    : { temperature: _thermSetpoint };
+  const view = HOMIE_CUSTOM.thermostatTemperatureView
+    ? HOMIE_CUSTOM.thermostatTemperatureView(d)
+    : { currentTemperatureValue: attrs.current_temperature ?? null };
+  _updateThermDial(view.currentTemperatureValue, _thermSetpoint, state);
   clearTimeout(_thermSendTimer);
   _thermSendTimer = setTimeout(() => {
-    haService("climate", "set_temperature", { entity_id: ent.entity, temperature: _thermSetpoint });
+    haService("climate", "set_temperature", { entity_id: ent.entity, ...payload });
   }, 800);
 }
 
@@ -17470,12 +17516,14 @@ function _buildOv3AcCard() {
 function _refreshOv3AcCard() {
   const card = document.getElementById("ov3-ac-card");
   const currentEl = document.getElementById("ov3-ac-current");
+  const targetEl = document.getElementById("ov3-ac-target-value");
   const modeEl = document.getElementById("ov3-ac-mode");
-  if (!card || !currentEl || !modeEl) return;
+  if (!card || !currentEl || !targetEl || !modeEl) return;
 
   const state = haGetCached("climate.casasolar_south_zone_1");
   const view = HOMIE_CUSTOM.thermostatLauncherView(state);
   currentEl.textContent = view.temperature;
+  targetEl.textContent = view.targetTemperature;
   modeEl.textContent = view.mode;
   ["mode-cool", "mode-heat", "mode-fan", "mode-dry"].forEach(modeClass => {
     card.classList.remove(modeClass);
@@ -19986,9 +20034,9 @@ _applyDailyI18n();
         <span class="therm-mode-badge" id="therm-mode-badge"></span>
       </div>
       <!-- − button in bottom-left of gap -->
-      <button class="therm-adj-btn therm-adj-btn--minus" onclick="thermAdjust(-0.5)" title="Decrease">−</button>
+      <button class="therm-adj-btn therm-adj-btn--minus" onclick="thermAdjust(-1)" title="Decrease">−</button>
       <!-- + button in bottom-right of gap -->
-      <button class="therm-adj-btn therm-adj-btn--plus"  onclick="thermAdjust(+0.5)" title="Increase">+</button>
+      <button class="therm-adj-btn therm-adj-btn--plus"  onclick="thermAdjust(+1)" title="Increase">+</button>
     </div>
 
     <!-- Mode buttons -->

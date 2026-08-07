@@ -388,7 +388,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.11");
+  assert.equal(version, "20260807.13");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -469,16 +469,174 @@ test("thermostat filtering keeps all entries by default and selects an exact ent
   assert.deepEqual(custom.filterThermostats(entities, "climate.invalid"), []);
 });
 
-test("thermostat launcher formats a live cooling state", () => {
+test("thermostat launcher formats live cooling state and setpoint", () => {
   const custom = loadCustomizations();
 
   assert.deepEqual(
     custom.thermostatLauncherView({
       state: "cool",
-      attributes: { current_temperature: 78.4 },
+      attributes: { current_temperature: 78.4, temperature: 72.4 },
     }),
-    { temperature: "78 °F", mode: "Cool", modeClass: "mode-cool" },
+    { temperature: "78 °F", targetTemperature: "72 °F", mode: "Cool", modeClass: "mode-cool" },
   );
+});
+
+test("thermostat view normalizes Fahrenheit display and range setpoints", () => {
+  const custom = loadCustomizations();
+
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      attributes: { temperature_unit: "°C", current_temperature: 20, temperature: 21.5 },
+    }),
+    {
+      currentTemperature: "68 °F",
+      targetTemperature: "71 °F",
+      currentTemperatureValue: 68,
+      targetTemperatureValue: 70.7,
+      hasRange: false,
+      nativeUnit: "°C",
+    },
+  );
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: {
+        temperature_unit: "°F",
+        current_temperature: 78.4,
+        target_temp_low: 69.1,
+        target_temp_high: 75.9,
+      },
+    }),
+    {
+      currentTemperature: "78 °F",
+      targetTemperature: "73 °F",
+      currentTemperatureValue: 78.4,
+      targetTemperatureValue: 72.5,
+      hasRange: true,
+      nativeUnit: "°F",
+    },
+  );
+  assert.deepEqual(
+    custom.thermostatSetTemperaturePayload({
+      state: "heat_cool",
+      attributes: {
+        temperature_unit: "°C",
+        target_temp_low: 18,
+        target_temp_high: 22,
+      },
+    }, 0.5),
+    {
+      target_temp_high: 22.3,
+      target_temp_low: 18.3,
+    },
+  );
+  assert.deepEqual(
+    custom.thermostatSetTemperaturePayload({
+      attributes: {
+        temperature_unit: "°F",
+        temperature: 72,
+      },
+    }, -1),
+    { temperature: 71 },
+  );
+});
+
+test("thermostat range setpoint follows the active hvac_action bound, not a midpoint average", () => {
+  const custom = loadCustomizations();
+
+  // Real live fixture: climate.casasolar_south_zone_1 while actively cooling. A midpoint
+  // average of 70 would look wrong next to "Cooling" when the unit is really working
+  // toward 78.
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: {
+        current_temperature: 78,
+        target_temp_high: 78,
+        target_temp_low: 62,
+        hvac_action: "cooling",
+      },
+    }),
+    {
+      currentTemperature: "78 °F",
+      targetTemperature: "78 °F",
+      currentTemperatureValue: 78,
+      targetTemperatureValue: 78,
+      hasRange: true,
+      nativeUnit: "°F",
+    },
+  );
+  // Home Assistant's climate.set_temperature schema hard-400s a call that supplies only one
+  // of target_temp_high/target_temp_low; both keys must always be present, even though only
+  // the active one's value changes. Confirmed against the real HD21K77727 entity: a
+  // target_temp_high-only call returns 200 with an empty body and never touches the state.
+  assert.deepEqual(
+    custom.thermostatSetTemperaturePayload({
+      state: "heat_cool",
+      attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: "cooling" },
+    }, 0.5),
+    { target_temp_high: 78.5, target_temp_low: 62 },
+  );
+
+  // Same band, actively heating: the low bound is the one in play.
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: {
+        current_temperature: 60,
+        target_temp_high: 78,
+        target_temp_low: 62,
+        hvac_action: "heating",
+      },
+    }).targetTemperature,
+    "62 °F",
+  );
+  assert.deepEqual(
+    custom.thermostatSetTemperaturePayload({
+      state: "heat_cool",
+      attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: "heating" },
+    }, -0.5),
+    { target_temp_high: 78, target_temp_low: 61.5 },
+  );
+
+  // Idle or unreported hvac_action: no single bound is "active", so fall back to shifting
+  // the whole band together, matching the existing no-hvac_action behavior.
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: { current_temperature: 70, target_temp_high: 78, target_temp_low: 62, hvac_action: "idle" },
+    }).targetTemperature,
+    "70 °F",
+  );
+});
+
+test("range-mode set_temperature payloads always carry both bounds, regardless of hvac_action", () => {
+  const custom = loadCustomizations();
+
+  // Home Assistant rejects a set_temperature call carrying only one of
+  // target_temp_high/target_temp_low with a bare 400, for any hvac_action. This must never
+  // regress to a single-key payload again.
+  for (const hvacAction of ["cooling", "heating", "idle", "", "fan"]) {
+    const payload = custom.thermostatSetTemperaturePayload(
+      { state: "heat_cool", attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: hvacAction } },
+      0.5,
+    );
+    assert.deepEqual(Object.keys(payload).sort(), ["target_temp_high", "target_temp_low"]);
+  }
+});
+
+test("thermostat step size follows the entity's declared target_temp_step", () => {
+  const custom = loadCustomizations();
+
+  // Real fixture: both CasaSolar zones (lennoxs30) declare a whole-degree step. A
+  // set_temperature call that doesn't land on a step multiple is silently dropped by that
+  // integration -- no error, no state change -- so this must never fall back to 0.5 when a
+  // real step is declared.
+  assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 1.0 } }), 1);
+  assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 0.5 } }), 0.5);
+  assert.equal(custom.thermostatStepSize({ attributes: {} }), 0.5);
+  assert.equal(custom.thermostatStepSize(null), 0.5);
+  assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 0 } }), 0.5);
 });
 
 test("thermostat launcher treats unavailable and missing states as unavailable", () => {
@@ -486,11 +644,11 @@ test("thermostat launcher treats unavailable and missing states as unavailable",
 
   assert.deepEqual(
     custom.thermostatLauncherView({ state: "unavailable", attributes: {} }),
-    { temperature: "— °F", mode: "Unavailable", modeClass: "" },
+    { temperature: "— °F", targetTemperature: "— °F", mode: "Unavailable", modeClass: "" },
   );
   assert.deepEqual(
     custom.thermostatLauncherView(null),
-    { temperature: "— °F", mode: "Unavailable", modeClass: "" },
+    { temperature: "— °F", targetTemperature: "— °F", mode: "Unavailable", modeClass: "" },
   );
 });
 

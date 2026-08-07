@@ -30,22 +30,132 @@
     return configured.filter((entry) => entry && entry.entity === entityId);
   }
 
+  function thermostatTemperatureUnit(state) {
+    return state && state.attributes && state.attributes.temperature_unit === "°C" ? "°C" : "°F";
+  }
+
+  function thermostatToFahrenheit(value, unit) {
+    const numeric = numericState(value);
+    if (numeric === null) return null;
+    return unit === "°C" ? (numeric * 9 / 5) + 32 : numeric;
+  }
+
+  function thermostatFromFahrenheit(value, unit) {
+    const numeric = numericState(value);
+    if (numeric === null) return null;
+    return unit === "°C" ? ((numeric - 32) * 5 / 9) : numeric;
+  }
+
+  function thermostatTemperatureView(state) {
+    const attributes = state && state.attributes ? state.attributes : {};
+    const mode = (state && state.state) || attributes.hvac_mode || "";
+    const hvacAction = attributes.hvac_action || "";
+    const unit = thermostatTemperatureUnit(state);
+    const current = thermostatToFahrenheit(attributes.current_temperature, unit);
+    const targetTemperature = numericState(attributes.temperature);
+    const targetHigh = numericState(attributes.target_temp_high);
+    const targetLow = numericState(attributes.target_temp_low);
+    const isRangeMode = targetHigh !== null && targetLow !== null && (mode === "heat_cool" || mode === "auto");
+    // A dual-setpoint band has no single "the" setpoint. hvac_action reports which bound
+    // the equipment is actually working toward right now, so prefer that one; with no
+    // active action (idle, fan, or unreported) there is no single correct answer, so show
+    // the midpoint of the band instead.
+    const rangeTarget = isRangeMode
+      ? (hvacAction === "cooling" ? targetHigh
+        : hvacAction === "heating" ? targetLow
+        : (targetHigh + targetLow) / 2)
+      : null;
+    const target = targetTemperature
+      ?? rangeTarget
+      ?? (mode === "cool" ? targetHigh : null)
+      ?? (mode === "heat" ? targetLow : null)
+      ?? targetHigh
+      ?? targetLow;
+
+    return {
+      currentTemperature: current === null ? "— °F" : `${Math.round(current)} °F`,
+      targetTemperature: target === null ? "— °F" : `${Math.round(thermostatToFahrenheit(target, unit))} °F`,
+      currentTemperatureValue: current,
+      targetTemperatureValue: target === null ? null : thermostatToFahrenheit(target, unit),
+      hasRange: targetHigh !== null && targetLow !== null,
+      nativeUnit: unit,
+    };
+  }
+
+  function thermostatStepSize(state) {
+    const attributes = state && state.attributes ? state.attributes : {};
+    const step = numericState(attributes.target_temp_step);
+    // lennoxs30 (and climate entities generally) silently drop set_temperature calls that
+    // don't land on a multiple of target_temp_step -- no error, no state change, nothing.
+    // Half a degree is only a safe default when the entity doesn't declare a step at all.
+    return step !== null && step > 0 ? step : 0.5;
+  }
+
+  function thermostatSetTemperaturePayload(state, deltaF) {
+    const attributes = state && state.attributes ? state.attributes : {};
+    const mode = (state && state.state) || attributes.hvac_mode || "";
+    const hvacAction = attributes.hvac_action || "";
+    const unit = thermostatTemperatureUnit(state);
+    const targetTemperature = numericState(attributes.temperature);
+    const targetHigh = numericState(attributes.target_temp_high);
+    const targetLow = numericState(attributes.target_temp_low);
+    const roundedDelta = Math.round(deltaF * 2) / 2;
+
+    function shifted(value) {
+      const nextF = (thermostatToFahrenheit(value, unit) ?? value) + roundedDelta;
+      const next = thermostatFromFahrenheit(nextF, unit);
+      return next === null ? undefined : Math.round(next * 10) / 10;
+    }
+
+    if (targetHigh !== null && targetLow !== null && (mode === "heat_cool" || mode === "auto")) {
+      // Home Assistant's climate.set_temperature schema requires target_temp_high and
+      // target_temp_low together -- supplying only one is a hard 400 at the service-call
+      // validation layer, before it ever reaches the entity. So both keys are always present;
+      // only the bound thermostatTemperatureView is currently displaying actually changes value,
+      // keeping the on-screen number and the value sent in sync. With no single active bound
+      // (idle/fan/unreported), shift the whole band together to preserve its width.
+      if (hvacAction === "cooling") {
+        return { target_temp_high: shifted(targetHigh), target_temp_low: targetLow };
+      }
+      if (hvacAction === "heating") {
+        return { target_temp_high: targetHigh, target_temp_low: shifted(targetLow) };
+      }
+      return {
+        target_temp_high: shifted(targetHigh),
+        target_temp_low: shifted(targetLow),
+      };
+    }
+
+    if (mode === "cool" && targetHigh !== null) {
+      return { target_temp_high: shifted(targetHigh) };
+    }
+
+    if (mode === "heat" && targetLow !== null) {
+      return { target_temp_low: shifted(targetLow) };
+    }
+
+    const base = targetTemperature ?? targetHigh ?? targetLow ?? 22;
+    return { temperature: shifted(base) };
+  }
+
   function thermostatLauncherView(state) {
     if (!state || state.state === "unknown" || state.state === "unavailable") {
-      return { temperature: "— °F", mode: "Unavailable", modeClass: "" };
+      return { temperature: "— °F", targetTemperature: "— °F", mode: "Unavailable", modeClass: "" };
     }
     const modeViews = {
       cool: { mode: "Cool", modeClass: "mode-cool" },
       heat: { mode: "Heat", modeClass: "mode-heat" },
       fan_only: { mode: "Fan Only", modeClass: "mode-fan" },
+      heat_cool: { mode: "Auto", modeClass: "" },
       dry: { mode: "Dry", modeClass: "mode-dry" },
       auto: { mode: "Auto", modeClass: "" },
       off: { mode: "Off", modeClass: "" },
     };
     const view = modeViews[state.state] || { mode: "Unavailable", modeClass: "" };
-    const current = numericState(state.attributes && state.attributes.current_temperature);
+    const temperatures = thermostatTemperatureView(state);
     return {
-      temperature: current === null ? "— °F" : `${Math.round(current)} °F`,
+      temperature: temperatures.currentTemperature,
+      targetTemperature: temperatures.targetTemperature,
       ...view,
     };
   }
@@ -268,6 +378,12 @@
     statColumns,
     sunEventTimes,
     thermostatLauncherView,
+    thermostatSetTemperaturePayload,
+    thermostatStepSize,
+    thermostatTemperatureUnit,
+    thermostatTemperatureView,
+    thermostatToFahrenheit,
+    thermostatFromFahrenheit,
     weatherUvValue,
   };
 });

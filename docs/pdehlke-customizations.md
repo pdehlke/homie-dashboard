@@ -54,6 +54,43 @@ The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
 Fahrenheit `heat_cool` thermostat entities.
 
+## Thermostat Overlay: Dual-Setpoint and Step-Size Fix (release `20260807.13`)
+
+Both real thermostats (`climate.casasolar_south_zone_1`, `climate.casasolar_north_zone_1`, the
+`lennoxs30` integration) run in `heat_cool` mode essentially all the time, reporting
+`target_temp_high` and `target_temp_low` rather than a single `temperature` attribute. The
+dedicated overlay built for the Climate routing above was itself written assuming a single
+setpoint, so it inherited the exact problem it was built to avoid: the target field showed
+`— °F` until the first tap, then seeded from a hardcoded `22` and never reached the real unit.
+
+Two separate defects, both confirmed against the live entities before and after the fix:
+
+- `climate.set_temperature` requires `target_temp_high` and `target_temp_low` together; Home
+  Assistant's own service schema rejects a call that supplies only one of them with a bare
+  `400`. `thermostatSetTemperaturePayload` now always sends both, changing only the bound that
+  `hvac_action` (`cooling` / `heating`) says the equipment is actively working toward, and
+  shifting the whole band together only when there is no single active bound (idle/fan/unknown).
+- Both zones declare `target_temp_step: 1.0`. A `set_temperature` call that does not land on a
+  multiple of that step is silently dropped by the `lennoxs30` integration: HTTP `200`, empty
+  response body, no logbook entry, no state change, nothing. The dial's +/- buttons were
+  hardcoded to a 0.5° delta. `thermostatStepSize` now reads the real entity's
+  `target_temp_step` (falling back to 0.5 only when an entity doesn't declare one), and
+  `thermAdjust` sends `direction * that step`.
+
+`thermostatTemperatureView`'s displayed target follows the same `hvac_action` logic, so the
+number shown next to "Cooling" is the bound the AC is actually cooling to, not a midpoint
+average of the whole band.
+
+Note the payload always carries both `target_temp_high` and `target_temp_low` keys even though
+only one value changes; an earlier version of this fix sent only the changed key and was
+confirmed, via a live browser test against the deployed asset, to 400 every single time. Verified
+end to end against the real entities: direct `climate.set_temperature` calls, then an actual
+Playwright tap through the deployed dashboard, confirmed by the entity's `target_temp_high`
+changing and `last_updated` advancing. Also confirms release `.11` → `.12` → `.13`: redeploying
+`homie-custom.js` under an unchanged version token served the browser's cached pre-fix copy
+despite the live file on disk being correct. The version token must change on every deploy that
+touches a nested asset's content, not just on releases meant for the user to see.
+
 ## Temperature Display Convention
 
 All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations
