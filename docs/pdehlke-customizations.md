@@ -50,6 +50,9 @@ until a real alarm integration replaces it.
 - make the Solar condition panel informational rather than interactive
 - add an expand button to Overview C's floors card, opening the thermostat overlay filtered to
   whichever floor (Main House or Office Wing) is currently visible
+- show the floors card's Target temperature in a 2x2 grid (Temp/Target, Humid/PM2.5) on its main
+  faces, and remove the bottom-of-column Main House thermostat launcher card the floors card's
+  expand button superseded
 - install the accepted presentation defaults once per browser
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
