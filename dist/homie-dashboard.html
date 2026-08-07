@@ -5528,9 +5528,10 @@
     justify-content: space-between;
   }
 
-  /* ── OV3 Garden card (col 3, row 3) ─────────────────────────────────────── */
+  /* ── OV3 Garden card (col 2, row 2) ─────────────────────────────────────── */
   .ov3-garden-card {
-    flex: 0 0 204px;
+    grid-column: 2;
+    grid-row: 2;
     flex-shrink: 0;
     border-radius: 14px;
     background: linear-gradient(145deg, rgba(20,50,20,0.92) 0%, rgba(10,35,12,0.88) 100%);
@@ -5674,10 +5675,9 @@
   .ov3-garden-irr-btn.on .ov3-garden-irr-track::after { transform: translateX(16px); }
   .ov3-garden-irr-btn.on .ov3-garden-irr-label { color: rgba(255,255,255,0.85); }
 
-  /* ── OV3 Floors card (col 3, row 2) ─────────────────────────────────────── */
+  /* ── OV3 Floors card (col 3, second card) ───────────────────────────────── */
   .ov3-floors-card {
-    grid-column: 2;
-    grid-row: 2;
+    flex: 0 0 204px;
     flex-shrink: 0;
     border-radius: 14px;
     background: linear-gradient(145deg, rgba(80,50,120,0.55) 0%, rgba(50,30,90,0.50) 100%);
@@ -6004,9 +6004,7 @@
     backdrop-filter: blur(4px);
   }
 
-  /* Mini-cards grid — col 3, rows 3-4 */
-  /* ── OV3 AC Card (col 3, rows 4–5) ─────────────────────────────────────── */
-  /* ── AC Card ─────────────────────────────────────────────────────────────── */
+  /* ── OV3 Main House thermostat launcher (col 3, fourth card) ────────────── */
   .ov3-ac-card {
     flex: 0 0 212px;
     border-radius: 20px;
@@ -6017,267 +6015,40 @@
     flex-direction: column;
     position: relative;
     transition: background-color 0.5s ease, border-color 0.5s ease;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 18px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
   .ov3-ac-card.mode-cool { background-color: rgba(12,36,48,0.97); border-color: rgba(92,160,184,0.4);  }
   .ov3-ac-card.mode-heat { background-color: rgba(48,16,10,0.97); border-color: rgba(220,90,60,0.45);  }
   .ov3-ac-card.mode-fan  { background-color: rgba(10,38,32,0.97); border-color: rgba(80,190,160,0.45); }
   .ov3-ac-card.mode-dry  { background-color: rgba(40,32,8,0.97);  border-color: rgba(200,165,60,0.45); }
 
-  .ov3-ac-viewport {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-    min-height: 0;
-  }
-
-  /* Each slide = one climate entity */
-  .ov3-ac-slide {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 11px 13px 10px;
-    gap: 0;
-    transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
-    will-change: transform;
-  }
-
-  /* ── Row 1: header (name + power btn) ── */
-  .ov3-ac-header {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    flex-shrink: 0;
-    margin-bottom: 6px;
-  }
-  .ov3-ac-icon-wrap {
-    width: 24px; height: 24px;
-    border-radius: 7px;
-    background: rgba(100,160,255,0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.3s;
-  }
-  .ov3-ac-slide.mode-cool .ov3-ac-icon-wrap { background: rgba(92,160,184,0.2);  }
-  .ov3-ac-slide.mode-heat .ov3-ac-icon-wrap { background: rgba(220,90,60,0.2);   }
-  .ov3-ac-slide.mode-fan  .ov3-ac-icon-wrap { background: rgba(80,190,160,0.2);  }
-  .ov3-ac-slide.mode-dry  .ov3-ac-icon-wrap { background: rgba(200,165,60,0.2);  }
   .ov3-ac-name {
     font-size: 10px;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.22em;
     font-weight: 500;
-    color: rgba(255,255,255,0.9);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-    min-width: 0;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.72);
   }
-  .ov3-ac-power {
-    width: 24px; height: 24px;
-    border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.13);
-    background: rgba(255,255,255,0.05);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background 0.2s, border-color 0.2s;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .ov3-ac-power:active { transform: scale(0.9); }
-  .ov3-ac-slide.is-on .ov3-ac-power {
-    background: var(--accent-glow);
-    border-color: rgba(255,255,255,0.25);
-  }
-  .ov3-ac-slide.is-on .ov3-ac-power svg { stroke: var(--accent-hi); }
-
-  /* ── Center block: big current temp ── */
-  .ov3-ac-center {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0;
-    min-height: 0;
-    padding-bottom: 14px;
-  }
-  /* push temp up, target group sits lower */
-  .ov3-ac-center > div:first-child {
-    margin-bottom: 18px;
-  }
-  .ov3-ac-cur-val {
+  .ov3-ac-current {
     font-size: 2.6rem;
     font-weight: 300;
-    color: #fff;
     letter-spacing: -0.03em;
     line-height: 1;
-  }
-  .ov3-ac-cur-unit {
-    font-size: 1.1rem;
-    color: rgba(255,255,255,0.45);
-    font-weight: 300;
-    position: relative;
-    top: -1rem;
-  }
-  /* ── Target temp nudge row — centered ── */
-  .ov3-ac-tgt-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .ov3-ac-tgt-label {
-    font-size: 7.5px;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.3);
-    text-align: center;
-    line-height: 1;
-  }
-  .ov3-ac-nudge {
-    width: 26px; height: 26px;
-    border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(255,255,255,0.05);
-    color: rgba(255,255,255,0.6);
-    font-size: 16px;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background 0.15s, transform 0.1s;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
-  }
-  .ov3-ac-nudge:active { background: rgba(255,255,255,0.12); transform: scale(0.9); }
-  .ov3-ac-slide.is-on .ov3-ac-nudge { border-color: rgba(255,255,255,0.18); }
-  .ov3-ac-tgt-val {
-    font-size: 1.15rem;
-    font-weight: 400;
     color: #fff;
-    letter-spacing: 0.04em;
-    min-width: 36px;
-    text-align: center;
-    line-height: 1;
   }
-  .ov3-ac-tgt-val .ov3-ac-cur-unit {
-    font-size: 0.65rem;
-    top: -0.4rem;
-  }
-  .ov3-ac-slide.mode-cool .ov3-ac-tgt-val { color: #7cc8e0; }
-  .ov3-ac-slide.mode-heat .ov3-ac-tgt-val { color: #f07050; }
-  .ov3-ac-slide.mode-fan  .ov3-ac-tgt-val { color: #50c8a8; }
-  .ov3-ac-slide.mode-dry  .ov3-ac-tgt-val { color: #d4ae50; }
-
-  /* ── Bottom: mode buttons ── */
-  .ov3-ac-modes {
-    display: flex;
-    gap: 4px;
-    flex-wrap: nowrap;
-    flex-shrink: 0;
-    margin-bottom: 4px;
-  }
-  .ov3-ac-mode-btn {
-    flex: 1;
-    height: 24px;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    color: rgba(255,255,255,0.35);
-    font-size: 8px;
-    letter-spacing: 0.1em;
+  .ov3-ac-mode {
+    font-size: 9px;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    padding: 0 4px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.2s, border-color 0.2s, color 0.2s;
-    -webkit-tap-highlight-color: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-  }
-  .ov3-ac-mode-btn.active {
-    background: rgba(92,160,184,0.2); border-color: rgba(92,160,184,0.55); color: #7cc8e0;
-  }
-  .ov3-ac-slide.mode-heat .ov3-ac-mode-btn.active {
-    background: rgba(220,90,60,0.2); border-color: rgba(220,90,60,0.55); color: #f07050;
-  }
-  .ov3-ac-slide.mode-fan .ov3-ac-mode-btn.active {
-    background: rgba(80,190,160,0.2); border-color: rgba(80,190,160,0.55); color: #50c8a8;
-  }
-  .ov3-ac-slide.mode-dry .ov3-ac-mode-btn.active {
-    background: rgba(200,165,60,0.2); border-color: rgba(200,165,60,0.55); color: #d4ae50;
+    color: rgba(255,255,255,0.55);
   }
 
-  /* ── Fan speed row — mirrors mode row style ── */
-  .ov3-ac-fans {
-    display: flex;
-    gap: 4px;
-    flex-wrap: nowrap;
-    flex-shrink: 0;
-  }
-  .ov3-ac-fan-btn {
-    flex: 1;
-    height: 22px;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    color: rgba(255,255,255,0.35);
-    font-size: 7.5px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 0 2px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.2s, border-color 0.2s, color 0.2s;
-    -webkit-tap-highlight-color: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .ov3-ac-fan-btn.active {
-    background: rgba(92,160,184,0.2); border-color: rgba(92,160,184,0.55); color: #7cc8e0;
-  }
-  .ov3-ac-slide.mode-cool .ov3-ac-fan-btn.active {
-    background: rgba(92,160,184,0.2); border-color: rgba(92,160,184,0.55); color: #7cc8e0;
-  }
-  .ov3-ac-slide.mode-heat .ov3-ac-fan-btn.active {
-    background: rgba(220,90,60,0.2); border-color: rgba(220,90,60,0.55); color: #f07050;
-  }
-  .ov3-ac-slide.mode-dry .ov3-ac-fan-btn.active {
-    background: rgba(200,165,60,0.2); border-color: rgba(200,165,60,0.55); color: #d4ae50;
-  }
-
-  /* Dot indicators */
-  .ov3-ac-dots {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 5px;
-    padding-bottom: 7px;
-    flex-shrink: 0;
-  }
-  .ov3-ac-dot {
-    width: 4px; height: 4px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.18);
-    transition: background 0.2s, transform 0.2s;
-  }
-  .ov3-ac-dot.active {
-    background: rgba(120,185,255,0.8);
-    transform: scale(1.4);
-  }
-
-  /* ─── OV3 PURIFIER CARD (col 2, row 2) ─────────────────────────────────── */
+  /* ─── OV3 PURIFIER CARD ────────────────────────────────────────────────── */
   .ov3-pur-card {
     border-radius: 20px;
     background: rgba(10,28,28,0.95);
@@ -8369,15 +8140,13 @@
         <div class="ov3-greeting-bubbles" id="ov3-greeting-bubbles"></div>
       </div>
 
-      <!-- Floors card (col 2, row 2) -->
-      <div class="ov3-floors-card" id="ov3-floors-card">
-        <div class="ov3-floors-header">
-          <div class="ov3-floors-active-name" id="ov3-floors-active-name"></div>
+      <!-- Garden card (col 2, row 2) -->
+      <div class="ov3-garden-card" id="ov3-garden-card">
+        <div class="ov3-garden-scroll" id="ov3-garden-scroll">
+          <!-- populated by _buildOv3GardenCard() -->
         </div>
-        <div class="ov3-floors-scroll" id="ov3-floors-scroll">
-          <!-- populated by _buildOv3FloorsCard() -->
-        </div>
-        <div class="ov3-floors-dots" id="ov3-floors-dots"></div>
+        <div class="ov3-garden-irrigation-row" id="ov3-garden-irrigation-row"></div>
+        <div class="ov3-garden-dots" id="ov3-garden-dots"></div>
       </div>
 
       <!-- Col 3 wrapper — flex column, spans all rows -->
@@ -8442,13 +8211,15 @@
           </div>
         </div>
 
-        <!-- Garden card (2nd) -->
-        <div class="ov3-garden-card" id="ov3-garden-card">
-          <div class="ov3-garden-scroll" id="ov3-garden-scroll">
-            <!-- populated by _buildOv3GardenCard() -->
+        <!-- Floors card (2nd) -->
+        <div class="ov3-floors-card" id="ov3-floors-card">
+          <div class="ov3-floors-header">
+            <div class="ov3-floors-active-name" id="ov3-floors-active-name"></div>
           </div>
-          <div class="ov3-garden-irrigation-row" id="ov3-garden-irrigation-row"></div>
-          <div class="ov3-garden-dots" id="ov3-garden-dots"></div>
+          <div class="ov3-floors-scroll" id="ov3-floors-scroll">
+            <!-- populated by _buildOv3FloorsCard() -->
+          </div>
+          <div class="ov3-floors-dots" id="ov3-floors-dots"></div>
         </div>
 
         <!-- Purifier card (3rd) — populated by _buildOv3PurifierCard() -->
@@ -8459,12 +8230,11 @@
           <div class="ov3-pur-dots" id="ov3-pur-dots"></div>
         </div>
 
-        <!-- AC card (4th) — populated by _buildOv3AcCard() -->
-        <div class="ov3-ac-card" id="ov3-ac-card">
-          <div class="ov3-ac-viewport" id="ov3-ac-viewport">
-            <!-- slides injected by _buildOv3AcCard() -->
-          </div>
-          <div class="ov3-ac-dots" id="ov3-ac-dots"></div>
+        <!-- Main House thermostat launcher (4th) -->
+        <div class="ov3-ac-card" id="ov3-ac-card" onclick="openThermostat('climate.casasolar_south_zone_1')">
+          <div class="ov3-ac-name" id="ov3-ac-name">Main House</div>
+          <span class="ov3-ac-current" id="ov3-ac-current">—</span>
+          <span class="ov3-ac-mode" id="ov3-ac-mode">Unavailable</span>
         </div>
 
       </div><!-- /.ov3-col3 -->
@@ -8767,7 +8537,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260807.10";
+      const HOMIE_ASSET_VERSION = "20260807.11";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -16407,6 +16177,7 @@ let _thermEntities  = [];   // [{ label, entity }]
 let _thermActive    = 0;    // index of currently selected room tab
 let _thermSetpoint  = null; // pending setpoint (user hasn't sent yet if dragging)
 let _thermSendTimer = null; // debounce timer for HA calls
+let _thermEntityFilter = null;
 
 /**
  * _buildThermEntities — scans CONFIG.controls for climate.* sub-entities
@@ -16427,11 +16198,16 @@ function _buildThermEntities() {
 }
 
 /** openThermostat — shows the thermostat fullscreen overlay */
-function openThermostat() {
+function openThermostat(entityId) {
   haptic("light");
   _closeLauncher();
+  _thermEntityFilter = entityId || null;
   _buildThermEntities();
-  if (!_thermEntities.length) return; // no climate entities configured
+  _thermEntities = HOMIE_CUSTOM.filterThermostats(_thermEntities, _thermEntityFilter);
+  if (!_thermEntities.length) {
+    document.getElementById("thermostat-overlay").classList.remove("open");
+    return; // no matching climate entities configured
+  }
 
   _thermActive = 0;
   _buildThermTabs();
@@ -16445,6 +16221,7 @@ function openThermostat() {
 function closeThermostat() {
   haptic("light");
   document.getElementById("thermostat-overlay").classList.remove("open");
+  _thermEntityFilter = null;
 }
 
 /** _buildThermTabs — renders one tab button per climate entity */
@@ -16880,7 +16657,7 @@ function switchOverview(idx) {
 
 /* Elements where a horizontal drag should NOT switch overview screens —
  * shared by both the touch and mouse-drag handlers below. */
-const OV3_SWIPE_EXCLUDE_SELECTOR = ".popup-overlay.open, #daily-overlay, #thermostat-overlay, #photoframe-overlay, #nowplaying-fs-overlay, .sensor-row, .ov2-sensor-strip, .ov3-wx-hourly, .ov3-wx-scroll, .ov3-floors-scroll, .ov3-garden-scroll, .ov3-sec-scroll, .mush-ac-card, #ov3-ac-viewport, #ov3-ac-card, #ov3-pur-viewport, #ov3-pur-card";
+const OV3_SWIPE_EXCLUDE_SELECTOR = ".popup-overlay.open, #daily-overlay, #thermostat-overlay, #photoframe-overlay, #nowplaying-fs-overlay, .sensor-row, .ov2-sensor-strip, .ov3-wx-hourly, .ov3-wx-scroll, .ov3-floors-scroll, .ov3-garden-scroll, .ov3-sec-scroll, .mush-ac-card, #ov3-ac-card, #ov3-pur-viewport, #ov3-pur-card";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Swipe gesture — swipe left anywhere on the screen to go to screen 2,
@@ -17672,12 +17449,11 @@ function _ov3PurRefreshCard() {
 function _refreshOv3PurifierCard() {
   if (!_ov3PurEntities.length) return;
   _ov3PurEntities.forEach((ent, idx) => {
-    const d    = haGetCached(ent.entity);
+    const d = haGetCached(ent.entity);
     if (!d) return;
     const isOn = d.state === "on";
     const prev = _purifierCardState.get(ent.entity);
     const reportedPct = d.attributes?.percentage != null ? Math.round(d.attributes.percentage) : 0;
-    // When on, never show 0% — use cached pct until HA reports a real value
     const pct = isOn
       ? (reportedPct > 0 ? reportedPct : (prev?.pct ?? 50))
       : (prev?.pct ?? 0);
@@ -17687,309 +17463,24 @@ function _refreshOv3PurifierCard() {
   _ov3PurRefreshCard();
 }
 
-let _ov3AcEntities  = [];  // [{ label, entity }]
-let _ov3AcSlide     = 0;   // currently visible slide index
-let _ov3AcSendTimer = null;
-
-/* Target temperature range */
-const _AC_MIN       = 16;
-const _AC_MAX       = 32;
-
-/* Scan CONFIG.controls for climate.* entities */
-function _gatherOv3AcEntities() {
-  _ov3AcEntities = [];
-  (CONFIG.controls || []).forEach(ctrl => {
-    const subs = ctrl.subGroups
-      ? ctrl.subGroups.flatMap(g => g.subEntities || [])
-      : (ctrl.subEntities || []);
-    subs.forEach(s => {
-      if (s.entity && s.entity.startsWith("climate.")) {
-        _ov3AcEntities.push({ label: s.label, entity: s.entity });
-      }
-    });
-  });
-}
-
-/* Build/rebuild the entire card */
 function _buildOv3AcCard() {
-  _gatherOv3AcEntities();
-  _ov3AcSlide = 0;  // always reset to first slide on rebuild
-  const card     = document.getElementById("ov3-ac-card");
-  const viewport = document.getElementById("ov3-ac-viewport");
-  const dotsWrap = document.getElementById("ov3-ac-dots");
-  if (!viewport || !card) return;
-
-  if (!_ov3AcEntities.length) {
-    card.style.display = "none";
-    return;
-  }
-  card.style.display = "";
-
-  viewport.innerHTML = _ov3AcEntities.map((ent, idx) => {
-    const d     = haGetCached(ent.entity);
-    const attrs = d ? (d.attributes || {}) : {};
-    const state = d ? d.state : "off";
-    const isOn  = state !== "off" && state !== "unavailable" && state !== "unknown";
-    const cur   = attrs.current_temperature ?? null;
-    const tgt   = attrs.temperature ?? null;
-    const modeLabel = state === "fan_only" ? "Fan" : state === "off" ? "Off" : (state.charAt(0).toUpperCase() + state.slice(1));
-    const statusText = isOn
-      ? (tgt != null ? `${modeLabel} · to ${tgt}°` : modeLabel)
-      : "Off";
-    const modeCls = isOn ? ` mode-${state === "fan_only" ? "fan" : state}` : "";
-    const onCls   = isOn ? " is-on" : "";
-
-    const modeIcons = {
-      cool:     `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>`,
-      heat:     `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`,
-      fan_only: `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 12 C12 7 16 4 17 7 C18 10 15 11 12 12Z"/><path d="M12 12 C17 12 20 16 17 17 C14 18 13 15 12 12Z"/><path d="M12 12 C12 17 8 20 7 17 C6 14 9 13 12 12Z"/><path d="M12 12 C7 12 4 8 7 7 C10 6 11 9 12 12Z"/></svg>`,
-      dry:      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 Q12 3 7 10 Q4.5 14 4.5 16 A7.5 7.5 0 0 0 19.5 16 Q19.5 14 17 10 Z"/></svg>`,
-    };
-    const fanMode  = attrs.fan_mode || "auto";
-    const fanBtns  = ["auto","low","medium","high"].map(f => {
-      const act = isOn && fanMode === f ? " active" : "";
-      return `<button class="ov3-ac-fan-btn${act}" onclick="event.stopPropagation();_ov3AcSetFan(${idx},'${f}')">${f}</button>`;
-    }).join("");
-
-    const modeBtns = ["cool","heat","fan_only","dry"].map(m => {
-      const lbl = m === "fan_only" ? "Fan" : m.charAt(0).toUpperCase() + m.slice(1);
-      const act  = isOn && state === m ? " active" : "";
-      return `<button class="ov3-ac-mode-btn${act}" onclick="event.stopPropagation();_ov3AcSetMode(${idx},'${m}')">${modeIcons[m] || ""}${lbl}</button>`;
-    }).join("");
-
-    return `<div class="ov3-ac-slide${modeCls}${onCls}" id="ov3-ac-slide-${idx}" data-entity="${ent.entity}" data-idx="${idx}">
-
-      <!-- Header: icon · name · power -->
-      <div class="ov3-ac-header">
-        <div class="ov3-ac-icon-wrap" id="ov3-ac-icon-${idx}">${_ov3AcModeIcon(state, isOn)}</div>
-        <div class="ov3-ac-name" id="ov3-ac-name-${idx}">${escapeHtml(ent.label)}</div>
-        <div class="ov3-ac-power" id="ov3-ac-pwr-${idx}" onclick="event.stopPropagation();_ov3AcTogglePower(${idx})">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2.2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-        </div>
-      </div>
-
-      <!-- Center: big current temp + target nudge -->
-      <div class="ov3-ac-center">
-        <div>
-          <span class="ov3-ac-cur-val" id="ov3-ac-cur-${idx}">${cur != null ? Math.round(cur) : "—"}</span><span class="ov3-ac-cur-unit">°</span>
-        </div>
-        <div class="ov3-ac-tgt-label">target</div>
-        <div class="ov3-ac-tgt-row">
-          <div class="ov3-ac-nudge" onclick="event.stopPropagation();_ov3AcNudgeTemp(${idx},-0.5)" title="Decrease">−</div>
-          <div class="ov3-ac-tgt-val" id="ov3-ac-tgt-${idx}">${isOn && tgt != null ? `<span class="ov3-ac-tgt-num">${tgt}</span><span class="ov3-ac-cur-unit">°</span>` : "—"}</div>
-          <div class="ov3-ac-nudge" onclick="event.stopPropagation();_ov3AcNudgeTemp(${idx},0.5)" title="Increase">+</div>
-        </div>
-      </div>
-
-      <!-- Bottom: mode + fan speed -->
-      <div class="ov3-ac-modes" id="ov3-ac-modes-${idx}">${modeBtns}</div>
-      <div class="ov3-ac-fans" id="ov3-ac-fans-${idx}">${fanBtns}</div>
-
-    </div>`;
-  }).join("");
-
-  /* Dot indicators */
-  if (dotsWrap) {
-    dotsWrap.style.display = _ov3AcEntities.length > 1 ? "" : "none";
-    dotsWrap.innerHTML = _ov3AcEntities.map((_, i) =>
-      `<div class="ov3-ac-dot${i === _ov3AcSlide ? " active" : ""}" id="ov3-ac-dot-${i}"></div>`
-    ).join("");
-  }
-
-  /* Scroll to current slide */
-  _ov3AcScrollTo(_ov3AcSlide, false);
-
-  /* Attach swipe & drag handlers */
-  _ov3AcAttachHandlers();
-
-  /* Set initial card background — without this the class is never applied on first build */
-  _ov3AcRefreshSlide(_ov3AcSlide);
+  _refreshOv3AcCard();
 }
 
-/* Build mode icon SVG (20×20) */
-function _ov3AcModeIcon(state, isOn) {
-  const modeColors = { cool: "#7cc8e0", heat: "#f07050", fan_only: "#50c8a8", dry: "#d4ae50" };
-  const col  = isOn ? (modeColors[state] || "#7cc8e0") : "rgba(255,255,255,0.4)";
-  const icons = {
-    cool:     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/><circle cx="12" cy="12" r="3"/></svg>`,
-    heat:     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"><path d="M12 2 Q14 6 12 10 Q10 14 12 18 Q14 22 12 22"/><path d="M7 4 Q9 7 7 11 Q5 15 7 18"/><path d="M17 4 Q19 7 17 11 Q15 15 17 18"/></svg>`,
-    fan_only: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"><path d="M12 12 C12 7 16 4 17 7 C18 10 15 11 12 12Z"/><path d="M12 12 C17 12 20 16 17 17 C14 18 13 15 12 12Z"/><path d="M12 12 C12 17 8 20 7 17 C6 14 9 13 12 12Z"/><path d="M12 12 C7 12 4 8 7 7 C10 6 11 9 12 12Z"/><circle cx="12" cy="12" r="1.5" fill="${col}" stroke="none"/></svg>`,
-    dry:      `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"><path d="M12 3 Q12 3 7 10 Q4.5 14 4.5 16 A7.5 7.5 0 0 0 19.5 16 Q19.5 14 17 10 Z"/><line x1="9" y1="17" x2="15" y2="11" stroke-width="1.4"/></svg>`,
-  };
-  const base = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="8" rx="2"/><path d="M7 13v3M12 13v3M17 13v3"/><path d="M6 9h.01M9 9h6"/></svg>`;
-  return icons[state] || base;
-}
-
-/* Scroll viewport to a slide (instant or animated) */
-function _ov3AcScrollTo(idx, animate) {
-  _ov3CarouselScrollTo(".ov3-ac-slide", ".ov3-ac-dot", idx, animate);
-  _ov3AcSlide = idx;
-}
-
-/* Attach touch/mouse swipe on viewport & drag on each dial */
-function _ov3AcAttachHandlers() {
-  _ov3AttachCarouselSwipe("ov3-ac-viewport", {
-    getCurrent: () => _ov3AcSlide,
-    getCount:   () => _ov3AcEntities.length,
-    onChange:   next => _ov3AcScrollTo(next, true),
-  });
-}
-
-/* Nudge target temperature by delta, update UI immediately, debounce HA call */
-function _ov3AcNudgeTemp(idx, delta) {
-  const ent    = _ov3AcEntities[idx];
-  if (!ent) return;
-  const cached = haGetCached(ent.entity);
-  const attrs  = cached ? (cached.attributes || {}) : {};
-  const state  = cached ? cached.state : "off";
-  const isOn   = state !== "off" && state !== "unavailable";
-  if (!isOn) return;
-
-  const min      = attrs.min_temp ?? _AC_MIN;
-  const max      = attrs.max_temp ?? _AC_MAX;
-  const tgtEl    = document.getElementById(`ov3-ac-tgt-${idx}`);
-  const cur      = parseFloat(tgtEl?.textContent) || attrs.temperature || 22;
-  const newTemp  = Math.round(Math.min(max, Math.max(min, cur + delta)) * 2) / 2;
-
-  if (newTemp === cur) return;
-
-  /* Update UI */
-  if (tgtEl)  tgtEl.textContent  = newTemp + "°";
-
-  /* Update caches optimistically */
-  const mem = _acCardState.get(ent.entity) || {};
-  _acCardState.set(ent.entity, { ...mem, targetTemp: newTemp });
-  if (cached) stateCache.set(ent.entity, { ...cached, attributes: { ...attrs, temperature: newTemp } });
-
-  /* Debounced HA call */
-  clearTimeout(_ov3AcSendTimer);
-  _ov3AcSendTimer = setTimeout(() => {
-    haService("climate", "set_temperature", { entity_id: ent.entity, temperature: newTemp });
-  }, 600);
-}
-
-/* Toggle power for a specific slide */
-async function _ov3AcTogglePower(idx) {
-  haptic("medium");
-  const ent    = _ov3AcEntities[idx];
-  if (!ent) return;
-  const cached = haGetCached(ent.entity);
-  const state  = cached ? cached.state : "off";
-  const isOn   = state !== "off" && state !== "unavailable";
-
-  if (isOn) {
-    stateCache.set(ent.entity, { ...cached, state: "off", attributes: { ...(cached.attributes || {}), hvac_mode: "off" } });
-    await haService("climate", "set_hvac_mode", { entity_id: ent.entity, hvac_mode: "off" });
-  } else {
-    const mem      = _acCardState.get(ent.entity);
-    const lastMode = (mem?.mode && mem.mode !== "off") ? mem.mode
-      : (cached?.attributes?.hvac_mode && cached.attributes.hvac_mode !== "off" ? cached.attributes.hvac_mode : "cool");
-    stateCache.set(ent.entity, { ...cached, state: lastMode, attributes: { ...(cached?.attributes || {}), hvac_mode: lastMode } });
-    await haService("climate", "set_hvac_mode", { entity_id: ent.entity, hvac_mode: lastMode });
-  }
-  _ov3AcRefreshSlide(idx);
-}
-
-/* Set mode for a specific slide */
-async function _ov3AcSetMode(idx, mode) {
-  haptic("light");
-  const ent    = _ov3AcEntities[idx];
-  if (!ent) return;
-  const cached = haGetCached(ent.entity);
-  stateCache.set(ent.entity, { ...cached, state: mode, attributes: { ...(cached?.attributes || {}), hvac_mode: mode } });
-  _acCardState.set(ent.entity, { ...(_acCardState.get(ent.entity) || {}), isOn: true, mode });
-  _ov3AcRefreshSlide(idx);
-  await haService("climate", "set_hvac_mode", { entity_id: ent.entity, hvac_mode: mode });
-}
-
-/* Set fan speed for a specific slide */
-async function _ov3AcSetFan(idx, fanSpeed) {
-  haptic("light");
-  const ent    = _ov3AcEntities[idx];
-  if (!ent) return;
-  const cached = haGetCached(ent.entity);
-  stateCache.set(ent.entity, { ...cached, attributes: { ...(cached?.attributes || {}), fan_mode: fanSpeed } });
-  _ov3AcRefreshSlide(idx);
-  await haService("climate", "set_fan_mode", { entity_id: ent.entity, fan_mode: fanSpeed });
-}
-
-/* Re-render a single slide from cache */
-function _ov3AcRefreshSlide(idx) {
-  const ent    = _ov3AcEntities[idx];
-  if (!ent) return;
-  const slide  = document.getElementById(`ov3-ac-slide-${idx}`);
-  if (!slide)  return;
-  const d      = haGetCached(ent.entity);
-  const attrs  = d ? (d.attributes || {}) : {};
-  const state  = d ? d.state : "off";
-  const isOn   = state !== "off" && state !== "unavailable" && state !== "unknown";
-  const cur    = attrs.current_temperature ?? null;
-  const tgt    = attrs.temperature ?? null;
-  const modeName = state === "fan_only" ? "Fan" : (state.charAt(0).toUpperCase() + state.slice(1).replace("_"," "));
-
-  /* Mode/on classes */
-  ["mode-cool","mode-heat","mode-fan","mode-dry","is-on"].forEach(c => slide.classList.remove(c));
-  if (isOn) { slide.classList.add("is-on"); slide.classList.add(`mode-${state === "fan_only" ? "fan" : state}`); }
-
-  /* Icon */
-  const iconEl = document.getElementById(`ov3-ac-icon-${idx}`);
-  if (iconEl) iconEl.innerHTML = _ov3AcModeIcon(state, isOn);
-
-  /* Current temp */
-  const curEl = document.getElementById(`ov3-ac-cur-${idx}`);
-  if (curEl) curEl.textContent = cur != null ? Math.round(cur) : "—";
-
-  /* Target temp */
-  const tgtEl = document.getElementById(`ov3-ac-tgt-${idx}`);
-  if (tgtEl) tgtEl.innerHTML = isOn && tgt != null ? `<span class="ov3-ac-tgt-num">${tgt}</span><span class="ov3-ac-cur-unit">°</span>` : "—";
-
-  /* Mode buttons */
-  ["cool","heat","fan_only","dry"].forEach(m => {
-    document.getElementById(`ov3-ac-modes-${idx}`)
-      ?.querySelector(`[onclick*="'${m}'"]`)
-      ?.classList.toggle("active", isOn && state === m);
-  });
-
-  /* Power button stroke */
-  const pwrEl = document.getElementById(`ov3-ac-pwr-${idx}`);
-  if (pwrEl) {
-    pwrEl.querySelector("svg").setAttribute("stroke", isOn ? "var(--accent-hi)" : "rgba(255,255,255,0.5)");
-  }
-
-  /* Nudge buttons — dim when off */
-  document.querySelectorAll(`#ov3-ac-slide-${idx} .ov3-ac-nudge`).forEach(btn => {
-    btn.style.opacity = isOn ? "1" : "0.3";
-    btn.style.pointerEvents = isOn ? "" : "none";
-  });
-
-  /* Fan speed buttons */
-  const fanMode = attrs.fan_mode || "auto";
-  ["auto","low","medium","high"].forEach(f => {
-    document.getElementById(`ov3-ac-fans-${idx}`)
-      ?.querySelector(`[onclick*="'${f}'"]`)
-      ?.classList.toggle("active", isOn && fanMode === f);
-  });
-
-  /* Card background + border — set via inline style so it always wins over the stylesheet */
-  const card = document.getElementById("ov3-ac-card");
-  if (card && idx === _ov3AcSlide) {
-    const BG = {
-      cool: { bg: "rgba(12,36,48,0.97)",  border: "rgba(92,160,184,0.4)"  },
-      heat: { bg: "rgba(48,16,10,0.97)",  border: "rgba(220,90,60,0.45)"  },
-      fan:  { bg: "rgba(10,38,32,0.97)",  border: "rgba(80,190,160,0.45)" },
-      dry:  { bg: "rgba(40,32,8,0.97)",   border: "rgba(200,165,60,0.45)" },
-    };
-    const modeKey = state === "fan_only" ? "fan" : state;
-    const theme   = isOn && BG[modeKey] ? BG[modeKey] : { bg: "rgba(8,18,36,0.95)", border: "rgba(100,160,255,0.12)" };
-    card.style.backgroundColor = theme.bg;
-    card.style.borderColor     = theme.border;
-  }
-}
-
-/* Refresh all slides from cache (called on state poll) */
 function _refreshOv3AcCard() {
-  if (!_ov3AcEntities.length) return;
-  _ov3AcEntities.forEach((_, idx) => _ov3AcRefreshSlide(idx));
+  const card = document.getElementById("ov3-ac-card");
+  const currentEl = document.getElementById("ov3-ac-current");
+  const modeEl = document.getElementById("ov3-ac-mode");
+  if (!card || !currentEl || !modeEl) return;
+
+  const state = haGetCached("climate.casasolar_south_zone_1");
+  const view = HOMIE_CUSTOM.thermostatLauncherView(state);
+  currentEl.textContent = view.temperature;
+  modeEl.textContent = view.mode;
+  ["mode-cool", "mode-heat", "mode-fan", "mode-dry"].forEach(modeClass => {
+    card.classList.remove(modeClass);
+  });
+  if (view.modeClass) card.classList.add(view.modeClass);
 }
 
 /* Tracks the last-rendered greeting label so the shrink-to-fit loop in

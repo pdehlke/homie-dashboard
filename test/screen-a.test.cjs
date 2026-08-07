@@ -30,6 +30,63 @@ function cssDeclarations(source, selector) {
   return match[1];
 }
 
+function dashboardElementsById(source) {
+  const elements = new Map();
+  const stack = [];
+  const tags = source.matchAll(/<\/?([a-z][\w-]*)([^>]*)>/gi);
+
+  for (const match of tags) {
+    const [markup, tagName, attributes = ""] = match;
+    if (markup.startsWith("</")) {
+      stack.pop();
+      continue;
+    }
+
+    const element = {
+      tagName: tagName.toLowerCase(),
+      id: attributes.match(/\bid="([^"]+)"/)?.[1] || null,
+      className: attributes.match(/\bclass="([^"]+)"/)?.[1] || "",
+      onclick: attributes.match(/\bonclick="([^"]+)"/)?.[1] || "",
+      parent: stack.at(-1) || null,
+    };
+    if (element.id) elements.set(element.id, element);
+    if (!markup.endsWith("/>") && !["input", "meta", "link", "br", "img", "hr"].includes(element.tagName)) {
+      stack.push(element);
+    }
+  }
+
+  return elements;
+}
+
+function loadThermostatOverlay() {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const thermostatSource = source.slice(
+    source.indexOf("let _thermEntities"),
+    source.indexOf("/** _buildThermTabs"),
+  );
+  const overlayClasses = new Set();
+  const context = {
+    CONFIG: loadConfig(),
+    HOMIE_CUSTOM: loadCustomizations(),
+    document: {
+      getElementById: (id) => id === "thermostat-overlay"
+        ? { classList: { add: (name) => overlayClasses.add(name), remove: (name) => overlayClasses.delete(name) } }
+        : null,
+    },
+    haptic: () => {},
+    _closeLauncher: () => {},
+    _buildThermTabs: () => {},
+    _renderThermRoom: () => {},
+    window: {},
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${thermostatSource}\nglobalThis.__thermostat = { openThermostat, closeThermostat, entities: () => _thermEntities };`,
+    context,
+  );
+  return { context, overlayClasses, thermostat: context.__thermostat };
+}
+
 test("Screen A has the agreed balanced status grid", () => {
   const config = loadConfig();
   assert.deepEqual(
@@ -331,7 +388,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.10");
+  assert.equal(version, "20260807.11");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -395,6 +452,113 @@ test("custom actions route Climate and A/V without generic toggles", () => {
   assert.equal(custom.controlOnClick({ action: "media_browser" }, 2), "openMediaBrowser()");
   assert.equal(custom.controlOnClick({ subEntities: [{}] }, 1), "openPopup(1)");
   assert.equal(custom.controlIndex([{ label: "Climate" }, { label: "Lights" }], "Lights"), 1);
+});
+
+test("thermostat filtering keeps all entries by default and selects an exact entity", () => {
+  const custom = loadCustomizations();
+  const entities = [
+    { label: "Main House", entity: "climate.casasolar_south_zone_1" },
+    { label: "Office Wing", entity: "climate.casasolar_north_zone_1" },
+  ];
+
+  assert.deepEqual(custom.filterThermostats(entities), entities);
+  assert.deepEqual(
+    custom.filterThermostats(entities, "climate.casasolar_south_zone_1"),
+    [entities[0]],
+  );
+  assert.deepEqual(custom.filterThermostats(entities, "climate.invalid"), []);
+});
+
+test("thermostat launcher formats a live cooling state", () => {
+  const custom = loadCustomizations();
+
+  assert.deepEqual(
+    custom.thermostatLauncherView({
+      state: "cool",
+      attributes: { current_temperature: 78.4 },
+    }),
+    { temperature: "78 °F", mode: "Cool", modeClass: "mode-cool" },
+  );
+});
+
+test("thermostat launcher treats unavailable and missing states as unavailable", () => {
+  const custom = loadCustomizations();
+
+  assert.deepEqual(
+    custom.thermostatLauncherView({ state: "unavailable", attributes: {} }),
+    { temperature: "— °F", mode: "Unavailable", modeClass: "" },
+  );
+  assert.deepEqual(
+    custom.thermostatLauncherView(null),
+    { temperature: "— °F", mode: "Unavailable", modeClass: "" },
+  );
+});
+
+test("Overview C places Garden in the center and Floors in the right column", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  assert.match(elements.get("ov3-garden-card").parent.className, /\bov3-grid\b/);
+  assert.match(elements.get("ov3-floors-card").parent.className, /\bov3-col3\b/);
+});
+
+test("Overview C launcher opens only Main House, while Overview A remains unfiltered after close", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const launcher = dashboardElementsById(source).get("ov3-ac-card");
+  const { context, overlayClasses, thermostat } = loadThermostatOverlay();
+
+  vm.runInContext(launcher.onclick, context);
+  assert.equal(overlayClasses.has("open"), true);
+  assert.deepEqual(
+    Array.from(thermostat.entities(), (entry) => entry.entity),
+    ["climate.casasolar_south_zone_1"],
+  );
+
+  thermostat.closeThermostat();
+  thermostat.openThermostat();
+  assert.equal(overlayClasses.has("open"), true);
+  assert.deepEqual(
+    Array.from(thermostat.entities(), (entry) => entry.entity),
+    ["climate.casasolar_south_zone_1", "climate.casasolar_north_zone_1"],
+  );
+});
+
+test("an invalid thermostat filter closes an already-open overlay", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const thermostatSource = source.slice(
+    source.indexOf("let _thermEntities"),
+    source.indexOf("/** _buildThermTabs"),
+  );
+  const overlayClasses = new Set(["open"]);
+  const context = {
+    CONFIG: {
+      controls: [{
+        subEntities: [{ label: "Main House", entity: "climate.casasolar_south_zone_1" }],
+      }],
+    },
+    HOMIE_CUSTOM: loadCustomizations(),
+    document: {
+      getElementById: (id) => id === "thermostat-overlay"
+        ? {
+            classList: {
+              add: (name) => overlayClasses.add(name),
+              remove: (name) => overlayClasses.delete(name),
+            },
+          }
+        : null,
+    },
+    haptic: () => {},
+    _closeLauncher: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${thermostatSource}\nglobalThis.__openThermostat = openThermostat;`,
+    context,
+  );
+
+  context.__openThermostat("climate.invalid");
+
+  assert.equal(overlayClasses.has("open"), false);
 });
 
 test("Overview C uses the Now Playing icon for the semantic A/V action", () => {

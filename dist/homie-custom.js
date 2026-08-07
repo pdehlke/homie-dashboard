@@ -24,6 +24,32 @@
     return (controls || []).findIndex((control) => control.label === label);
   }
 
+  function filterThermostats(entities, entityId) {
+    const configured = Array.isArray(entities) ? entities : [];
+    if (!entityId) return configured;
+    return configured.filter((entry) => entry && entry.entity === entityId);
+  }
+
+  function thermostatLauncherView(state) {
+    if (!state || state.state === "unknown" || state.state === "unavailable") {
+      return { temperature: "— °F", mode: "Unavailable", modeClass: "" };
+    }
+    const modeViews = {
+      cool: { mode: "Cool", modeClass: "mode-cool" },
+      heat: { mode: "Heat", modeClass: "mode-heat" },
+      fan_only: { mode: "Fan Only", modeClass: "mode-fan" },
+      dry: { mode: "Dry", modeClass: "mode-dry" },
+      auto: { mode: "Auto", modeClass: "" },
+      off: { mode: "Off", modeClass: "" },
+    };
+    const view = modeViews[state.state] || { mode: "Unavailable", modeClass: "" };
+    const current = numericState(state.attributes && state.attributes.current_temperature);
+    return {
+      temperature: current === null ? "— °F" : `${Math.round(current)} °F`,
+      ...view,
+    };
+  }
+
   function requiresStartConfirmation(control, isOn) {
     return Boolean(control && control.confirmStart && !isOn);
   }
@@ -225,6 +251,7 @@
     chartHistoryMessage,
     controlIndex,
     controlOnClick,
+    filterThermostats,
     installDefaults,
     gridDirection,
     futureForecastDays,
@@ -240,6 +267,7 @@
     startConfirmationMessage,
     statColumns,
     sunEventTimes,
+    thermostatLauncherView,
     weatherUvValue,
   };
 });
