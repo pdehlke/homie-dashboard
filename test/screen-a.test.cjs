@@ -230,10 +230,65 @@ test("customization docs make Fahrenheit permanent for every temperature display
   assert.match(source, /future[^.]*convert[^.]*Fahrenheit/i);
 });
 
-test("Overview C uses the available Home Assistant weather source", () => {
+test("Overview C uses OpenWeatherMap for a five-day future forecast", () => {
   const config = loadConfig();
-  assert.equal(config.weather.entity, "weather.forecast_home");
+  assert.equal(config.weather.entity, "weather.openweathermap");
+  assert.equal(config.weather.uvEntity, "sensor.openweathermap_uv_index");
   assert.equal(config.weather.tempUnit, "°F");
+  assert.equal(config.sun.entity, "sun.sun");
+  assert.equal(config.moon.entity, "sensor.moon_phase");
+});
+
+test("weather details read native sun attributes and the dedicated UV sensor", () => {
+  const custom = loadCustomizations();
+  const sun = {
+    attributes: {
+      next_rising: "2026-08-08T12:43:17+00:00",
+      next_setting: "2026-08-08T02:15:19+00:00",
+    },
+  };
+  assert.deepEqual(custom.sunEventTimes(sun), {
+    riseISO: "2026-08-08T12:43:17+00:00",
+    setISO: "2026-08-08T02:15:19+00:00",
+  });
+  assert.equal(custom.weatherUvValue({ state: "9.66" }, { attributes: {} }), 9.66);
+  assert.equal(custom.weatherUvValue(null, { attributes: { uv_index: 7 } }), 7);
+  assert.equal(custom.weatherUvValue({ state: "unavailable" }, { attributes: {} }), null);
+});
+
+test("five-day weather selection excludes today and returns five future days", () => {
+  const custom = loadCustomizations();
+  const forecast = Array.from({ length: 8 }, (_unused, index) => ({ day: index }));
+  assert.deepEqual(custom.futureForecastDays(forecast, 5), [
+    { day: 1 },
+    { day: 2 },
+    { day: 3 },
+    { day: 4 },
+    { day: 5 },
+  ]);
+});
+
+test("empty configured AQI bands fall back to dashboard defaults", () => {
+  const custom = loadCustomizations();
+  const defaults = [
+    { max: 50, label: "Good" },
+    { max: Infinity, label: "Hazardous" },
+  ];
+  assert.deepEqual(custom.aqiBandForValue([], defaults, 25), defaults[0]);
+  assert.deepEqual(custom.aqiBandForValue([], defaults, 125), defaults[1]);
+});
+
+test("Overview C and expanded Weather use tested forecast and AQI helpers", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const expandedWeather = source.slice(
+    source.indexOf("function _refreshWeatherFS()"),
+    source.indexOf("function openWeatherFS()"),
+  );
+  assert.match(source, /HOMIE_CUSTOM\.futureForecastDays\(forecast,\s*5\)/);
+  assert.match(source, /HOMIE_CUSTOM\.aqiBandForValue\(aqiCfg\.bands,\s*defaultBands,\s*aqi\)/);
+  assert.match(source, /HOMIE_CUSTOM\.sunEventTimes\(sunD,\s*riseD,\s*setD\)/);
+  assert.match(expandedWeather, /const uvD\s*=.*uvEntity/);
+  assert.match(expandedWeather, /const uvValue\s*=\s*HOMIE_CUSTOM\.weatherUvValue\(uvD,\s*d\)/);
 });
 
 test("AQI configuration binds the accepted Geronimo WAQI station sensors", () => {
@@ -276,7 +331,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.7");
+  assert.equal(version, "20260807.10");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);

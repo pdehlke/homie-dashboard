@@ -19,7 +19,13 @@ The accepted Screen A configuration provides:
 - Main House and Office Wing thermostat zones
 - Five irrigation zones, retaining Back Yard while its controller is offline
 - Classic Gold, Screen A, vivid gradient, and 12-hour browser defaults
-- Weather from Home Assistant's available `weather.forecast_home` entity in Fahrenheit
+- Weather from Home Assistant's `weather.openweathermap` entity in Fahrenheit. Overview C depends
+  on OpenWeatherMap's daily response to display five actual future days; Met.no's
+  `weather.forecast_home` currently supplies only two future days and is intentionally not used for
+  this card.
+- Expanded Weather reads sunrise and sunset from `sun.sun`, UV index from
+  `sensor.openweathermap_uv_index`, and moon phase from the native Moon integration's
+  `sensor.moon_phase` entity.
 - AQI and unitless pollutant sub-indices from the Geronimo, Pima County WAQI station
 
 Several `sensor.homie_*` entities are Home Assistant template helpers created

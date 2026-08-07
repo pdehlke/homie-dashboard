@@ -49,10 +49,12 @@ const CONFIG = {
   security: [],
 
   weather: {
-    entity: "weather.forecast_home",
+    entity: "weather.openweathermap",
+    uvEntity: "sensor.openweathermap_uv_index",
     tempUnit: "°F",
   },
   sun: {
+    entity: "sun.sun",
     sunrise: "",
     sunset: "",
     timezone: "America/Phoenix",
@@ -65,7 +67,7 @@ const CONFIG = {
     no2: "sensor.geronimo_pima_county_usa_nitrogen_dioxide",
     bands: [],
   },
-  moon: { entity: "" },
+  moon: { entity: "sensor.moon_phase" },
   homeStats: [
     { label: "Alarm", entity: "sensor.homie_alarm_status" },
     { label: "Lights", entity: "sensor.homie_lights_status" },

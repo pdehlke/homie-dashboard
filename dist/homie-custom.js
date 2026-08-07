@@ -92,6 +92,41 @@
     };
   }
 
+  function aqiBandForValue(configuredBands, defaultBands, value) {
+    const bands = Array.isArray(configuredBands) && configuredBands.length
+      ? configuredBands
+      : defaultBands;
+    if (!Array.isArray(bands) || !bands.length) return null;
+    const numeric = numericState(value);
+    return numeric === null
+      ? bands[0]
+      : bands.find((band) => numeric <= band.max) || bands[bands.length - 1];
+  }
+
+  function futureForecastDays(forecast, count) {
+    if (!Array.isArray(forecast)) return [];
+    return forecast.slice(1, Math.max(0, count) + 1);
+  }
+
+  function sunEventTimes(sunState, sunriseState, sunsetState) {
+    const attributes = sunState && sunState.attributes ? sunState.attributes : {};
+    return {
+      riseISO: sunriseState && sunriseState.state
+        ? sunriseState.state
+        : attributes.next_rising || null,
+      setISO: sunsetState && sunsetState.state
+        ? sunsetState.state
+        : attributes.next_setting || null,
+    };
+  }
+
+  function weatherUvValue(uvState, weatherState) {
+    const dedicated = uvState ? numericState(uvState.state) : null;
+    if (dedicated !== null) return dedicated;
+    const attributes = weatherState && weatherState.attributes ? weatherState.attributes : {};
+    return numericState(attributes.uv_index);
+  }
+
   function solarCardView(statesByType) {
     const states = statesByType || {};
     const liveState = states["live-consumption"];
@@ -185,12 +220,14 @@
   }
 
   return {
+    aqiBandForValue,
     aqiPollutantView,
     chartHistoryMessage,
     controlIndex,
     controlOnClick,
     installDefaults,
     gridDirection,
+    futureForecastDays,
     hourlyPowerAverages,
     lowCarbonPercentage,
     powerKw,
@@ -202,5 +239,7 @@
     solarFullscreenView,
     startConfirmationMessage,
     statColumns,
+    sunEventTimes,
+    weatherUvValue,
   };
 });

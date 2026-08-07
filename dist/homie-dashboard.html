@@ -8767,7 +8767,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260807.7";
+      const HOMIE_ASSET_VERSION = "20260807.10";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -9356,7 +9356,9 @@ function openWeatherPopup() {
   // Stats
   const humidity = attrs.humidity       != null ? attrs.humidity + "%" : "—";
   const pressure = attrs.pressure       != null ? attrs.pressure + " hPa" : "—";
-  const uv       = attrs.uv_index       != null ? attrs.uv_index : "—";
+  const uvD      = haGetCached((CONFIG.weather || {}).uvEntity);
+  const uvValue  = HOMIE_CUSTOM.weatherUvValue(uvD, d);
+  const uv       = uvValue != null ? uvValue : "—";
   const cloud    = attrs.cloud_coverage != null ? attrs.cloud_coverage + "%" : "—";
   let   wind     = "—";
   if (attrs.wind_speed != null) {
@@ -9424,7 +9426,7 @@ function _renderWxForecast(forecast, unit, icons) {
     fRow.innerHTML = `<div style="font-size:9px;letter-spacing:0.15em;color:rgba(255,255,255,0.3);padding:8px 0;">No forecast available</div>`;
     return;
   }
-  const days = forecast.slice(1, 6);
+  const days = HOMIE_CUSTOM.futureForecastDays(forecast, 5);
   const dayHtml = days.map(f => {
     const date    = f.datetime ? new Date(f.datetime) : null;
     const dayName = escapeHtml(date ? fmtWeekdayShort(date) : "—");
@@ -9549,7 +9551,9 @@ function _refreshWeatherFS() {
 
   // Stats
   const humidity = attrs.humidity       != null ? attrs.humidity + "%" : "—";
-  const uv       = attrs.uv_index       != null ? attrs.uv_index : "—";
+  const uvD      = haGetCached((CONFIG.weather || {}).uvEntity);
+  const uvValue  = HOMIE_CUSTOM.weatherUvValue(uvD, d);
+  const uv       = uvValue != null ? uvValue : "—";
   const cloud    = attrs.cloud_coverage != null ? attrs.cloud_coverage + "%" : "—";
   const pressure = attrs.pressure       != null ? Math.round(attrs.pressure) + " hPa" : "—";
   let wind = "—";
@@ -9583,13 +9587,14 @@ function _refreshWeatherFS() {
   const p = _wfsPrevAttrs || _wfsCurrentSnapshot || attrs;
   _setTrend("wfs-trend-humidity",  attrs.humidity,       p.humidity,       1);
   _setTrend("wfs-trend-wind",      attrs.wind_speed,     p.wind_speed,     1);
-  _setTrend("wfs-trend-uv",        attrs.uv_index,       p.uv_index,       0);
+  _setTrend("wfs-trend-uv",        uvValue,              p.uv_index,       0);
   _setTrend("wfs-trend-pressure",  attrs.pressure,       p.pressure,       0.5);
   _setTrend("wfs-trend-cloud",     attrs.cloud_coverage, p.cloud_coverage, 2);
 
   // ── Sun Rise / Sun Set arc ─────────────────────────────────────────────
   (function populateSunArc() {
     const sunCfg = CONFIG.sun || {};
+    const sunD   = sunCfg.entity  ? haGetCached(sunCfg.entity)  : null;
     const riseD  = sunCfg.sunrise ? haGetCached(sunCfg.sunrise) : null;
     const setD   = sunCfg.sunset  ? haGetCached(sunCfg.sunset)  : null;
 
@@ -9600,8 +9605,7 @@ function _refreshWeatherFS() {
       return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true, timeZone: (CONFIG.sun || {}).timezone || "UTC" });
     };
 
-    const riseISO = riseD ? riseD.state : null;
-    const setISO  = setD  ? setD.state  : null;
+    const { riseISO, setISO } = HOMIE_CUSTOM.sunEventTimes(sunD, riseD, setD);
 
     const el = id => document.getElementById(id);
     if (el("wfs-sunrise-val")) el("wfs-sunrise-val").textContent = fmt(riseISO);
@@ -9649,7 +9653,7 @@ function _refreshWeatherFS() {
     if (el("wfs-co")) el("wfs-co").textContent = pollutantView.co;
     if (el("wfs-no2")) el("wfs-no2").textContent = pollutantView.no2;
 
-    const bands = (CONFIG.aqi && CONFIG.aqi.bands) || [
+    const defaultBands = [
       { max:  50, label: "Good",                           color: "#4caf8a", text: "The air is in standard level and is healthy for everyone." },
       { max: 100, label: "Moderate",                       color: "#f0c040", text: "Air quality is acceptable; some pollutants may affect sensitive groups." },
       { max: 150, label: "Unhealthy for Sensitive Groups", color: "#f08040", text: "Members of sensitive groups may experience health effects." },
@@ -9657,9 +9661,9 @@ function _refreshWeatherFS() {
       { max: 300, label: "Very Unhealthy",                 color: "#9c40a0", text: "Health warnings of emergency conditions." },
       { max: Infinity, label: "Hazardous",                 color: "#7e0023", text: "Health alert: everyone may experience serious health effects." },
     ];
-    const band = isNaN(aqi) ? bands[0] : bands.find(b => aqi <= b.max) || bands[bands.length - 1];
+    const band = HOMIE_CUSTOM.aqiBandForValue(aqiCfg.bands, defaultBands, aqi);
 
-    if (el("wfs-aqi-quality")) {
+    if (band && el("wfs-aqi-quality")) {
       el("wfs-aqi-quality").textContent = band.label;
       el("wfs-aqi-quality").style.color = band.color;
     }
@@ -18258,7 +18262,7 @@ function _renderOv3DailyForecast() {
       : `${H} ${escapeHtml(hi)}`;
   }
 
-  row.innerHTML = forecast.slice(1, 6).map(f => {
+  row.innerHTML = HOMIE_CUSTOM.futureForecastDays(forecast, 5).map(f => {
     const date    = f.datetime ? new Date(f.datetime) : null;
     const dayName = escapeHtml(date ? fmtWeekdayShort(date) : "—");
     const fIcon   = (icons[f.condition] || WX_ICON_DEFAULT).replace(/width="32" height="32"/g, 'width="26" height="26"');
@@ -18310,7 +18314,9 @@ function _refreshOv3Weather() {
   // Stats — same fields as the weather popup
   const humidity = attrs.humidity       != null ? attrs.humidity + "%" : "—";
   const pressure = attrs.pressure       != null ? attrs.pressure + " hPa" : "—";
-  const uv       = attrs.uv_index       != null ? attrs.uv_index : "—";
+  const uvD      = haGetCached((CONFIG.weather || {}).uvEntity);
+  const uvValue  = HOMIE_CUSTOM.weatherUvValue(uvD, d);
+  const uv       = uvValue != null ? uvValue : "—";
   const cloud    = attrs.cloud_coverage != null ? attrs.cloud_coverage + "%" : "—";
   let wind = "—";
   if (attrs.wind_speed != null) {
@@ -18335,10 +18341,12 @@ function _refreshOv3Weather() {
       if (isNaN(d)) return "—";
       return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true, timeZone: sunCfg.timezone || "UTC" });
     };
+    const sunD  = sunCfg.entity  ? haGetCached(sunCfg.entity)  : null;
     const riseD = sunCfg.sunrise ? haGetCached(sunCfg.sunrise) : null;
     const setD  = sunCfg.sunset  ? haGetCached(sunCfg.sunset)  : null;
-    _s("ov3-wx-sunrise", fmt(riseD ? riseD.state : null));
-    _s("ov3-wx-sunset",  fmt(setD  ? setD.state  : null));
+    const { riseISO, setISO } = HOMIE_CUSTOM.sunEventTimes(sunD, riseD, setD);
+    _s("ov3-wx-sunrise", fmt(riseISO));
+    _s("ov3-wx-sunset",  fmt(setISO));
   })();
   const _today = new Date().toDateString();
   // Midnight-crossing guard: if we've already rendered for a previous calendar
