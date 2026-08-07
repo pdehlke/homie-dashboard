@@ -42,8 +42,8 @@ until a real alarm integration replaces it.
 - route A/V to the Music Assistant browser and player selector
 - render Overview C's A/V sidebar control with the Now Playing circle-and-play icon
 - swap Overview C's Garden and Floors cards while retaining their existing content and behavior
-- replace Overview C's inline AC controls with a Main House thermostat launcher that opens the
-  dedicated thermostat overlay filtered to `climate.casasolar_south_zone_1`
+- replace Overview C's inline AC controls with a Main House thermostat launcher (later removed
+  once the floors card's expand button provided the same functionality)
 - route the bottom Climate control to the dedicated thermostat overlay
 - confirm irrigation starts while allowing immediate stops
 - render the Screen A status grid as four columns by two rows
