@@ -236,10 +236,47 @@ test("Overview C uses the available Home Assistant weather source", () => {
   assert.equal(config.weather.tempUnit, "°F");
 });
 
+test("AQI configuration binds the accepted Geronimo WAQI station sensors", () => {
+  const config = loadConfig();
+  assert.deepEqual(
+    {
+      entity: config.aqi.entity,
+      pm25: config.aqi.pm25,
+      pm10: config.aqi.pm10,
+      co: config.aqi.co,
+      no2: config.aqi.no2,
+    },
+    {
+      entity: "sensor.geronimo_pima_county_usa_air_quality_index",
+      pm25: "sensor.geronimo_pima_county_usa_pm2_5",
+      pm10: "sensor.geronimo_pima_county_usa_pm10",
+      co: "sensor.geronimo_pima_county_usa_carbon_monoxide",
+      no2: "sensor.geronimo_pima_county_usa_nitrogen_dioxide",
+    },
+  );
+});
+
+test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
+  const custom = loadCustomizations();
+  assert.deepEqual(
+    custom.aqiPollutantView({
+      pm25: { state: "25" },
+      pm10: { state: 0 },
+      co: { state: "unavailable" },
+      no2: { state: "not-a-number" },
+    }),
+    { pm25: "25.0", pm10: "0.0", co: "—", no2: "—" },
+  );
+  assert.deepEqual(
+    custom.aqiPollutantView({ pm25: null, pm10: { state: "" }, co: { state: "unknown" } }),
+    { pm25: "—", pm10: "—", co: "—", no2: "—" },
+  );
+});
+
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.6");
+  assert.equal(version, "20260807.7");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);

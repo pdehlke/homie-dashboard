@@ -8767,7 +8767,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260807.6";
+      const HOMIE_ASSET_VERSION = "20260807.7";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -9638,15 +9638,16 @@ function _refreshWeatherFS() {
     const el = id => document.getElementById(id);
     if (el("wfs-aqi-number")) el("wfs-aqi-number").textContent = isNaN(aqi) ? "—" : Math.round(aqi);
 
-    const pm25D = haGetCached(aqiCfg.pm25);
-    const pm10D = haGetCached(aqiCfg.pm10);
-    if (el("wfs-pm25")) el("wfs-pm25").textContent = (pm25D && pm25D.state != null && pm25D.state !== "unavailable") ? parseFloat(pm25D.state).toFixed(1) + " µg/m³" : "—";
-    if (el("wfs-pm10")) el("wfs-pm10").textContent = (pm10D && pm10D.state != null && pm10D.state !== "unavailable") ? parseFloat(pm10D.state).toFixed(1) + " µg/m³" : "—";
-
-    const coD   = haGetCached(aqiCfg.co);
-    const no2D  = haGetCached(aqiCfg.no2);
-    if (el("wfs-co"))  el("wfs-co").textContent  = (coD  && coD.state  != null && coD.state  !== "unavailable") ? parseFloat(coD.state).toFixed(1)  + " ppm" : "—";
-    if (el("wfs-no2")) el("wfs-no2").textContent = (no2D && no2D.state != null && no2D.state !== "unavailable") ? parseFloat(no2D.state).toFixed(1) + " µg/m³" : "—";
+    const pollutantView = HOMIE_CUSTOM.aqiPollutantView({
+      pm25: haGetCached(aqiCfg.pm25),
+      pm10: haGetCached(aqiCfg.pm10),
+      co: haGetCached(aqiCfg.co),
+      no2: haGetCached(aqiCfg.no2),
+    });
+    if (el("wfs-pm25")) el("wfs-pm25").textContent = pollutantView.pm25;
+    if (el("wfs-pm10")) el("wfs-pm10").textContent = pollutantView.pm10;
+    if (el("wfs-co")) el("wfs-co").textContent = pollutantView.co;
+    if (el("wfs-no2")) el("wfs-no2").textContent = pollutantView.no2;
 
     const bands = (CONFIG.aqi && CONFIG.aqi.bands) || [
       { max:  50, label: "Good",                           color: "#4caf8a", text: "The air is in standard level and is healthy for everyone." },
@@ -18463,17 +18464,22 @@ function _refreshOv3Aqi() {
     cardEl.style.setProperty("background", band ? band.bg : "rgba(255,255,255,0.06)", "important");
   }
 
-  // PM stats
-  const _s = (id, d, decimals, unit) => {
+  // WAQI pollutant sub-indices are unitless, not physical concentrations.
+  const _s = (id, value) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.textContent = (d && d.state != null && d.state !== "unavailable")
-      ? parseFloat(d.state).toFixed(decimals) + unit : "—";
+    el.textContent = value;
   };
-  _s("ov3-pm25", haGetCached(aqiCfg.pm25), 1, " µg/m³");
-  _s("ov3-pm10", haGetCached(aqiCfg.pm10), 1, " µg/m³");
-  _s("ov3-co",   haGetCached(aqiCfg.co),   1, " ppm");
-  _s("ov3-no2",  haGetCached(aqiCfg.no2),  1, " µg/m³");
+  const pollutantView = HOMIE_CUSTOM.aqiPollutantView({
+    pm25: haGetCached(aqiCfg.pm25),
+    pm10: haGetCached(aqiCfg.pm10),
+    co: haGetCached(aqiCfg.co),
+    no2: haGetCached(aqiCfg.no2),
+  });
+  _s("ov3-pm25", pollutantView.pm25);
+  _s("ov3-pm10", pollutantView.pm10);
+  _s("ov3-co", pollutantView.co);
+  _s("ov3-no2", pollutantView.no2);
 }
 
 /* ─── OV3 GARDEN CARD — soil moisture per plant ──────────────────────────── */

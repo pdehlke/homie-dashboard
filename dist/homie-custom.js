@@ -78,6 +78,20 @@
     return fossil === null || fossil < 0 || fossil > 100 ? null : Math.round((100 - fossil) * 100) / 100;
   }
 
+  function aqiPollutantView(statesByType) {
+    const states = statesByType || {};
+    const format = type => {
+      const value = states[type] ? numericState(states[type].state) : null;
+      return value === null ? "—" : value.toFixed(1);
+    };
+    return {
+      pm25: format("pm25"),
+      pm10: format("pm10"),
+      co: format("co"),
+      no2: format("no2"),
+    };
+  }
+
   function solarCardView(statesByType) {
     const states = statesByType || {};
     const liveState = states["live-consumption"];
@@ -171,6 +185,7 @@
   }
 
   return {
+    aqiPollutantView,
     chartHistoryMessage,
     controlIndex,
     controlOnClick,

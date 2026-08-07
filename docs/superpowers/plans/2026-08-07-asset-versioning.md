@@ -4,7 +4,7 @@
 
 **Goal:** Ensure kiosk browsers always load a mutually compatible Homie HTML, config, and helper release.
 
-**Architecture:** Define release token `20260807.6` in the HTML, dynamically load config and helper scripts with that token, and update the supported Lovelace iframe strategy to the same token. Make chart failures visible.
+**Architecture:** Define release token `20260807.7` in the HTML, dynamically load config and helper scripts with that token, and update the supported Lovelace iframe strategy to the same token. Make chart failures visible.
 
 **Tech Stack:** Static HTML/JavaScript, Node.js tests, Home Assistant Lovelace WebSocket API.
 
@@ -25,7 +25,7 @@
 - Modify: `test/screen-a.test.cjs`
 
 **Interfaces:**
-- Produces: `HOMIE_ASSET_VERSION = "20260807.6"` and versioned `config.js`/`homie-custom.js` loads.
+- Produces: `HOMIE_ASSET_VERSION = "20260807.7"` and versioned `config.js`/`homie-custom.js` loads.
 
 - [ ] Add a failing test that extracts the token and asserts both script URLs use it.
 - [ ] Run `node --test test/screen-a.test.cjs`; expect failure on unversioned URLs.
@@ -53,7 +53,7 @@
 - Update through API: Lovelace dashboard `homie_dash`
 
 **Interfaces:**
-- Produces: iframe URL `/local/community/homie-dashboard/homie-dashboard.html?v=20260807.6`.
+- Produces: iframe URL `/local/community/homie-dashboard/homie-dashboard.html?v=20260807.7`.
 
 - [ ] Read and back up the current Homie Lovelace config through the API; create a new Homie directory backup.
 - [ ] Deploy token-preserving Homie files.
