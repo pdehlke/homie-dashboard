@@ -36,6 +36,12 @@
     return floor && floor.entity ? floor.entity : null;
   }
 
+  function floorTargetText(entity, state) {
+    if (!entity) return "n/a";
+    const target = thermostatTemperatureView(state).targetTemperatureValue;
+    return target === null ? "—" : `${Math.round(target)}°`;
+  }
+
   function thermostatTemperatureUnit(state) {
     return state && state.attributes && state.attributes.temperature_unit === "°C" ? "°C" : "°F";
   }
@@ -368,6 +374,7 @@
     controlIndex,
     controlOnClick,
     filterThermostats,
+    floorTargetText,
     floorThermostatEntity,
     installDefaults,
     gridDirection,

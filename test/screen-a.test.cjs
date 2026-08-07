@@ -676,6 +676,29 @@ test("configured floors resolve to the real thermostat entities", () => {
   assert.equal(custom.floorThermostatEntity(floors, 1), "climate.casasolar_north_zone_1");
 });
 
+test("floorTargetText formats a floor's target the same terse way as its Temp cell", () => {
+  const custom = loadCustomizations();
+
+  assert.equal(custom.floorTargetText(null, null), "n/a");
+  assert.equal(custom.floorTargetText(undefined, null), "n/a");
+
+  // Real live fixture: climate.casasolar_south_zone_1 while actively cooling.
+  assert.equal(
+    custom.floorTargetText("climate.casasolar_south_zone_1", {
+      state: "heat_cool",
+      attributes: { current_temperature: 78, target_temp_high: 78, target_temp_low: 62, hvac_action: "cooling" },
+    }),
+    "78°",
+  );
+
+  // Entity configured, but no cached state yet (or a state with no resolvable target).
+  assert.equal(custom.floorTargetText("climate.casasolar_south_zone_1", null), "—");
+  assert.equal(
+    custom.floorTargetText("climate.casasolar_south_zone_1", { state: "unavailable", attributes: {} }),
+    "—",
+  );
+});
+
 test("Overview C places Garden in the center and Floors in the right column", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const elements = dashboardElementsById(source);
