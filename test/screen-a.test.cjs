@@ -745,6 +745,16 @@ test("Overview C uses the Now Playing icon for the semantic A/V action", () => {
   assert.match(resolver, /<polygon points="10 8 16 12 10 16 10 8"/);
 });
 
+test("Overview C floors card has an expand button wired to the visible floor's thermostat", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const cardStart = source.indexOf('class="ov3-floors-card"');
+  const cardMarkup = source.slice(cardStart, source.indexOf("<!-- Purifier card", cardStart));
+
+  assert.match(cardMarkup, /ov3-floors-launch-btn/);
+  assert.match(cardMarkup, /onclick="_openFloorsThermostat\(\)"/);
+  assert.match(source, /function _openFloorsThermostat\(\)/);
+});
+
 test("custom safety behavior confirms starts but never stops", () => {
   const custom = loadCustomizations();
   assert.equal(custom.requiresStartConfirmation({ confirmStart: true }, false), true);

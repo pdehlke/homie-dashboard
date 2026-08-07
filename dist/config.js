@@ -89,6 +89,7 @@ const CONFIG = {
   floorSensors: [
     {
       label: "Main House",
+      entity: "climate.casasolar_south_zone_1",
       sensors: [
         {
           type: "temp",
@@ -104,6 +105,7 @@ const CONFIG = {
     },
     {
       label: "Office Wing",
+      entity: "climate.casasolar_north_zone_1",
       sensors: [
         {
           type: "temp",

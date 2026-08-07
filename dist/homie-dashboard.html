@@ -5689,6 +5689,22 @@
     overflow: hidden;
     position: relative;
   }
+  .ov3-floors-launch-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    z-index: 2;
+  }
+  .ov3-floors-launch-btn:active { opacity: 0.6; }
   .ov3-floors-header {
     display: flex;
     justify-content: space-between;
@@ -8232,6 +8248,15 @@
 
         <!-- Floors card (2nd) -->
         <div class="ov3-floors-card" id="ov3-floors-card">
+          <!-- Launch icon — top right -->
+          <button class="ov3-floors-launch-btn" onclick="_openFloorsThermostat()" title="Open Thermostat">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 3 21 3 21 9"/>
+              <polyline points="9 21 3 21 3 15"/>
+              <line x1="21" y1="3" x2="14" y2="10"/>
+              <line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
           <div class="ov3-floors-header">
             <div class="ov3-floors-active-name" id="ov3-floors-active-name"></div>
           </div>
@@ -18263,6 +18288,9 @@ function _fetchOv3HourlyChart(unit) {
  * Only floors that have at least one of temp / humidity / pm25 sensor types
  * are shown; Solar and other special panels are skipped.
  * ═══════════════════════════════════════════════════════════════════════════ */
+let _ov3FloorsList = [];
+let _ov3FloorsActiveIndex = 0;
+
 function _buildOv3FloorsCard() {
   const scroll = document.getElementById("ov3-floors-scroll");
   const dotsEl = document.getElementById("ov3-floors-dots");
@@ -18271,6 +18299,9 @@ function _buildOv3FloorsCard() {
   const SENSOR_TYPES = ["temp", "humidity", "pm25"];
   const floors = (Array.isArray(CONFIG.floorSensors) ? CONFIG.floorSensors : [])
     .filter(f => f.label !== "Solar" && (f.sensors || []).some(s => SENSOR_TYPES.includes(s.type)));
+
+  _ov3FloorsList = floors;
+  _ov3FloorsActiveIndex = 0;
 
   if (!floors.length) {
     document.getElementById("ov3-floors-card").style.display = "none";
@@ -18301,6 +18332,7 @@ function _buildOv3FloorsCard() {
     const w = scroll.offsetWidth;
     if (!w) return;
     const idx = Math.round(scroll.scrollLeft / w);
+    _ov3FloorsActiveIndex = idx;
     floors.forEach((_, fi) => {
       const d = document.getElementById(`ov3-fl-dot-${fi}`);
       if (d) d.classList.toggle("active", fi === idx);
@@ -18318,6 +18350,12 @@ function _ov3FloorsScrollTo(idx) {
   const scroll = document.getElementById("ov3-floors-scroll");
   if (!scroll) return;
   scroll.scrollTo({ left: idx * scroll.offsetWidth, behavior: "smooth" });
+}
+
+function _openFloorsThermostat() {
+  const entity = HOMIE_CUSTOM.floorThermostatEntity(_ov3FloorsList, _ov3FloorsActiveIndex);
+  if (!entity) return;
+  openThermostat(entity);
 }
 
 /* ─── OV3 SECURITY CARD — swipeable scroll (page 1: arm + siren, page 2: garage/gate) ─── */
