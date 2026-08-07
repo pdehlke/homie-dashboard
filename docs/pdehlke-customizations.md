@@ -48,6 +48,8 @@ until a real alarm integration replaces it.
 - confirm irrigation starts while allowing immediate stops
 - render the Screen A status grid as four columns by two rows
 - make the Solar condition panel informational rather than interactive
+- add an expand button to Overview C's floors card, opening the thermostat overlay filtered to
+  whichever floor (Main House or Office Wing) is currently visible
 - install the accepted presentation defaults once per browser
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes

@@ -289,3 +289,11 @@ First Release v1.0.0
 </details>
 
 More information for the Homie Dashboard Elements can be found [homie-dashboard-elements](https://github.com/Big-Edge2297/homie-dashboard/blob/main/docs/homie-dashboard-elements.md)
+
+---
+
+## pde Fork Notes
+
+- The "Main House"/"Office Wing" labels are duplicated independently across `config.js`'s status
+  grid, `floorSensors`, and Climate control sections (and now the floors card's `entity` field
+  too). Candidate for a single source of truth once there is time for that refactor.
