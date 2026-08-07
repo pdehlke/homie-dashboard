@@ -787,6 +787,17 @@ test("Overview C floors card has an expand button wired to the visible floor's t
   assert.match(source, /function _openFloorsThermostat\(\)/);
 });
 
+test("floors card stat row is a 2x2 grid with Temp/Target on top and Humid/PM2.5 below", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  assert.match(cssDeclarations(source, ".ov3-floors-stat-row"), /display:\s*grid/);
+  assert.match(cssDeclarations(source, ".ov3-floors-stat-row"), /grid-template-columns:\s*1fr 1fr/);
+
+  const cardStart = source.indexOf('class="ov3-floors-card"');
+  const buildFnStart = source.indexOf("function _buildOv3FloorsCard");
+  const buildFnBody = source.slice(buildFnStart, source.indexOf("\nfunction _ov3FloorsScrollTo", buildFnStart));
+  assert.match(buildFnBody, /\["temp",\s*"target",\s*"humidity",\s*"pm25"\]/);
+});
+
 test("custom safety behavior confirms starts but never stops", () => {
   const custom = loadCustomizations();
   assert.equal(custom.requiresStartConfirmation({ confirmStart: true }, false), true);
