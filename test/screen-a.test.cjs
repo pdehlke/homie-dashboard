@@ -394,10 +394,36 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.1");
+  assert.equal(version, "20260808.3");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
+});
+
+test("Overview C sidebar has the same four buttons as the Overviews A/B topbar grid", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  const sidebar = ["ov3-settings-btn", "ov3-mode-btn", "ov3-lights-btn", "ov3-security-btn"];
+  for (const id of sidebar) {
+    assert.ok(elements.has(id), `.ov3-sidebar must have #${id}`);
+    assert.equal(elements.get(id).className, "ov3-sb-btn");
+  }
+
+  // Same actions as the topbar's Lights and Security buttons, not a
+  // reimplementation.
+  assert.equal(elements.get("ov3-lights-btn").onclick, elements.get("lights-btn").onclick);
+  assert.equal(elements.get("ov3-security-btn").onclick, elements.get("security-btn").onclick);
+
+  // The dynamic per-domain sidebar control list (Pet stats, plus one button
+  // per CONFIG.controls entry) this replaced is gone, not just hidden.
+  assert.ok(!elements.has("ov3-pet-btn"));
+  assert.ok(!elements.has("ov3-sb-controls"));
+  assert.doesNotMatch(source, /_buildOv3SidebarControls|_refreshOv3SidebarControls/);
+
+  // Chrome is unchanged from before: .ov3-sb-btn keeps its own rounded,
+  // low-contrast style rather than adopting .topbar-btn's.
+  assert.match(cssDeclarations(source, ".ov3-sb-btn"), /border-radius:\s*12px/);
 });
 
 test("Solar is not offered or launched as a Startup view", () => {
@@ -781,17 +807,6 @@ test("an invalid thermostat filter closes an already-open overlay", () => {
   context.__openThermostat("climate.invalid");
 
   assert.equal(overlayClasses.has("open"), false);
-});
-
-test("Overview C uses the Now Playing icon for the semantic A/V action", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
-  const resolver = source.slice(
-    source.indexOf("function _sbIcon(ctrl)"),
-    source.indexOf("const hasPopup", source.indexOf("function _sbIcon(ctrl)")),
-  );
-  assert.match(resolver, /ctrl\.action === ["']media_browser["']/);
-  assert.match(resolver, /<circle cx="12" cy="12" r="10"\/>/);
-  assert.match(resolver, /<polygon points="10 8 16 12 10 16 10 8"/);
 });
 
 test("Overview C floors card has an expand button wired to the visible floor's thermostat", () => {

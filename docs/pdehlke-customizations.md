@@ -40,7 +40,6 @@ until a real alarm integration replaces it.
 - replace Pet Stats with a Lights launcher
 - show the unconfigured alarm state without placeholder alarm controls
 - route A/V to the Music Assistant browser and player selector
-- render Overview C's A/V sidebar control with the Now Playing circle-and-play icon
 - swap Overview C's Garden and Floors cards while retaining their existing content and behavior
 - replace Overview C's inline AC controls with a Main House thermostat launcher (later removed
   once the floors card's expand button provided the same functionality)
@@ -62,6 +61,16 @@ until a real alarm integration replaces it.
   button and the Overview C launch card; only its use as a *default landing view* was removed.
   Solar is still selectable as a Screensaver rotation mode (`ssm-solar`), which has the same
   gesture-only exit and was not in scope for this change.
+- give Overview C's left sidebar (`.ov3-sidebar`) the same four buttons as the topbar grid at top
+  right of Overviews A and B (release `20260808.3`): Lights and Security, added as static buttons
+  with the exact same actions as `lights-btn`/`security-btn`, replacing the Pet Stats launcher and
+  the dynamic per-domain control list (`_buildOv3SidebarControls`, one button per `CONFIG.controls`
+  entry excluding Irrigation/climate/fan) that previously filled that space. `.ov3-sb-btn`'s own
+  chrome — 12px rounded corners, low-contrast border — is unchanged; only the button set changed,
+  not the styling. Climate, A/V, and Irrigation don't need sidebar buttons on Overview C the way
+  they do on A/B: Overview C already shows each as a full card (Main House climate, the media
+  player, and the Garden/Irrigation toggles), so only Lights, which has no dedicated card, was
+  missing.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
