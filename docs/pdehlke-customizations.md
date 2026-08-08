@@ -93,6 +93,12 @@ until a real alarm integration replaces it.
 - add an HA persistent_notification alert indicator (release `20260808.6`), see below.
 - add a disabled-zone indicator across every Irrigation surface, and fix a Garden-row overflow
   regression found along the way (release `20260808.11`), see below.
+- add a periodic Rachio config-entry reload automation on the Home Assistant side (not this repo;
+  see the `pdehlke/homeassistant` repo's `rachio-zone-disabled-alert.md`), and replace the Garden
+  card's scrolling irrigation row with a non-scrolling 2x3 grid, since scrolling was rejected as an
+  acceptable fix for overflow (release `20260808.13`), see below.
+- add a static "Irrigation" heading above that grid, in the space left over once it stopped
+  scrolling (release `20260808.14`), see below.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
@@ -292,6 +298,59 @@ are fixed-width (`flex: 0 0 auto; min-width: 84px`) instead of `flex: 1` stretch
 compact row has no room for an icon or a status line, so its disabled treatment is color-only
 (label and track both go `#FF5252`), a deliberately scaled-down version of the popup card's fuller
 treatment rather than a copy of it.
+
+## Garden Card Irrigation Row: 2x3 Grid, Not a Scroll (release `20260808.13`)
+
+pde rejected the `20260808.11` scrolling fix outright: "Even if it's scrollable, that's
+unacceptable." All six zones had to fit on the card with no overflow, vertically or horizontally,
+and the count was declared static ("It does not have to be dynamic; the number of zones never
+changes"), so a fixed non-scrolling layout was fair game rather than something that has to keep
+working as zones are added.
+
+Measured live before picking a layout, since the single-row width problem turned out to be bigger
+than it looked: the six buttons' natural content width (each zone's label plus its 36px toggle
+track) summed to roughly 855px against the row's ~561px of available width once padding is
+subtracted, not a narrow miss `min-width` tuning could close. "South of Driveway" alone rendered at
+184px. A 3-column x 2-row grid was considered and rejected for the same reason — three columns
+leaves only about 182px per column, narrower than that one label's natural width, so it would have
+reintroduced overflow on exactly the case that broke the scrolling version. Two columns of three
+rows gives each column roughly 276px, comfortable room for every current label with no truncation
+or font shrink needed.
+
+The height for this had to come from somewhere inside the card's fixed 120px grid row (`.ov3-grid`
+sets `grid-template-rows: 160px 120px 180px 110px 110px`; the Garden card occupies row 2, and
+changing that template would reflow every card below it, out of scope for a fix scoped to this one
+card). It turned out already available: `CONFIG.garden.soilMoisture` is currently `[]`, so the
+plant-stats scroll area above the irrigation row (`.ov3-garden-scroll`, `flex: 1`) renders no
+content and was measured live at 74.8px of visually empty space, while the single-row irrigation
+strip below it only needed 24px. Growing the irrigation row to three lines (76px measured) costs
+nothing visible today; the flex parent (`.ov3-garden-card`, `flex-direction: column`) automatically
+gives the grown row its content height first and lets the empty scroll area's `flex: 1` absorb
+whatever's left, no other CSS had to change. If plant moisture sensors are ever configured in
+`CONFIG.garden.soilMoisture`, revisit this: the two areas share the same fixed-height card, and the
+irrigation grid now claims most of the vertical room that a real plant-stats page would need.
+
+Verified live via Playwright at the deployed asset, not just read back from source: all six
+buttons' bounding boxes measured fully inside the card's own bounding box on every edge
+(`overflowRight`/`overflowBottom`/`overflowLeft` all `false`), and a full-page screenshot of
+Overview C confirmed no visible regression to the weather, AQI, energy, alarm, calendar, media, or
+Main House cards around it.
+
+The vertical divider between columns (`border-right` on odd-position buttons, matching padding on
+even) reuses the same per-item divider convention `.ov3-garden-stat-item + .ov3-garden-stat-item`
+already established one section up in this same card, rather than inventing a new visual language
+for it.
+
+**"Irrigation" heading (release `20260808.14`, centered in `.15`).** pde noticed the leftover space
+at the top of the card (what's left of `.ov3-garden-scroll`'s empty flex share after the grid above
+took most of it) and asked for a static label there, then asked for it centered rather than
+left-justified. `.ov3-garden-irr-heading` is plain markup, not built by any
+`_buildOv3*`/`_refreshOv3*` function and not backed by an entity — there's nothing to poll, so it's
+written directly in the card's HTML and never touched by JS. Styled to match
+`.ov3-garden-stat-label`'s existing convention (10px, uppercase, `letter-spacing: 0.18em`,
+`rgba(255,255,255,0.45)`), plus `text-align: center`, rather than inventing a second label style in
+a card that already has one. Verified live: heading and grid both measured fully inside the card's
+bounds, no overflow at either edge.
 
 ## Temperature Display Convention
 

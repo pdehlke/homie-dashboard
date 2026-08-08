@@ -394,7 +394,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.12");
+  assert.equal(version, "20260808.15");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1105,17 +1105,18 @@ test("Entry-point badges (Overview A chip, Overview B sidebar list, Overview C s
   assert.match(cssDeclarations(source, ".ov3-sb-alert-dot"), /left:\s*7px/);
 });
 
-test("Overview C Garden card's irrigation row scrolls instead of clipping, and marks disabled zones inert", () => {
+test("Overview C Garden card's irrigation row is a non-scrolling 2x3 grid, and marks disabled zones inert", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
 
-  // Regression check: centering six zones with no overflow handling clipped
-  // content off both edges once North brought the count from five to six.
+  // Regression check: a single scrolling row was rejected outright (six
+  // buttons' natural width summed to ~855px against ~561px available, more
+  // than min-width tuning could close). The fix is a 2-column x 3-row grid
+  // that fits all six without scrolling in either direction.
   const rowDecl = cssDeclarations(source, ".ov3-garden-irrigation-row");
-  assert.match(rowDecl, /overflow-x:\s*auto/);
+  assert.match(rowDecl, /display:\s*grid/);
+  assert.match(rowDecl, /grid-template-columns:\s*1fr 1fr/);
+  assert.doesNotMatch(rowDecl, /overflow-x:\s*auto/, "no horizontal scroll expected once six zones fit on-grid");
   assert.doesNotMatch(rowDecl, /justify-content:\s*center/);
-
-  const btnDecl = cssDeclarations(source, ".ov3-garden-irr-btn");
-  assert.doesNotMatch(btnDecl, /flex:\s*1\s*;/, "buttons must not stretch-fill in a scrolling row");
 
   const disabledDecl = cssDeclarations(source, ".ov3-garden-irr-btn.disabled .ov3-garden-irr-label");
   assert.match(disabledDecl, /#FF5252/);
@@ -1129,4 +1130,20 @@ test("Overview C Garden card's irrigation row scrolls instead of clipping, and m
   const refreshBody = source.slice(refreshStart, refreshEnd);
   assert.match(refreshBody, /d\.state === "unavailable"/);
   assert.match(refreshBody, /classList\.toggle\("disabled", isDisabled\)/);
+});
+
+test("Garden card's irrigation grid has a static 'Irrigation' heading, not tied to any entity", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Static content, not built by any _buildOv3*/_refreshOv3* function — must
+  // appear verbatim in the markup, ahead of the irrigation row it labels.
+  const cardStart = source.indexOf('id="ov3-garden-card"');
+  const headingIdx = source.indexOf('class="ov3-garden-irr-heading"', cardStart);
+  const rowIdx = source.indexOf('id="ov3-garden-irrigation-row"', cardStart);
+  assert.ok(headingIdx > -1 && headingIdx < rowIdx, "heading must exist and precede the irrigation row");
+  assert.match(source.slice(headingIdx, rowIdx), />Irrigation</);
+
+  const headingDecl = cssDeclarations(source, ".ov3-garden-irr-heading");
+  assert.match(headingDecl, /text-transform:\s*uppercase/);
+  assert.match(headingDecl, /text-align:\s*center/);
 });
