@@ -91,6 +91,8 @@ until a real alarm integration replaces it.
   this. It renders solid (`fill="currentColor"`) rather than the stroke-outline style every other
   icon in this map uses, which is intentional: it's the Filled variant, not the outlined default.
 - add an HA persistent_notification alert indicator (release `20260808.6`), see below.
+- add a disabled-zone indicator across every Irrigation surface, and fix a Garden-row overflow
+  regression found along the way (release `20260808.11`), see below.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
@@ -229,6 +231,67 @@ No dashboard code changed, just `config.js` data. `HOMIE_ASSET_VERSION` was stil
 (`20260808.7` → `.8`) because `config.js` is fetched with the same cache-busting `?v=` query
 param as the rest of the fork's assets, and a stale cached copy on an already-open tablet would
 otherwise keep missing North until a hard refresh.
+
+## Disabled-Zone Indicator (release `20260808.11`)
+
+pde disabled the North zone in the Rachio app a second time (to test the alert automation in
+`rachio-zone-disabled-alert.md`) and asked for a visual indicator anywhere Irrigation appears,
+strong enough not to blend into the popup's already near-grayscale look, matching the same
+"hardcoded color a theme can't wash out" reasoning as the Alert Indicator above. Grilled to
+consensus on four axes: color (`#FF5252`, a stop-red distinct from the alert triangle's amber, so
+the two concepts don't blur together), treatment (full recolor, toggle replaced with a static
+"Disabled" label, not just a corner badge), interactivity (inert — a disabled zone's entity is
+gone, so a tap can't do anything real), and scope (all four places: the Overview A/B/C shared
+Irrigation popup, the Overview A/B bottom pill, the Overview C sidebar icon, and the Overview C
+Garden card's irrigation row).
+
+**The popup card isn't `.mush-switch-card`.** First attempt wired the disabled treatment through
+`updateMushroomSwitchCard`/`buildMushroomSwitchCard` (icon circle, status line, the component Bath
+uses), on the assumption Irrigation's flat popup used it too — reasonable from the screenshots
+alone, but wrong. Irrigation's `subEntities` (no `subGroups`) render as bare `.popup-item` divs
+(label + toggle, nothing else); the `mush-switch-card` icon/status wiring silently no-op'd against
+IDs that were never in that markup, confirmed live before it shipped (`swstatus-*` read back as
+`undefined`). Reverted `updateMushroomSwitchCard` to its original single-purpose form and added a
+dedicated `updateIrrigationZoneCard`, which rewrites a disabled card's `innerHTML` in place (icon +
+label + "Disabled" text) rather than toggling classes against slots that don't exist, and restores
+the plain label+toggle markup if the zone comes back so the toggle works again.
+`dataset.zoneDisabled` tracks which markup is currently rendered so a healthy card isn't rewritten
+every poll.
+
+**Detection signal**: entity `state === "unavailable"`, the actual signal HA gives for a disabled
+Rachio zone (confirmed empirically; see `rachio-zone-disabled-alert.md`'s investigation into
+whether that mechanism is reliable enough to build on). Scoped to the Irrigation control by label
+(`isIrrigationControl = c.label === "Irrigation"`) so an unrelated switch going unavailable
+elsewhere in the app (a device offline, say) doesn't borrow Rachio-specific wording or color it
+has no claim to.
+
+**Entry-point badges** (`.chip-alert-dot`, `.ov2-ctrl-alert-dot`, `.ov3-sb-alert-dot`) share one
+source of truth, `irrigationDisabledZones()`, which filters the Irrigation control's `subEntities`
+against `haGetCached` for `unavailable`. The Overview C sidebar badge sits at the opposite corner
+from the existing on-state glow dot (`.ov3-sb-dot`, top-right) so both can show at once — a zone
+can be running while a different one is disabled.
+
+Assumed Overview A and B shared the bottom-row chip DOM, since the popup does; wrong. Overview A
+uses `.controls-row`/`#chip-i` (bottom pills); Overview B has its own, separate left-sidebar list
+(`_buildOv2Controls`/`_refreshOv2`, `#ov2-ctrl-i`) that already mirrors the on-count badge from the
+chip row's `#chip-count-i` rather than reusing the chip elements outright. Caught live, not by
+inspection: the red dot showed correctly on Overview A, the shared popup, and Overview C, but
+never appeared on Overview B until `#ov2-alert-i` was added as a second mirror alongside the
+existing count-badge one. Same root cause, same fix shape, as the `.mush-switch-card` mistake
+above — verifying against the actual rendered surface, not the surface a reasonable-looking code
+path implied, is what caught both.
+
+**Garden row regression, same commit.** Screenshotting the Garden card for this feature surfaced
+that `.ov3-garden-irrigation-row` was already broken for six zones: `justify-content: center` with
+no overflow handling, sized for the original five-zone lineup, was silently clipping content off
+both edges since North's `config.js` addition (`20260808.8`) — never caught because that change
+was verified against the popup, not the Garden card. Fixed as part of this release: the row now
+scrolls horizontally (`overflow-x: auto`, hidden scrollbar, matching `.ov3-garden-scroll`'s
+existing pattern one section down in the same card) instead of centering and clipping, and buttons
+are fixed-width (`flex: 0 0 auto; min-width: 84px`) instead of `flex: 1` stretch-to-fill. The
+compact row has no room for an icon or a status line, so its disabled treatment is color-only
+(label and track both go `#FF5252`), a deliberately scaled-down version of the popup card's fuller
+treatment rather than a copy of it.
 
 ## Temperature Display Convention
 

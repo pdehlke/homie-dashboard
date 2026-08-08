@@ -1003,6 +1003,18 @@
     padding-left: 8px;
     margin-left: 2px;
   }
+  /* Irrigation-only: a zone has gone unavailable (disabled in Rachio).
+   * Hardcoded red, not a theme var — same reasoning as .mush-switch-card.disabled. */
+  .chip-alert-dot {
+    display: none;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #FF5252;
+    box-shadow: 0 0 4px #FF5252;
+    margin-left: 2px;
+    flex-shrink: 0;
+  }
+  .chip-alert-dot.visible { display: inline-block; }
 
   /* ─── POPUP GROUP LABELS (e.g. "Main Bath" / "Ensuite" separators) ─── */
   .popup-group-label {
@@ -1079,6 +1091,44 @@
   /* Drive the popup-toggle knob and colour from the switch card's .on state */
   .mush-switch-card.on .popup-toggle { background: var(--accent); }
   .mush-switch-card.on .popup-toggle::after { transform: translateX(18px); }
+
+  /* ─── DISABLED ZONE CARD (Irrigation only) ───
+   * A Rachio zone that's been disabled shows up as its switch entity going
+   * `unavailable`, not off — see rachio-zone-disabled-alert.md in the docs
+   * repo. The Irrigation popup's cards are plain .popup-item divs (label +
+   * toggle, no icon/status slots), so updateIrrigationZoneCard rewrites a
+   * disabled card's content in place to add both; these rules style that
+   * injected markup. Hardcoded red (#FF5252), never a theme var: the
+   * Irrigation popup is already close to grayscale, and .on already claims
+   * the theme accent color, so "disabled" needs a color no theme can wash
+   * out or collide with, the same reasoning as the alert-indicator
+   * triangle's hardcoded #FFC107. */
+  .popup-item.disabled {
+    border-color: rgba(255,82,82,0.55);
+    background: rgba(255,82,82,0.07);
+    cursor: default;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+  .popup-item-icon {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(255,82,82,0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .popup-item-icon svg { stroke: #FF5252; }
+  .popup-item-meta { display: flex; flex-direction: column; min-width: 0; }
+  .popup-item.disabled .popup-item-label { color: #fff; }
+  .popup-item-status {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #FF5252;
+    margin-top: 2px;
+  }
 
   /* ─── SCENES CHIP POPUP ───
    * Scene bubbles rendered inside the popup for the overview Scenes chip.
@@ -5142,6 +5192,17 @@
   .ov2-ctrl-btn.on .ov2-ctrl-count {
     opacity: 1;
   }
+  /* Irrigation-only: mirrors .chip-alert-dot (see _refreshOv2). Hardcoded
+   * red, not a theme var — see .popup-item.disabled. */
+  .ov2-ctrl-alert-dot {
+    display: none;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #FF5252;
+    box-shadow: 0 0 4px #FF5252;
+    flex-shrink: 0;
+  }
+  .ov2-ctrl-alert-dot.visible { display: inline-block; }
   .ov2-ctrl-arrow {
     font-size: 10px;
     opacity: 0.5;
@@ -5403,6 +5464,20 @@
     box-shadow: 0 0 4px var(--accent);
   }
   .ov3-sb-btn.on .ov3-sb-dot { display: block; }
+
+  /* Irrigation-only alert dot: opposite corner from .ov3-sb-dot so both can
+   * show at once (e.g. one zone running while another is disabled).
+   * Hardcoded red, not a theme var — see .mush-switch-card.disabled. */
+  .ov3-sb-alert-dot {
+    position: absolute;
+    top: 7px; left: 7px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #FF5252;
+    display: none;
+    box-shadow: 0 0 4px #FF5252;
+  }
+  .ov3-sb-alert-dot.visible { display: block; }
 
   /* Divider between sidebar groups */
   .ov3-sb-divider {
@@ -5724,14 +5799,24 @@
     transform: scale(1.3);
   }
 
+  /* Was justify-content: center with no overflow handling, sized for the
+   * original 5-zone lineup. Six zones (North added 2026-08-08) no longer fit
+   * the card width; centering with nowhere for the excess to go clipped it
+   * asymmetrically off both edges instead of just running out of room on
+   * one side. flex-start + horizontal scroll matches the pattern already
+   * used one section below for the plant-stats pages (.ov3-garden-scroll). */
   .ov3-garden-irrigation-row {
     display: flex;
     flex-direction: row;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     gap: 0;
     width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
+  .ov3-garden-irrigation-row::-webkit-scrollbar { display: none; }
   .ov3-garden-irr-btn {
     display: flex;
     align-items: center;
@@ -5743,7 +5828,12 @@
     -webkit-tap-highlight-color: transparent;
     outline: none;
     gap: 8px;
-    flex: 1;
+    /* Fixed-ish width, not flex: 1 — in a scrolling row, growth should come
+     * from more buttons appearing, not each one stretching to fill space
+     * that may not be there once the row scrolls. min-width keeps two-word
+     * labels ("SOUTH OF DRIVEWAY") from crushing down to nothing. */
+    flex: 0 0 auto;
+    min-width: 84px;
   }
   .ov3-garden-irr-btn + .ov3-garden-irr-btn {
     border-left: 1px solid rgba(255,255,255,0.15);
@@ -5778,6 +5868,16 @@
   .ov3-garden-irr-btn.on .ov3-garden-irr-track { background: var(--accent); }
   .ov3-garden-irr-btn.on .ov3-garden-irr-track::after { transform: translateX(16px); }
   .ov3-garden-irr-btn.on .ov3-garden-irr-label { color: rgba(255,255,255,0.85); }
+
+  /* Disabled zone (Rachio-side, not just off) — hardcoded red, not a theme
+   * var, matching .mush-switch-card.disabled. This row has no room for a
+   * status line or an icon swap the way the popup cards do, so the strong
+   * color carries the whole signal here: label and track both go red,
+   * knob stays at the off position, and the button becomes inert
+   * (see _ov3ToggleGardenIrr). */
+  .ov3-garden-irr-btn.disabled { cursor: default; }
+  .ov3-garden-irr-btn.disabled .ov3-garden-irr-label { color: #FF5252; }
+  .ov3-garden-irr-btn.disabled .ov3-garden-irr-track { background: rgba(255,82,82,0.3); }
 
   /* ── OV3 Floors card (col 3, second card) ───────────────────────────────── */
   .ov3-floors-card {
@@ -8639,7 +8739,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260808.8";
+      const HOMIE_ASSET_VERSION = "20260808.12";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -10739,7 +10839,7 @@ function buildControls(controls) {
   const hasPopup = c => c.action || c.subEntities || c.subGroups;
   const chips = list.map((c, i) => `
     <button class="chip${c.on ? " on" : ""}" id="chip-${i}" onclick="${HOMIE_CUSTOM.controlOnClick(c, i)}" data-ctrl-index="${i}">
-      <div class="dot"></div>${escapeHtml(c.label)}${c.showCount ? `<span class="chip-count" id="chip-count-${i}" style="display:none"></span>` : ''}${hasPopup(c) ? ' ›' : ''}
+      <div class="dot"></div>${escapeHtml(c.label)}${c.showCount ? `<span class="chip-count" id="chip-count-${i}" style="display:none"></span>` : ''}<span class="chip-alert-dot" id="chip-alert-${i}" title="A zone is disabled"></span>${hasPopup(c) ? ' ›' : ''}
     </button>
   `).join('');
   document.getElementById("controls-row").innerHTML = chips;
@@ -10778,6 +10878,24 @@ function entityIsOn(state, entity) {
   if (domain === "cover")   return ["open","opening"].includes(state);
   if (domain === "climate") return state !== "off";
   return ["on","running"].includes(state);
+}
+
+/**
+ * irrigationDisabledZones — the Irrigation control's subEntities currently
+ * `unavailable`, HA's signal that a Rachio zone or valve has been disabled
+ * (see rachio-zone-disabled-alert.md in the docs repo; a disabled zone's
+ * switch entity goes unavailable rather than flipping a flag). Shared by
+ * every Irrigation entry point on the dashboard (the A/B chip badge, the
+ * Overview C sidebar icon badge, and the Overview C Garden row) so they all
+ * agree on what "disabled" means from one place.
+ */
+function irrigationDisabledZones() {
+  const irrCtrl = (CONFIG.controls || []).find(c => c.label === "Irrigation");
+  if (!irrCtrl) return [];
+  return (irrCtrl.subEntities || []).filter(s => {
+    const d = haGetCached(s.entity);
+    return d && d.state === "unavailable";
+  });
 }
 
 /**
@@ -10838,6 +10956,11 @@ function refreshControls() {
     c.on = isOn;
     const el = document.getElementById(`chip-${i}`);
     if (el) el.classList.toggle("on", isOn);
+
+    if (c.label === "Irrigation") {
+      const alertEl = document.getElementById(`chip-alert-${i}`);
+      if (alertEl) alertEl.classList.toggle("visible", irrigationDisabledZones().length > 0);
+    }
   }
 }
 
@@ -11582,6 +11705,11 @@ async function openPopup(i) {
   const isClimateControl  = effectiveDomain === "climate";
   const isCoverControl    = effectiveDomain === "cover";
   const isPurifierControl = effectiveDomain === "fan";
+  // Scopes the disabled-zone red treatment to Irrigation specifically, not
+  // every switch/input_boolean/fan card everywhere: an unrelated switch
+  // going unavailable (a device offline, say) isn't "disabled" in the
+  // Rachio sense and shouldn't borrow that word or color.
+  const isIrrigationControl = c.label === "Irrigation";
 
   const COLOR_PRESETS = [
     { label: "Red",    rgb: [255,80,80] },
@@ -11811,7 +11939,9 @@ async function openPopup(i) {
         updateMushroomPurifierCard(i, j, isOn, d);
       } else {
         const domain = s.entity.split(".")[0];
-        if (domain === "switch" || domain === "input_boolean" || domain === "fan") {
+        if (isIrrigationControl && (domain === "switch" || domain === "input_boolean" || domain === "fan")) {
+          updateIrrigationZoneCard(i, j, isOn, state === "unavailable", s);
+        } else if (domain === "switch" || domain === "input_boolean" || domain === "fan") {
           updateMushroomSwitchCard(i, j, isOn);
         } else {
           const el = document.getElementById(`sub-${i}-${j}`);
@@ -11915,6 +12045,15 @@ const TOWEL_WARMER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill=
   <path d="M14 1 Q15 2.5 14 4" stroke-linecap="round"/>
 </svg>`;
 
+/* Disabled-zone icon (Irrigation only) — a struck-through water drop, used
+ * by updateIrrigationZoneCard's injected markup for a zone whose entity has
+ * gone `unavailable`. Base stroke matches every other icon here for
+ * consistency; .popup-item-icon svg overrides it to the hardcoded #FF5252. */
+const WATER_OFF_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 3 C9 7 6 11 6 14.5 A6 6 0 0 0 18 14.5 C18 11 15 7 12 3 Z"/>
+  <line x1="4.5" y1="4.5" x2="19.5" y2="19.5"/>
+</svg>`;
+
 /** Pick a contextual icon based on the entity domain and label */
 function switchIconFor(label, domain, entity) {
   const l = label.toLowerCase();
@@ -11955,6 +12094,45 @@ function updateMushroomSwitchCard(i, j, isOn) {
   const statusEl = document.getElementById(`swstatus-${i}-${j}`);
   if (card)     card.classList.toggle("on", isOn);
   if (statusEl) statusEl.textContent = isOn ? fmtOn() : fmtOff();
+}
+
+/**
+ * updateIrrigationZoneCard — syncs an Irrigation popup card. Irrigation's
+ * flat, two-column popup (Overviews A/B/C all share the same #popup-list
+ * markup) renders bare .popup-item divs — label + toggle, no icon or status
+ * slots — unlike the icon-bearing .mush-switch-card used elsewhere (e.g.
+ * Bath). A disabled zone (Rachio-side, not just off — see
+ * rachio-zone-disabled-alert.md in the docs repo) needs an icon and a
+ * status line neither slot provides, so this rewrites the card's content in
+ * place rather than toggling a class against markup that isn't there, and
+ * restores the plain label+toggle markup if the zone comes back so the
+ * toggle keeps working. dataset.zoneDisabled tracks which markup is
+ * currently rendered so a healthy card isn't rewritten on every poll.
+ */
+function updateIrrigationZoneCard(i, j, isOn, isDisabled, s) {
+  const card = document.getElementById(`sub-${i}-${j}`);
+  if (!card) return;
+  const wasDisabled = card.dataset.zoneDisabled === "1";
+  if (isDisabled) {
+    card.classList.add("disabled");
+    card.classList.remove("on");
+    if (!wasDisabled) {
+      card.dataset.zoneDisabled = "1";
+      card.innerHTML = `
+        <div class="popup-item-icon">${WATER_OFF_ICON}</div>
+        <div class="popup-item-meta">
+          <span class="popup-item-label">${escapeHtml(s.label)}</span>
+          <span class="popup-item-status">Disabled</span>
+        </div>`;
+    }
+  } else {
+    card.classList.remove("disabled");
+    card.classList.toggle("on", isOn);
+    if (wasDisabled) {
+      card.dataset.zoneDisabled = "0";
+      card.innerHTML = `<span class="popup-item-label">${escapeHtml(s.label)}</span><div class="popup-toggle"></div>`;
+    }
+  }
 }
 
 /* ─── AC MODE ICONS & THEME HELPER ─────────────────────────────────────────
@@ -12794,11 +12972,15 @@ async function applyLightTemp(i, j, mireds, btnIdx) {
  */
 async function toggleSubEntity(e, i, j) {
   e.stopPropagation();
-  haptic("medium");
   const c = activeControls[i];
   const s = (c._flatSubs || c.subEntities)[j];
   const el = document.getElementById(`sub-${i}-${j}`);
   if (!el) return;
+  // A card in the disabled state (Irrigation zone gone unavailable) has no
+  // live entity behind it to toggle — the card already shows why, so a tap
+  // here is a no-op rather than a service call that would just fail.
+  if (el.classList.contains("disabled")) return;
+  haptic("medium");
   const isOn = el.classList.contains("on");
   const domain = s.entity.split(".")[0];
   let service;
@@ -17231,6 +17413,7 @@ function _buildOv2Controls() {
       <div class="ov2-ctrl-dot"></div>
       <span class="ov2-ctrl-label">${escapeHtml(c.label)}</span>
       ${c.showCount ? `<span class="ov2-ctrl-count" id="ov2-count-${i}"></span>` : ''}
+      <span class="ov2-ctrl-alert-dot" id="ov2-alert-${i}" title="A zone is disabled"></span>
       ${hasPopup(c) ? `<span class="ov2-ctrl-arrow">›</span>` : ''}
     </button>
   `).join('');
@@ -17307,6 +17490,11 @@ function _refreshOv2() {
       const chipCountEl = document.getElementById(`chip-count-${i}`);
       countEl.textContent = chipCountEl ? chipCountEl.textContent : "";
       countEl.style.display = chipCountEl && chipCountEl.style.display !== "none" ? "" : "none";
+    }
+    // Disabled-zone badge — mirrors #chip-alert-i, same as the count badge above
+    if (c.label === "Irrigation") {
+      const alertEl = document.getElementById(`ov2-alert-${i}`);
+      if (alertEl) alertEl.classList.toggle("visible", irrigationDisabledZones().length > 0);
     }
   }
 }
@@ -17510,7 +17698,7 @@ function _buildOv3SidebarControls() {
     const clickFn = c.action ? HOMIE_CUSTOM.controlOnClick(c, i)
       : hasPopup(c) ? `openPopup(${i})` : `_ov3ToggleChip(${i})`;
     const iconSvg = _sbIcon(c);
-    return `<button class="ov3-sb-btn" id="ov3-sb-ctrl-${i}" onclick="${clickFn}" title="${escapeHtml(c.label)}">${iconSvg}<div class="ov3-sb-dot"></div></button>`;
+    return `<button class="ov3-sb-btn" id="ov3-sb-ctrl-${i}" onclick="${clickFn}" title="${escapeHtml(c.label)}">${iconSvg}<div class="ov3-sb-dot"></div><div class="ov3-sb-alert-dot" id="ov3-sb-alert-${i}"></div></button>`;
   }).join('');
 }
 
@@ -17545,6 +17733,11 @@ function _refreshOv3SidebarControls() {
       ? subs.some(s => entityIsActive(s.entity))
       : entityIsActive(c.entity);
     btn.classList.toggle("on", isOn);
+
+    if (c.label === "Irrigation") {
+      const alertDot = document.getElementById(`ov3-sb-alert-${i}`);
+      if (alertDot) alertDot.classList.toggle("visible", irrigationDisabledZones().length > 0);
+    }
   });
 }
 
@@ -18236,10 +18429,21 @@ function _buildOv3GardenIrrigation() {
     ? irrCtrl.subGroups.flatMap(g => g.subEntities || [])
     : (irrCtrl.subEntities || []);
   irrRow.innerHTML = _ov3IrrSubs.map((s, i) => `
-    <button class="ov3-garden-irr-btn" id="ov3-irr-${i}" onclick="toggleEntity('${escapeHtml(s.entity)}', this)">
+    <button class="ov3-garden-irr-btn" id="ov3-irr-${i}" onclick="_ov3ToggleGardenIrr('${escapeHtml(s.entity)}', this)">
       <span class="ov3-garden-irr-label">${s.label}</span>
       <div class="ov3-garden-irr-track"></div>
     </button>`).join('');
+}
+
+/**
+ * _ov3ToggleGardenIrr — wraps toggleEntity for the Garden card's irrigation
+ * row so a disabled zone (see .ov3-garden-irr-btn.disabled, driven by
+ * _refreshOv3Garden) is inert rather than sending a service call against an
+ * entity that no longer exists behind it.
+ */
+function _ov3ToggleGardenIrr(entity, btn) {
+  if (btn.classList.contains("disabled")) return;
+  toggleEntity(entity, btn);
 }
 
 const OV3_GARDEN_PLANTS_PER_PAGE = 8;   // 2 rows x 4 items, matching the original fixed layout
@@ -18344,7 +18548,9 @@ function _refreshOv3Garden() {
       const btn = document.getElementById(`ov3-irr-${i}`);
       if (!btn) return;
       const d = haGetCached(s.entity);
-      btn.classList.toggle("on", !!(d && entityIsOn(d.state, s.entity)));
+      const isDisabled = !!(d && d.state === "unavailable");
+      btn.classList.toggle("on", !isDisabled && !!(d && entityIsOn(d.state, s.entity)));
+      btn.classList.toggle("disabled", isDisabled);
     });
   }
 }

@@ -394,7 +394,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.8");
+  assert.equal(version, "20260808.12");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1008,4 +1008,125 @@ test("Alert overlay lists notifications newest first, dismisses via persistent_n
   assert.match(dismissBody, /haService\("persistent_notification",\s*"dismiss",\s*\{\s*notification_id:\s*id\s*\}\)/);
 
   assert.match(source, /alert-overlay.*classList\.contains\("open"\).*closeAlertOverlay\(\)/);
+});
+
+test("A disabled Rachio zone rewrites its Irrigation popup card in place, since .popup-item has no icon/status slot to toggle", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Scoped to Irrigation specifically — an unrelated switch going unavailable
+  // (e.g. a device offline) is not "disabled" in the Rachio sense.
+  assert.match(source, /const isIrrigationControl = c\.label === "Irrigation"/);
+  assert.match(
+    source,
+    /isIrrigationControl && \(domain === "switch" \|\| domain === "input_boolean" \|\| domain === "fan"\)/,
+  );
+  assert.match(source, /updateIrrigationZoneCard\(i, j, isOn, state === "unavailable", s\)/);
+
+  const fnStart = source.indexOf("function updateIrrigationZoneCard(");
+  const fnEnd = source.indexOf("\n\n", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "updateIrrigationZoneCard must be found");
+  const fnBody = source.slice(fnStart, fnEnd);
+  assert.match(fnBody, /popup-item-icon/);
+  assert.match(fnBody, /popup-item-status/);
+  assert.match(fnBody, />Disabled</);
+  assert.match(fnBody, /WATER_OFF_ICON/);
+  // Restores the plain label+toggle markup on recovery, so the toggle works again.
+  assert.match(fnBody, /popup-toggle/);
+  assert.match(fnBody, /dataset\.zoneDisabled/);
+
+  // A disabled card is inert — no service call against an entity that isn't there.
+  const toggleStart = source.indexOf("async function toggleSubEntity(");
+  const toggleGuardEnd = source.indexOf("\n", source.indexOf('classList.contains("disabled")', toggleStart));
+  const toggleGuard = source.slice(toggleStart, toggleGuardEnd);
+  assert.match(toggleGuard, /if \(el\.classList\.contains\("disabled"\)\) return;/);
+});
+
+test("Disabled-zone red is hardcoded against theming, distinct from the alert triangle's amber", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // .popup-item.disabled uses the same red as rgba() (border/background wash);
+  // the icon and status text use the literal hex. Neither ever a theme var.
+  const cardDecl = cssDeclarations(source, ".popup-item.disabled");
+  assert.match(cardDecl, /rgba\(255,\s*82,\s*82/, ".popup-item.disabled must use the hardcoded red");
+  assert.doesNotMatch(cardDecl, /var\(--accent/, ".popup-item.disabled must not use a theme var");
+
+  for (const selector of [".popup-item-icon svg", ".popup-item-status"]) {
+    const decl = cssDeclarations(source, selector);
+    assert.match(decl, /#FF5252/, `${selector} must use the hardcoded red`);
+    assert.doesNotMatch(decl, /var\(--accent/, `${selector} must not use a theme var`);
+  }
+
+  // Struck-through water drop, not the plain SWITCH_ICON used elsewhere.
+  assert.match(source, /const WATER_OFF_ICON = /);
+});
+
+test("Entry-point badges (Overview A chip, Overview B sidebar list, Overview C sidebar icon) surface a disabled zone without opening the popup", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  // Shared source of truth so every entry point agrees on what "disabled" means.
+  assert.match(source, /function irrigationDisabledZones\(\)/);
+  assert.match(source, /CONFIG\.controls \|\| \[\]\)\.find\(c => c\.label === "Irrigation"\)/);
+  assert.match(source, /d\.state === "unavailable"/);
+
+  // Overview A's bottom pill row.
+  assert.ok(elements.has("chip-alert-0") === false); // not every chip gets one hardcoded in markup...
+  assert.match(source, /chip-alert-\$\{i\}/); // ...it's templated per control index
+  assert.match(cssDeclarations(source, ".chip-alert-dot"), /#FF5252/);
+  assert.match(cssDeclarations(source, ".chip-alert-dot"), /display:\s*none/);
+  assert.match(cssDeclarations(source, ".chip-alert-dot.visible"), /display:\s*inline-block/);
+  assert.match(
+    source,
+    /if \(c\.label === "Irrigation"\) \{\s*const alertEl = document\.getElementById\(`chip-alert-\$\{i\}`\)/,
+  );
+
+  // Overview B does NOT share Overview A's chip DOM — its left sidebar list
+  // (_buildOv2Controls/_refreshOv2) is a separate set of elements that mirrors
+  // the chip badges rather than reusing them, the same way it already mirrors
+  // the on-count badge (#ov2-count-i from #chip-count-i). Caught live: the red
+  // dot showed on Overview A and the popup but not Overview B until this
+  // mirror was added.
+  assert.match(source, /ov2-alert-\$\{i\}/);
+  assert.match(cssDeclarations(source, ".ov2-ctrl-alert-dot"), /#FF5252/);
+  assert.match(cssDeclarations(source, ".ov2-ctrl-alert-dot"), /display:\s*none/);
+  assert.match(cssDeclarations(source, ".ov2-ctrl-alert-dot.visible"), /display:\s*inline-block/);
+  const refreshOv2Start = source.indexOf("function _refreshOv2()");
+  const refreshOv2End = source.indexOf("\n}", source.indexOf("Disabled-zone badge", refreshOv2Start));
+  assert.ok(refreshOv2Start > -1 && refreshOv2End > refreshOv2Start, "_refreshOv2 must be found");
+  assert.match(source.slice(refreshOv2Start, refreshOv2End), /irrigationDisabledZones\(\)\.length > 0/);
+
+  // Overview C's pinned sidebar icon.
+  assert.match(source, /ov3-sb-alert-\$\{i\}/);
+  assert.match(cssDeclarations(source, ".ov3-sb-alert-dot"), /#FF5252/);
+  assert.match(cssDeclarations(source, ".ov3-sb-alert-dot"), /display:\s*none/);
+  assert.match(cssDeclarations(source, ".ov3-sb-alert-dot.visible"), /display:\s*block/);
+  // Opposite corner from .ov3-sb-dot (the on-state glow) so both can show at once.
+  assert.match(cssDeclarations(source, ".ov3-sb-dot"), /right:\s*7px/);
+  assert.match(cssDeclarations(source, ".ov3-sb-alert-dot"), /left:\s*7px/);
+});
+
+test("Overview C Garden card's irrigation row scrolls instead of clipping, and marks disabled zones inert", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Regression check: centering six zones with no overflow handling clipped
+  // content off both edges once North brought the count from five to six.
+  const rowDecl = cssDeclarations(source, ".ov3-garden-irrigation-row");
+  assert.match(rowDecl, /overflow-x:\s*auto/);
+  assert.doesNotMatch(rowDecl, /justify-content:\s*center/);
+
+  const btnDecl = cssDeclarations(source, ".ov3-garden-irr-btn");
+  assert.doesNotMatch(btnDecl, /flex:\s*1\s*;/, "buttons must not stretch-fill in a scrolling row");
+
+  const disabledDecl = cssDeclarations(source, ".ov3-garden-irr-btn.disabled .ov3-garden-irr-label");
+  assert.match(disabledDecl, /#FF5252/);
+
+  assert.match(source, /function _ov3ToggleGardenIrr\(entity, btn\)/);
+  assert.match(source, /if \(btn\.classList\.contains\("disabled"\)\) return;/);
+  assert.match(source, /onclick="_ov3ToggleGardenIrr\(/);
+
+  const refreshStart = source.indexOf("// Sync irrigation toggle on/off state only");
+  const refreshEnd = source.indexOf("\n}", refreshStart);
+  const refreshBody = source.slice(refreshStart, refreshEnd);
+  assert.match(refreshBody, /d\.state === "unavailable"/);
+  assert.match(refreshBody, /classList\.toggle\("disabled", isDisabled\)/);
 });
