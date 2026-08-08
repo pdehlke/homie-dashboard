@@ -212,6 +212,24 @@ optimistically removes the item from `pnCache` first, the same pattern `dismissN
 above already uses for its own, unrelated entities — the subsequent `"removed"` WebSocket event
 confirms it a moment later and is a no-op against an id that's already gone.
 
+## Irrigation Control Missing a Re-Enabled Zone (release `20260808.8`)
+
+The Rachio integration only creates a switch entity for a zone that is currently enabled; a
+disabled zone has no HA entity at all (see the homeassistant repo's
+`rachio-zone-disabled-alert.md`). `config.js`'s Irrigation control (`CONFIG.controls`, the
+`subEntities` list behind the flat popup on Overviews A/B and the garden row on Overview C) was
+built while the North zone was disabled, so it was never in that list. Re-enabling North in the
+Rachio app created `switch.main_irrigation_north`, but nothing in Homie rescans the entity
+registry: `subEntities` is a static list pde maintains by hand, so the new switch was invisible
+everywhere in Homie until added here explicitly. Same root cause as the pre-existing gap in
+`sensor.homie_irrigation_status`, the HA-side template sensor whose `expand([...])` zone list is
+equally hardcoded and needed the same entity added on the HA side, outside this repo.
+
+No dashboard code changed, just `config.js` data. `HOMIE_ASSET_VERSION` was still bumped
+(`20260808.7` → `.8`) because `config.js` is fetched with the same cache-busting `?v=` query
+param as the rest of the fork's assets, and a stale cached copy on an already-open tablet would
+otherwise keep missing North until a hard refresh.
+
 ## Temperature Display Convention
 
 All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations

@@ -276,6 +276,7 @@ const CONFIG = {
         { label: "East Triangle", entity: "switch.main_irrigation_east_triangle" },
         { label: "Emma's Yard", entity: "switch.main_irrigation_emmas_yard" },
         { label: "South of Driveway", entity: "switch.main_irrigation_south_of_driveway" },
+        { label: "North", entity: "switch.main_irrigation_north" },
         { label: "Back Yard", entity: "switch.back_yard_irrigation" },
       ],
     },
