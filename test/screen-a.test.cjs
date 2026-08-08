@@ -394,7 +394,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.5");
+  assert.equal(version, "20260808.7");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -916,4 +916,95 @@ test("custom defaults migrate each browser once without clobbering later choices
   values.set("homie-theme", "emerald");
   assert.equal(custom.installDefaults(storage, defaults, "screen-a-v1"), false);
   assert.equal(values.get("homie-theme"), "emerald");
+});
+
+test("Alert indicator surfaces HA persistent_notification via WS subscribe, not the unrelated CONFIG.notifications bar", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  // Both surfaces exist: Overview A/B's floating corner button and Overview
+  // C's pinned sidebar button.
+  assert.ok(elements.has("alert-indicator-corner"));
+  assert.ok(elements.has("ov3-alert-btn"));
+  assert.equal(elements.get("ov3-alert-btn").className, "ov3-sb-btn ov3-alert-btn");
+  assert.equal(elements.get("alert-indicator-corner").onclick, "openAlertOverlay()");
+  assert.equal(elements.get("ov3-alert-btn").onclick, "openAlertOverlay()");
+  assert.ok(elements.has("alert-overlay"));
+  assert.ok(elements.has("alert-popup-list"));
+
+  // Sourced from persistent_notification/subscribe, which pushes a full
+  // {type:"current",...} snapshot on connect plus {type:"added"|"removed",...}
+  // afterward — not a one-shot persistent_notification/get, and not the
+  // pre-existing CONFIG.notifications/notification-bar entity-watcher, which
+  // is a different, unrelated feature despite the similar name.
+  assert.match(source, /type:\s*"persistent_notification\/subscribe"/);
+  assert.match(source, /pnSubscribeId/);
+  assert.match(source, /type === "current"/);
+  assert.match(source, /type === "added"/);
+  assert.match(source, /type === "removed"/);
+  assert.match(source, /let pnCache = new Map\(\)/);
+
+  assert.match(source, /function refreshAlertIndicator\(\)/);
+  assert.match(source, /function openAlertOverlay\(\)/);
+  assert.match(source, /function closeAlertOverlay\(e\)/);
+  assert.match(source, /function dismissAlertNotification\(id\)/);
+});
+
+test("Alert triangle's color is hardcoded against theming, and both indicators stay hidden until a notification is active", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  // Literal hex fill on the icon itself, not currentColor or a --accent var
+  // a theme could redefine. Checked against the raw source since the SVG's
+  // <path> isn't captured by dashboardElementsById.
+  const iconMarkup = source.match(/id="alert-indicator-corner"[\s\S]*?<\/button>/)?.[0];
+  assert.ok(iconMarkup, "alert-indicator-corner markup must be found");
+  assert.match(iconMarkup, /fill="#FFC107"/);
+  assert.doesNotMatch(iconMarkup, /fill="currentColor"/);
+  assert.doesNotMatch(iconMarkup, /var\(--accent/);
+
+  const sidebarIconMarkup = source.match(/id="ov3-alert-btn"[\s\S]*?<\/button>/)?.[0];
+  assert.ok(sidebarIconMarkup, "ov3-alert-btn markup must be found");
+  assert.match(sidebarIconMarkup, /fill="#FFC107"/);
+  assert.doesNotMatch(sidebarIconMarkup, /var\(--accent/);
+
+  // Hidden by default, shown only via .visible (toggled by refreshAlertIndicator
+  // based on pnCache.size), same convention as .notification-bar/.connection-lost-bar.
+  assert.match(cssDeclarations(source, ".alert-indicator-corner"), /display:\s*none/);
+  assert.match(cssDeclarations(source, ".alert-indicator-corner.visible"), /display:\s*flex/);
+  assert.match(cssDeclarations(source, ".ov3-alert-btn"), /display:\s*none/);
+  assert.match(cssDeclarations(source, ".ov3-alert-btn.visible"), /display:\s*flex/);
+  assert.match(source, /const has = pnCache\.size > 0/);
+
+  // The corner button is force-hidden on Overview C — that screen uses its
+  // own ov3-alert-btn inside .ov3-sidebar instead of the floating corner one.
+  assert.match(
+    cssDeclarations(source, "body.ov3-active .alert-indicator-corner"),
+    /display:\s*none\s*!important/,
+  );
+
+  // ov3-alert-btn is declared after .ov3-sb-spacer, so it is pinned to the
+  // bottom of the sidebar rather than sitting in the scrolling control list.
+  assert.ok(source.indexOf('class="ov3-sb-spacer"') < source.indexOf('id="ov3-alert-btn"'));
+});
+
+test("Alert overlay lists notifications newest first, dismisses via persistent_notification.dismiss, and closes on Escape", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  const fnStart = source.indexOf("function _renderAlertOverlayList()");
+  const fnEnd = source.indexOf("\nfunction openAlertOverlay()", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_renderAlertOverlayList must be found");
+  const renderBody = source.slice(fnStart, fnEnd);
+  assert.match(renderBody, /No active alerts/); // empty state, since the indicator can still be tapped
+  assert.match(renderBody, /sort\(\(a,\s*b\)\s*=>\s*new Date\(b\.created_at\)\s*-\s*new Date\(a\.created_at\)\)/);
+  assert.match(renderBody, /dismissAlertNotification\(/);
+
+  const dismissStart = source.indexOf("function dismissAlertNotification(id)");
+  const dismissEnd = source.indexOf("\n/* ─── ECHO TIMER BUBBLE", dismissStart);
+  assert.ok(dismissStart > -1 && dismissEnd > dismissStart, "dismissAlertNotification must be found");
+  const dismissBody = source.slice(dismissStart, dismissEnd);
+  assert.match(dismissBody, /pnCache\.delete\(id\)/); // optimistic, matches dismissNotification()'s pattern
+  assert.match(dismissBody, /haService\("persistent_notification",\s*"dismiss",\s*\{\s*notification_id:\s*id\s*\}\)/);
+
+  assert.match(source, /alert-overlay.*classList\.contains\("open"\).*closeAlertOverlay\(\)/);
 });

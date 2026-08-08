@@ -90,6 +90,7 @@ until a real alarm integration replaces it.
   in this file — there is no icon-library dependency anywhere in the fork, and none was added for
   this. It renders solid (`fill="currentColor"`) rather than the stroke-outline style every other
   icon in this map uses, which is intentional: it's the Filled variant, not the outlined default.
+- add an HA persistent_notification alert indicator (release `20260808.6`), see below.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
@@ -160,6 +161,56 @@ As a defensive fallback only, `.ov3-main` changed from `overflow: hidden` to `ov
 ever un-hides the host header again, whether a `kiosk_mode` update, a load-order change, or the
 plugin being removed, the failure becomes a visible, scrollable cutoff instead of silently clipped,
 invisible content, which is what made the original 21px overflow hard to notice in the first place.
+
+## Alert Indicator (release `20260808.6`)
+
+A yellow-triangle indicator, bottom-left on Overviews A/B and pinned to the bottom of Overview
+C's sidebar, that opens an overlay listing active Home Assistant `persistent_notification`
+entries and lets you dismiss them.
+
+The name collides with something already in this fork. `refreshNotifications()` /
+`dismissNotification()` and the `#notification-bar` element watch specific
+`CONFIG.notifications` entities (`input_boolean` / `switch` / `binary_sensor`) for state `on` and
+render a bar under the top strip. That system is unrelated and untouched. This one surfaces HA's
+own `persistent_notification` domain, the same data HA's native Notifications bell shows in its
+sidebar elsewhere, which Homie Dash has never had any view into: the `kiosk_mode` config that
+gives Overview C its full-height canvas (see below) hides HA's native header and sidebar
+entirely for the Homie Dashboard account, bell included, for every screen, not just Overview C.
+
+`persistent_notification` entities are not part of the state machine (confirmed earlier by this
+fork's own `homie-dashboard-install-plan.md` history and, independently, by the parent repo's
+`fridge-failure-alert.md`), so the existing `state_changed` WebSocket subscription that seeds and
+live-updates `stateCache` never sees them regardless of what fires. A second, independent
+subscription was needed: `persistent_notification/subscribe`, sent alongside the existing
+`subscribe_events` call in `_wsConnect()`'s `auth_ok` handler. Its behavior was verified against
+this instance directly before writing the parsing code, not assumed from documentation:
+
+```json
+// Immediately on subscribe, a full snapshot — no separate persistent_notification/get needed:
+{"id":1,"type":"event","event":{"type":"current","notifications":{"<id>":{"message":"...","notification_id":"...","title":"...","created_at":"..."}}}}
+// Then incremental updates as they happen:
+{"id":1,"type":"event","event":{"type":"added","notifications":{"<id>":{...}}}}
+{"id":1,"type":"event","event":{"type":"removed","notifications":{"<id>":{...}}}}
+```
+
+`pnCache` (a `Map<notification_id, {title, message, created_at}>`, separate from `stateCache`)
+is rebuilt wholesale on every `"current"` event and patched incrementally on `"added"`/`"removed"`,
+which also means a WebSocket reconnect self-heals the cache for free: the fresh `"current"` event
+every new subscribe sends replaces it outright, no manual reset needed.
+
+Both indicator buttons are hidden by default and shown only via a `.visible` class toggle
+(`refreshAlertIndicator()`, called on every `pnCache` change), the same convention already used
+for `.notification-bar`/`.connection-lost-bar`. Presence-only, no count badge, on request — HA's
+own bell shows a count, this one doesn't. The triangle's fill is a literal `#FFC107` hex value on
+the `<path>` itself, never `currentColor` or a `--accent`/`--accent-hi` var, so no dashboard theme
+(Classic Gold, the vivid gradients, etc.) can recolor it; nothing else in this file applies a
+blanket `svg { fill }` rule that could override it regardless, but the literal value was a
+deliberate choice on request, not an accident of there being no conflict to worry about.
+
+Dismissing calls `persistent_notification.dismiss` via the existing `haService()` REST helper and
+optimistically removes the item from `pnCache` first, the same pattern `dismissNotification()`
+above already uses for its own, unrelated entities — the subsequent `"removed"` WebSocket event
+confirms it a moment later and is a no-op against an id that's already gone.
 
 ## Temperature Display Convention
 
