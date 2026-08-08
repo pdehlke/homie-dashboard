@@ -5323,7 +5323,13 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* Content is sized to fit the full 1280x800 canvas this screen assumes it owns; a
+       chromeless host keeps zero scroll distance here. overflow-y stays auto rather than
+       hidden as a defensive fallback only: if some future host ever hands this screen a
+       shorter canvas (e.g. the outer dashboard's own header stops being hidden), the bottom
+       becomes reachable by scroll instead of silently clipping off-screen with no signal. */
+    overflow-x: hidden;
+    overflow-y: auto;
     position: relative;
     padding: 1.2rem 1.2rem 2.8rem 1.2rem;
     gap: 1rem;
@@ -8513,7 +8519,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260807.15";
+      const HOMIE_ASSET_VERSION = "20260807.16";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>

@@ -96,6 +96,35 @@ changing and `last_updated` advancing. Also confirms release `.11` → `.12` →
 despite the live file on disk being correct. The version token must change on every deploy that
 touches a nested asset's content, not just on releases meant for the user to see.
 
+## Overview C Vertical Overflow on the Target Tablet (release `20260807.16`)
+
+Overview C is designed to fill a chromeless 1280x800 canvas exactly: `#overview3` is
+`position: fixed; inset: 0`, and `.ov3-main` explicitly hides all of Home Assistant's own
+top-level chrome equivalents, on the assumption that it owns the whole viewport.
+
+Manual measurement in a resized browser found the layout needed 821px of height to avoid clipping,
+21px more than the target Fire HD 10's 800px screen. Direct-load testing against the live asset at
+a true 1280x800 viewport showed Overview C's own content bottoming out at 763px, well within
+budget, so the layout itself was never the problem. The actual cause: `homie-dash` loads this page
+inside an `<iframe>` via a Lovelace `strategy: iframe` dashboard, and Home Assistant's own top app
+bar, rendered around that iframe, was consuming 56px that Overview C's CSS has no way to see or
+account for. 763px of content in a 744px box (800 minus that 56px) overflows by 19px, and
+763 + 56 = 819, matching the manually measured 821 within rounding.
+
+Fixed on the Home Assistant side, not in this repository: a `kiosk_mode` block was added to
+`homie-dash`'s dashboard config, scoped to `users: ["Homie Dashboard"]`, setting `hide_header` and
+`hide_sidebar`. This is the same per-user chrome-hiding mechanism already used for the `Tablet`
+kiosk account on the domain dashboards (see `dashboard-home.md` in the `pdehlke/homeassistant`
+repo). It restores Overview C's full 800px canvas without any change to this fork's layout, and
+only affects the dedicated `Homie Dashboard` account; other users viewing `homie-dash` (an admin
+debugging it, for instance) still see the native header.
+
+As a defensive fallback only, `.ov3-main` changed from `overflow: hidden` to `overflow-x: hidden` /
+`overflow-y: auto`. Nothing scrolls under normal operation; the point is that if a future change
+ever un-hides the host header again, whether a `kiosk_mode` update, a load-order change, or the
+plugin being removed, the failure becomes a visible, scrollable cutoff instead of silently clipped,
+invisible content, which is what made the original 21px overflow hard to notice in the first place.
+
 ## Temperature Display Convention
 
 All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations

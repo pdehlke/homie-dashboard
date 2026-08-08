@@ -394,10 +394,24 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.15");
+  assert.equal(version, "20260807.16");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
+});
+
+test("Overview C's main column scrolls instead of clipping if its host ever hands it a short canvas", () => {
+  // .ov3-main is sized to fit a full 1280x800 canvas exactly when the host (Home Assistant's
+  // Lovelace iframe) hides its own header, as configured via kiosk_mode for the Homie Dashboard
+  // user. overflow-y: auto is a defensive fallback only, not the primary fix: if that host chrome
+  // is ever un-hidden, content becomes reachable by scroll instead of silently clipping off-screen
+  // with no visual signal, the failure mode that made the original overflow hard to notice.
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf(".ov3-main {");
+  const rule = source.slice(start, source.indexOf("}", start));
+  assert.match(rule, /overflow-y:\s*auto/);
+  assert.match(rule, /overflow-x:\s*hidden/);
+  assert.doesNotMatch(rule, /overflow:\s*hidden/);
 });
 
 test("solar chart history status distinguishes failures from empty history", () => {
