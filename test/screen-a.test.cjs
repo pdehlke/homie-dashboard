@@ -394,10 +394,29 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260807.16");
+  assert.equal(version, "20260808.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
+});
+
+test("Solar is not offered or launched as a Startup view", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Not selectable in the Startup settings list.
+  assert.doesNotMatch(source, /applySetting\('startupMode','solar'\)/);
+  assert.doesNotMatch(source, /id="sm-solar"/);
+
+  // Not dispatched on load, including for a stale value from before this change:
+  // Solar's fullscreen overlay hides its close button and exits by gesture only
+  // (see docs/pdehlke-customizations.md), so any startupMode of "solar" must fall
+  // through to the default Overview 1 landing instead of trapping the user.
+  const dispatchStart = source.indexOf("// Apply startup mode from settings");
+  const dispatchEnd = source.indexOf("// Apply petName from CONFIG", dispatchStart);
+  assert.ok(dispatchStart > -1 && dispatchEnd > dispatchStart, "startup dispatch block must be found");
+  const dispatch = source.slice(dispatchStart, dispatchEnd);
+  assert.doesNotMatch(dispatch, /"solar"/);
+  assert.match(dispatch, /"overview3"/); // sibling modes remain intact
 });
 
 test("Overview C's main column scrolls instead of clipping if its host ever hands it a short canvas", () => {

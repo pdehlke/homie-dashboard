@@ -8519,7 +8519,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260807.16";
+      const HOMIE_ASSET_VERSION = "20260808.1";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -13767,9 +13767,11 @@ function init() {
     setTimeout(() => openWeatherFS(), 300);
   } else if (_startupMode === "cameras") {
     setTimeout(() => openCameras(), 300);
-  } else if (_startupMode === "solar") {
-    setTimeout(() => openSolarFS(), 300);
   }
+  // A startupMode of solar is intentionally not handled here: Solar is a
+  // fullscreen overlay with no visible close button (gesture-only exit), so
+  // a stray or legacy stored value falls through to the default Overview 1
+  // landing instead of trapping the user. See docs/pdehlke-customizations.md.
 
   // Apply petName from CONFIG to the button label and popup title
   const petName = CONFIG.petName || "Pet";
@@ -20257,13 +20259,6 @@ _applyDailyI18n();
       <label class="startup-mode-option" onclick="applySetting('startupMode','weather')">
         <input type="radio" name="startupMode" value="weather" id="sm-weather">
         <span class="startup-mode-label">Weather</span>
-        <span class="startup-mode-check">
-          <svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg>
-        </span>
-      </label>
-      <label class="startup-mode-option" onclick="applySetting('startupMode','solar')">
-        <input type="radio" name="startupMode" value="solar" id="sm-solar">
-        <span class="startup-mode-label">Solar</span>
         <span class="startup-mode-check">
           <svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg>
         </span>

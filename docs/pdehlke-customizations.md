@@ -54,6 +54,14 @@ until a real alarm integration replaces it.
   faces, and remove the bottom-of-column Main House thermostat launcher card the floors card's
   expand button superseded
 - install the accepted presentation defaults once per browser
+- remove Solar from the Startup view options (`sm-solar` radio, release `20260808.1`): its
+  fullscreen overlay hides the corner close button in favor of gesture-only exit (swipe or
+  Escape), so landing there by default on a tablet or wallscreen left no visible way back to
+  Settings. A stale `startupMode: "solar"` from before this change now falls through to the
+  Overview 1 default instead of reopening the trap. Solar is still reachable from its topbar
+  button and the Overview C launch card; only its use as a *default landing view* was removed.
+  Solar is still selectable as a Screensaver rotation mode (`ssm-solar`), which has the same
+  gesture-only exit and was not in scope for this change.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
