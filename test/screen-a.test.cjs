@@ -394,36 +394,67 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.3");
+  assert.equal(version, "20260808.4");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
 });
 
-test("Overview C sidebar has the same four buttons as the Overviews A/B topbar grid", () => {
+test("Overview C sidebar pins Settings, Modes, and Security; everything else is the dynamic list", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const elements = dashboardElementsById(source);
 
-  const sidebar = ["ov3-settings-btn", "ov3-mode-btn", "ov3-lights-btn", "ov3-security-btn"];
-  for (const id of sidebar) {
-    assert.ok(elements.has(id), `.ov3-sidebar must have #${id}`);
+  for (const id of ["ov3-settings-btn", "ov3-mode-btn", "ov3-security-btn"]) {
+    assert.ok(elements.has(id), `.ov3-sidebar must pin #${id}`);
     assert.equal(elements.get(id).className, "ov3-sb-btn");
   }
-
-  // Same actions as the topbar's Lights and Security buttons, not a
-  // reimplementation.
-  assert.equal(elements.get("ov3-lights-btn").onclick, elements.get("lights-btn").onclick);
   assert.equal(elements.get("ov3-security-btn").onclick, elements.get("security-btn").onclick);
 
-  // The dynamic per-domain sidebar control list (Pet stats, plus one button
-  // per CONFIG.controls entry) this replaced is gone, not just hidden.
+  // No pinned Pet Stats button (this house will never have smart pet
+  // devices), and no pinned Lights button either — Lights comes from the
+  // dynamic list now, same as Climate/A-V/Irrigation.
   assert.ok(!elements.has("ov3-pet-btn"));
-  assert.ok(!elements.has("ov3-sb-controls"));
-  assert.doesNotMatch(source, /_buildOv3SidebarControls|_refreshOv3SidebarControls/);
+  assert.ok(!elements.has("ov3-lights-btn"));
 
-  // Chrome is unchanged from before: .ov3-sb-btn keeps its own rounded,
-  // low-contrast style rather than adopting .topbar-btn's.
+  // The dynamic per-CONFIG.controls list is back.
+  assert.ok(elements.has("ov3-sb-controls"));
+  assert.match(source, /function _buildOv3SidebarControls\(\)/);
+  assert.match(source, /function _refreshOv3SidebarControls\(\)/);
+  assert.match(source, /\n\s*_buildOv3SidebarControls\(\);/); // called from _ensureOv3Built
+  assert.match(source, /\n\s*_refreshOv3SidebarControls\(\);/); // called from _refreshOv3
+
+  // Chrome is untouched.
   assert.match(cssDeclarations(source, ".ov3-sb-btn"), /border-radius:\s*12px/);
+});
+
+test("Overview C's dynamic sidebar controls are unfiltered: Climate and Irrigation get buttons too", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function _buildOv3SidebarControls()");
+  const fnEnd = source.indexOf("\n/* Refresh sidebar control button", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_buildOv3SidebarControls must be found");
+  const fnBody = source.slice(fnStart, fnEnd);
+
+  // Deliberately no filter: an earlier version excluded Irrigation and the
+  // climate/fan domains. Removed on purpose — accepted duplicate click paths
+  // into Irrigation and Climate, which already have their own full cards.
+  assert.doesNotMatch(fnBody, /c\.label !== ["']Irrigation["']/);
+  assert.doesNotMatch(fnBody, /_sbDomain/);
+  assert.match(fnBody, /activeControls\.map\(/);
+});
+
+test("Overview C's Climate sidebar glow reflects hvac_action, not just state !== \"off\"", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function _refreshOv3SidebarControls()");
+  const fnEnd = source.indexOf("\n/* Build/rebuild the entire purifier card", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_refreshOv3SidebarControls must be found");
+  const fnBody = source.slice(fnStart, fnEnd);
+
+  // Both real thermostats stay in heat_cool mode almost always, so a plain
+  // entityIsOn() (state !== "off") glow would be lit nearly permanently.
+  // hvac_action reports whether the equipment is actually doing something.
+  assert.match(fnBody, /hvac_action/);
+  assert.match(fnBody, /["']heating["']/);
+  assert.match(fnBody, /["']cooling["']/);
 });
 
 test("Solar is not offered or launched as a Startup view", () => {

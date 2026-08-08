@@ -61,16 +61,27 @@ until a real alarm integration replaces it.
   button and the Overview C launch card; only its use as a *default landing view* was removed.
   Solar is still selectable as a Screensaver rotation mode (`ssm-solar`), which has the same
   gesture-only exit and was not in scope for this change.
-- give Overview C's left sidebar (`.ov3-sidebar`) the same four buttons as the topbar grid at top
-  right of Overviews A and B (release `20260808.3`): Lights and Security, added as static buttons
-  with the exact same actions as `lights-btn`/`security-btn`, replacing the Pet Stats launcher and
-  the dynamic per-domain control list (`_buildOv3SidebarControls`, one button per `CONFIG.controls`
-  entry excluding Irrigation/climate/fan) that previously filled that space. `.ov3-sb-btn`'s own
-  chrome — 12px rounded corners, low-contrast border — is unchanged; only the button set changed,
-  not the styling. Climate, A/V, and Irrigation don't need sidebar buttons on Overview C the way
-  they do on A/B: Overview C already shows each as a full card (Main House climate, the media
-  player, and the Garden/Irrigation toggles), so only Lights, which has no dedicated card, was
-  missing.
+- remove the pinned Pet Stats button from Overview C's sidebar (`ov3-pet-btn`, release
+  `20260808.4`): this house will never have smart pet devices, so a dedicated button for it is a
+  waste of the sidebar's limited real estate. `openPetStats()` and its overlay are untouched
+  elsewhere in the app; only the sidebar's link to it is gone.
+- unfilter Overview C's dynamic sidebar control list (`_buildOv3SidebarControls`, one button per
+  `CONFIG.controls` entry, populating `#ov3-sb-controls`): it used to exclude Irrigation and the
+  climate/fan domains, on the reasoning that Overview C already shows each as a full card (Main
+  House climate, Garden/Irrigation toggles) and didn't need a second entry point. Removed that
+  filter on request — it's now Lights, Climate, A/V, and Irrigation, same order as the bottom pill
+  row on Overviews A/B, accepting the resulting duplicate click paths into Irrigation and Climate
+  as a known, intentional tradeoff rather than an oversight.
+- give Climate's sidebar "on" glow (`_refreshOv3SidebarControls`) its own definition of active
+  instead of reusing the generic `entityIsOn()`: both real thermostats stay in `heat_cool` mode
+  almost all the time, so a plain `state !== "off"` test would leave the glow lit nearly
+  permanently. The climate case now reads `hvac_action` and glows only while a zone is actually
+  `heating` or `cooling`, the same attribute-over-state preference `thermostatTemperatureView` in
+  `homie-custom.js` already uses for the thermostat overlay's displayed target. Every other
+  control's glow (Lights, Irrigation) is unchanged.
+- pin Security (`ov3-security-btn`, same action as the topbar's `security-btn`) to Overview C's
+  sidebar alongside Settings and Modes. It can't be part of the dynamic list above — Security
+  isn't a `CONFIG.controls` entry, there's nothing to generate it from.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's

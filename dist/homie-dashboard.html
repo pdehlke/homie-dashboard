@@ -5288,6 +5288,23 @@
     color: #ffffff;
   }
   .ov3-sb-btn:active { background: rgba(255,255,255,0.13); transform: scale(0.95); }
+  .ov3-sb-btn.on {
+    background: var(--accent-glow);
+    border-color: var(--ac-4);
+  }
+  .ov3-sb-btn.on svg { stroke: var(--accent-hi); }
+
+  /* Small status dot on sidebar buttons */
+  .ov3-sb-dot {
+    position: absolute;
+    top: 7px; right: 7px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: none;
+    box-shadow: 0 0 4px var(--accent);
+  }
+  .ov3-sb-btn.on .ov3-sb-dot { display: block; }
 
   /* Divider between sidebar groups */
   .ov3-sb-divider {
@@ -7820,21 +7837,21 @@
 
     <div class="ov3-sb-divider"></div>
 
-    <!-- Lights — same action as the topbar's Lights button (Overviews A/B) -->
-    <button class="ov3-sb-btn" id="ov3-lights-btn" onclick="openControlByLabel('Lights')" title="Lights">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 18h6"/><path d="M10 22h4"/><path d="M8.5 14.5A7 7 0 1 1 15.5 14.5C14.5 15.4 14 16.4 14 18h-4c0-1.6-.5-2.6-1.5-3.5z"/>
-      </svg>
-    </button>
-
-    <div class="ov3-sb-divider"></div>
-
-    <!-- Security — same action as the topbar's Security button (Overviews A/B) -->
+    <!-- Security — same action as the topbar's Security button (Overviews A/B).
+         Pinned, not part of the dynamic list below: Security isn't a
+         CONFIG.controls entry, it has nothing to be generated from. -->
     <button class="ov3-sb-btn" id="ov3-security-btn" onclick="showAlarmNotConfigured()" title="Security — Not Configured">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2L3 7v6c0 5.25 3.75 10.15 9 11.25C17.25 23.15 21 18.25 21 13V7L12 2z"/>
       </svg>
     </button>
+
+    <div class="ov3-sb-divider"></div>
+
+    <!-- Control buttons — one per CONFIG.controls entry, populated by
+         _buildOv3SidebarControls(). No pinned Pet Stats button: this house
+         will never have smart pet devices, so it's not worth the space. -->
+    <div id="ov3-sb-controls" style="display:contents"></div>
 
     <div class="ov3-sb-spacer"></div>
 
@@ -8503,7 +8520,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260808.3";
+      const HOMIE_ASSET_VERSION = "20260808.4";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -17089,6 +17106,7 @@ function _ensureOv3Built() {
     applyThemeBg(ar, ag, ab, hr, hg, hb);
   }
 
+  _buildOv3SidebarControls();
   _buildOv3PurifierCard();
   _buildOv3FloorsCard();
   _buildOv3GardenCard();
@@ -17202,6 +17220,87 @@ function _gatherOv3PurEntities() {
     subs.forEach(s => {
       if (s.entity) _ov3PurEntities.push({ label: s.label, entity: s.entity });
     });
+  });
+}
+
+/* Build sidebar control icon buttons — one button per CONFIG.controls entry.
+ * Unfiltered on purpose: Climate and Irrigation already have their own full
+ * cards on Overview C, so this does leave a second, redundant click path
+ * into each. That's an accepted tradeoff, not an oversight. */
+function _buildOv3SidebarControls() {
+  const wrap = document.getElementById("ov3-sb-controls");
+  if (!wrap) return;
+
+  /* Domain → sidebar icon SVG (18×18) */
+  function _sbIcon(ctrl) {
+    if (ctrl.action === "media_browser") {
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>`;
+    }
+    const subs = ctrl.subGroups
+      ? ctrl.subGroups.flatMap(g => g.subEntities || [])
+      : (ctrl.subEntities || []);
+    const rep = subs[0] || ctrl;
+    const domain = rep.entity ? rep.entity.split(".")[0] : "switch";
+
+    /* Label-based icon overrides */
+    const labelLower = (ctrl.label || "").toLowerCase();
+    if (labelLower.includes("bath")) {
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6 C9 4.343 7.657 3 6 3 C4.343 3 3 4.343 3 6 L3 12"/><path d="M3 12 L21 12"/><path d="M3 12 C3 16.418 6.582 20 11 20 L13 20 C17.418 20 21 16.418 21 12"/><line x1="6" y1="20" x2="5" y2="22"/><line x1="18" y1="20" x2="19" y2="22"/></svg>`;
+    }
+    const icons = {
+      light:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="3"/><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 3a6 6 0 0 1 6 6c0 3-2 5-3 6H9c-1-1-3-3-3-6a6 6 0 0 1 6-6z"/></svg>`,
+      switch:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="8" cy="12" r="3" fill="currentColor"/></svg>`,
+      climate: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>`,
+      cover:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 12 3 21 6"/><rect x="3" y="6" width="18" height="13" rx="1"/><line x1="3" y1="11" x2="21" y2="11"/></svg>`,
+      fan:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c1-2 3-3 5-2s3 3 2 5-3 3-5 2"/><path d="M12 12c-1-2-3-3-5-2s-3 3-2 5 3 3 5 2"/><path d="M12 12c2 1 3 3 2 5s-3 3-5 2-3-3-2-5"/><path d="M12 12c-2-1-3-3-2-5s3-3 5-2 3 3 2 5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>`,
+      scene:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+      script:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+      input_boolean: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="8" cy="12" r="3" fill="currentColor"/></svg>`,
+    };
+    return icons[domain] || `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M4 12H2M22 12h-2M12 4V2M12 22v-2"/></svg>`;
+  }
+
+  const hasPopup = c => c.action || c.subEntities || c.subGroups;
+
+  wrap.innerHTML = activeControls.map((c, i) => {
+    const clickFn = c.action ? HOMIE_CUSTOM.controlOnClick(c, i)
+      : hasPopup(c) ? `openPopup(${i})` : `_ov3ToggleChip(${i})`;
+    const iconSvg = _sbIcon(c);
+    return `<button class="ov3-sb-btn" id="ov3-sb-ctrl-${i}" onclick="${clickFn}" title="${escapeHtml(c.label)}">${iconSvg}<div class="ov3-sb-dot"></div></button>`;
+  }).join('');
+}
+
+/* Refresh sidebar control button .on states.
+ * Climate gets its own check instead of the generic entityIsOn(): both real
+ * thermostats stay in heat_cool mode nearly all the time, so a plain
+ * state !== "off" test would leave the glow lit almost permanently. Home
+ * Assistant's hvac_action attribute reports whether the equipment is
+ * actually heating or cooling right now, which is what the glow should
+ * mean here — see thermostatTemperatureView in homie-custom.js for the
+ * same hvac_action-over-state preference applied to the overlay's display. */
+function _refreshOv3SidebarControls() {
+  function climateIsActive(entity) {
+    const d = haGetCached(entity);
+    const hvacAction = (d && d.attributes && d.attributes.hvac_action) || "";
+    return hvacAction === "heating" || hvacAction === "cooling";
+  }
+  function entityIsActive(entity) {
+    if (!entity) return false;
+    if (entity.split(".")[0] === "climate") return climateIsActive(entity);
+    const d = haGetCached(entity);
+    return d ? entityIsOn(d.state, entity) : false;
+  }
+
+  activeControls.forEach((c, i) => {
+    const btn = document.getElementById(`ov3-sb-ctrl-${i}`);
+    if (!btn) return;
+    const subs = c.subGroups
+      ? c.subGroups.flatMap(g => g.subEntities || [])
+      : (c.subEntities || []);
+    const isOn = subs.length
+      ? subs.some(s => entityIsActive(s.entity))
+      : entityIsActive(c.entity);
+    btn.classList.toggle("on", isOn);
   });
 }
 
@@ -18229,6 +18328,7 @@ function _refreshOv3() {
   _refreshOv3Aqi();
   _refreshOv3Garden();
   _refreshOv3Greeting();
+  _refreshOv3SidebarControls();
   _refreshOv3PurifierCard();
   _refreshOv3FloorsCard();
   _refreshOv3MusicCard();
