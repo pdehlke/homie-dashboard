@@ -8520,7 +8520,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260808.4";
+      const HOMIE_ASSET_VERSION = "20260808.5";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -17246,6 +17246,13 @@ function _buildOv3SidebarControls() {
     const labelLower = (ctrl.label || "").toLowerCase();
     if (labelLower.includes("bath")) {
       return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6 C9 4.343 7.657 3 6 3 C4.343 3 3 4.343 3 6 L3 12"/><path d="M3 12 L21 12"/><path d="M3 12 C3 16.418 6.582 20 11 20 L13 20 C17.418 20 21 16.418 21 12"/><line x1="6" y1="20" x2="5" y2="22"/><line x1="18" y1="20" x2="19" y2="22"/></svg>`;
+    }
+    if (labelLower.includes("irrigation")) {
+      // Iconify material-symbols:sprinkler-rounded (Material Symbols, Rounded
+      // style, Filled) — https://icon-sets.iconify.design/material-symbols/sprinkler-rounded/
+      // Filled by design, unlike its stroke-outline siblings in this map: pde
+      // asked for this specific style, not the outlined default.
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M11.288 11.713Q11 11.425 11 11t.288-.712T12 10t.713.288T13 11t-.288.713T12 12t-.712-.288m0-4Q11 7.426 11 7t.288-.712T12 6t.713.288T13 7t-.288.713T12 8t-.712-.288m0-4Q11 3.426 11 3t.288-.712T12 2t.713.288T13 3t-.288.713T12 4t-.712-.288m3 10Q14 13.426 14 13t.288-.712T15 12t.713.288T16 13t-.288.713T15 14t-.712-.288m2.824-2.85q-.287-.287-.287-.712t.288-.712t.712-.288t.713.288t.287.712t-.288.713t-.712.287t-.712-.288m2.825-2.8q-.288-.287-.288-.712t.288-.712t.712-.288t.713.288t.287.712t-.287.713t-.713.287t-.712-.288m-11.65 5.65Q8 13.426 8 13t.288-.712T9 12t.713.288T10 13t-.288.713T9 14t-.712-.288m-2.826-2.85q-.287-.287-.287-.712t.288-.712t.712-.288t.713.288t.287.712t-.287.713t-.713.287t-.712-.288m-2.825-2.8q-.288-.287-.288-.712t.288-.712t.712-.288t.713.288t.287.712t-.287.713t-.713.287t-.712-.288M11 18H8q-.425 0-.712-.288T7 17t.288-.712T8 16h8q.425 0 .713.288T17 17t-.288.713T16 18h-3v3q0 .425-.288.713T12 22t-.712-.288T11 21z"/></svg>`;
     }
     const icons = {
       light:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="3"/><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 3a6 6 0 0 1 6 6c0 3-2 5-3 6H9c-1-1-3-3-3-6a6 6 0 0 1 6-6z"/></svg>`,

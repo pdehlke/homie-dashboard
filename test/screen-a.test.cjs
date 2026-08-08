@@ -394,10 +394,26 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.4");
+  assert.equal(version, "20260808.5");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
+});
+
+test("Overview C sidebar's Irrigation icon uses material-symbols:sprinkler-rounded, not the generic switch icon", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function _sbIcon(ctrl)");
+  const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
+  const fnBody = source.slice(fnStart, fnEnd);
+
+  assert.match(fnBody, /labelLower\.includes\("irrigation"\)/);
+  // The fetched Iconify body for material-symbols:sprinkler-rounded, verified
+  // against the live API rather than hand-drawn like its siblings.
+  assert.match(fnBody, /M11 18H8q-\.425 0-\.712-\.288T7 17t\.288-\.712T8 16h8/);
+  // Filled by design (Iconify's "sprinkler-rounded" is the Filled variant),
+  // unlike the stroke-outline icons around it in the same map.
+  assert.match(fnBody, /fill="currentColor" stroke="none"><path d="M11\.288/);
 });
 
 test("Overview C sidebar pins Settings, Modes, and Security; everything else is the dynamic list", () => {

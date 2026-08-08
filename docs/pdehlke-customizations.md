@@ -82,6 +82,14 @@ until a real alarm integration replaces it.
 - pin Security (`ov3-security-btn`, same action as the topbar's `security-btn`) to Overview C's
   sidebar alongside Settings and Modes. It can't be part of the dynamic list above — Security
   isn't a `CONFIG.controls` entry, there's nothing to generate it from.
+- give Irrigation its own sidebar icon (release `20260808.5`) instead of the generic `switch`
+  glyph every other switch-domain control gets by default, via `_sbIcon`'s existing label-override
+  mechanism (the same pattern already used for "bath" in the label). The icon is
+  [`material-symbols:sprinkler-rounded`](https://icon-sets.iconify.design/material-symbols/sprinkler-rounded/)
+  (Material Symbols, Rounded style, Filled), hand-inlined from Iconify's API like every other icon
+  in this file — there is no icon-library dependency anywhere in the fork, and none was added for
+  this. It renders solid (`fill="currentColor"`) rather than the stroke-outline style every other
+  icon in this map uses, which is intentional: it's the Filled variant, not the outlined default.
 
 The Climate routing avoids upstream's generic climate popup. That popup assumes
 a single Celsius-style setpoint and does not correctly handle the home's
