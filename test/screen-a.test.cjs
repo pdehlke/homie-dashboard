@@ -433,7 +433,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260809.2");
+  assert.equal(version, "20260809.3");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -497,19 +497,47 @@ test("Overview C's dynamic sidebar controls are unfiltered: Climate and Irrigati
   assert.match(fnBody, /activeControls\.map\(/);
 });
 
-test("Overview C's Climate sidebar glow reflects hvac_action, not just state !== \"off\"", () => {
+test("climateIsActive() is a shared, module-scope check of hvac_action, not just state !== \"off\"", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
-  const fnStart = source.indexOf("function _refreshOv3SidebarControls()");
-  const fnEnd = source.indexOf("\n/* Build/rebuild the entire purifier card", fnStart);
-  assert.ok(fnStart > -1 && fnEnd > fnStart, "_refreshOv3SidebarControls must be found");
+  const fnStart = source.indexOf("function climateIsActive(entity)");
+  assert.ok(fnStart > -1, "climateIsActive must be found at module scope");
+  const fnEnd = source.indexOf("\n}", fnStart);
   const fnBody = source.slice(fnStart, fnEnd);
 
   // Both real thermostats stay in heat_cool mode almost always, so a plain
-  // entityIsOn() (state !== "off") glow would be lit nearly permanently.
+  // entityIsOn() (state !== "off") would read "on" nearly permanently.
   // hvac_action reports whether the equipment is actually doing something.
   assert.match(fnBody, /hvac_action/);
   assert.match(fnBody, /["']heating["']/);
   assert.match(fnBody, /["']cooling["']/);
+
+  // Only one definition — Overview C's sidebar glow and Overview A/B's chip
+  // count/glow must agree on what "on" means, not keep separate copies.
+  assert.equal(source.match(/function climateIsActive\(entity\)/g).length, 1);
+});
+
+test("Overview C's Climate sidebar glow, and Overview A/B's chip count and glow, all use climateIsActive()", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Overview C's sidebar glow.
+  const sbStart = source.indexOf("function _refreshOv3SidebarControls()");
+  const sbEnd = source.indexOf("\n/* Build/rebuild the entire purifier card", sbStart);
+  assert.ok(sbStart > -1 && sbEnd > sbStart, "_refreshOv3SidebarControls must be found");
+  assert.match(source.slice(sbStart, sbEnd), /climateIsActive\(entity\)/);
+
+  // Overview A's chip count/glow (Overview B mirrors A's rendered text, not
+  // a separate computation, so fixing this one place covers both).
+  const rcStart = source.indexOf("function refreshControls()");
+  const rcEnd = source.indexOf("\nfunction refreshNotifications()", rcStart);
+  assert.ok(rcStart > -1 && rcEnd > rcStart, "refreshControls must be found");
+  const rcBody = source.slice(rcStart, rcEnd);
+  assert.match(rcBody, /activeCount = allSubs\.filter\(s => climateIsActive\(s\.entity\)\)\.length/);
+
+  // The old mode-based, _acCardState-optimistic path for the count is gone:
+  // activity can't be known optimistically, so there's nothing to be
+  // instant about. _acCardState itself is untouched elsewhere (the AC
+  // card's own enabled/disabled toggle is a different, correct concept).
+  assert.doesNotMatch(rcBody, /_acCardState\.(get|has)/);
 });
 
 test("Solar is not offered or launched as a Startup view", () => {

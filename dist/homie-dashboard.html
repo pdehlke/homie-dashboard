@@ -8756,7 +8756,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260809.2";
+      const HOMIE_ASSET_VERSION = "20260809.3";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -10898,6 +10898,23 @@ function entityIsOn(state, entity) {
 }
 
 /**
+ * climateIsActive — true only while a thermostat is actually heating or
+ * cooling right now, per its hvac_action attribute. Both real thermostats
+ * stay in heat_cool mode nearly all the time, so entityIsOn()'s plain
+ * state !== "off" test (mode-enabled, not activity) would count them as
+ * "on" almost permanently. Shared by every Climate entry point that needs
+ * to mean "actively conditioning" — Overview A/B's chip count/glow and
+ * Overview C's sidebar icon glow — so they agree on what "on" means. Not
+ * used for the AC control card's own toggle, which legitimately means
+ * "system enabled," a different and correct concept from activity.
+ */
+function climateIsActive(entity) {
+  const d = haGetCached(entity);
+  const hvacAction = (d && d.attributes && d.attributes.hvac_action) || "";
+  return hvacAction === "heating" || hvacAction === "cooling";
+}
+
+/**
  * irrigationDisabledZones — the Irrigation control's subEntities currently
  * `unavailable`, HA's signal that a Rachio zone or valve has been disabled
  * (see rachio-zone-disabled-alert.md in the docs repo; a disabled zone's
@@ -10955,14 +10972,17 @@ function refreshControls() {
     if (allSubs.length > 0) {
       const isClimateChip = allSubs[0].entity.startsWith("climate.");
       let activeCount;
-      if (isClimateChip && allSubs.some(s => _acCardState.has(s.entity))) {
-        // Use in-memory card state for climate — reflects toggles immediately
-        activeCount = allSubs.filter(s => {
-          const mem = _acCardState.get(s.entity);
-          if (mem) return mem.isOn;
-          const d = haGetCached(s.entity);
-          return d && entityIsOn(d.state, s.entity);
-        }).length;
+      if (isClimateChip) {
+        // Activity, not mode: both real thermostats stay in heat_cool mode
+        // nearly all the time, so "on" here means actively heating or
+        // cooling right now (climateIsActive(), hvac_action-based), same
+        // meaning Overview C's sidebar glow already uses. This can't be
+        // known optimistically from a just-tapped AC card toggle — real
+        // compressor lag means the count trails hvac_action by a few
+        // seconds after a manual change, same as Overview C's glow already
+        // does — so _acCardState's instant-feedback path is deliberately
+        // not used here.
+        activeCount = allSubs.filter(s => climateIsActive(s.entity)).length;
       } else {
         activeCount = allSubs.filter(s => {
           const d = haGetCached(s.entity);
@@ -17756,13 +17776,10 @@ function _buildOv3SidebarControls() {
  * Assistant's hvac_action attribute reports whether the equipment is
  * actually heating or cooling right now, which is what the glow should
  * mean here — see thermostatTemperatureView in homie-custom.js for the
- * same hvac_action-over-state preference applied to the overlay's display. */
+ * same hvac_action-over-state preference applied to the overlay's display.
+ * climateIsActive() itself lives at module scope, shared with
+ * refreshControls()'s chip count/glow — see the comment there. */
 function _refreshOv3SidebarControls() {
-  function climateIsActive(entity) {
-    const d = haGetCached(entity);
-    const hvacAction = (d && d.attributes && d.attributes.hvac_action) || "";
-    return hvacAction === "heating" || hvacAction === "cooling";
-  }
   function entityIsActive(entity) {
     if (!entity) return false;
     if (entity.split(".")[0] === "climate") return climateIsActive(entity);
