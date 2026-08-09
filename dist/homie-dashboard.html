@@ -8759,7 +8759,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260809.4";
+      const HOMIE_ASSET_VERSION = "20260809.5";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -21555,14 +21555,6 @@ _applyDailyI18n();
         <div class="sfs-stat-value"><span id="sfs-stat-low-carbon">—</span><span class="sfs-stat-unit"> %</span></div>
         <div class="sfs-stat-label">Low Carbon</div>
       </div>
-      <!-- Monthly Consumption -->
-      <div class="sfs-con-card">
-        <div class="sfs-stat-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-monthly-kwh">—</span><span class="sfs-stat-unit"> kWh</span></div>
-        <div class="sfs-stat-label">Monthly Usage</div>
-      </div>
       <!-- Grid carbon intensity -->
       <div class="sfs-con-card">
         <div class="sfs-stat-icon">
@@ -21570,6 +21562,14 @@ _applyDailyI18n();
         </div>
         <div class="sfs-stat-value"><span id="sfs-stat-co2-intensity">—</span><span class="sfs-stat-unit"> gCO2/kWh</span></div>
         <div class="sfs-stat-label">CO2 Intensity</div>
+      </div>
+      <!-- Monthly Consumption -->
+      <div class="sfs-con-card">
+        <div class="sfs-stat-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <div class="sfs-stat-value"><span id="sfs-stat-monthly-kwh">—</span><span class="sfs-stat-unit"> kWh</span></div>
+        <div class="sfs-stat-label">Monthly Usage</div>
       </div>
     </div>
 
