@@ -8756,7 +8756,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260809.1";
+      const HOMIE_ASSET_VERSION = "20260809.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -10916,6 +10916,24 @@ function irrigationDisabledZones() {
 }
 
 /**
+ * lennoxAlertActive — the Climate control's subEntities whose paired
+ * alertEntity currently reports anything other than "none" (see
+ * lennox-thermostat-alerts.md in the docs repo; each Lennox S30's alert
+ * sensor mirrors its own console, separate from its active_alerts detail
+ * list). Shared by every Climate entry point, the same way
+ * irrigationDisabledZones() is for Irrigation.
+ */
+function lennoxAlertActive() {
+  const climateCtrl = (CONFIG.controls || []).find(c => c.label === "Climate");
+  if (!climateCtrl) return [];
+  return (climateCtrl.subEntities || []).filter(s => {
+    if (!s.alertEntity) return false;
+    const d = haGetCached(s.alertEntity);
+    return d && d.state && d.state !== "none" && d.state !== "unavailable" && d.state !== "unknown";
+  });
+}
+
+/**
  * refreshControls — reads each control entity from cache and updates chip
  * on/off state and the active-count badge (e.g. "3 on").
  */
@@ -10977,6 +10995,12 @@ function refreshControls() {
     if (c.label === "Irrigation") {
       const alertEl = document.getElementById(`chip-alert-${i}`);
       if (alertEl) alertEl.classList.toggle("visible", irrigationDisabledZones().length > 0);
+    } else if (c.label === "Climate") {
+      const alertEl = document.getElementById(`chip-alert-${i}`);
+      if (alertEl) {
+        alertEl.title = "A thermostat has an alert";
+        alertEl.classList.toggle("visible", lennoxAlertActive().length > 0);
+      }
     }
   }
 }
@@ -17512,6 +17536,12 @@ function _refreshOv2() {
     if (c.label === "Irrigation") {
       const alertEl = document.getElementById(`ov2-alert-${i}`);
       if (alertEl) alertEl.classList.toggle("visible", irrigationDisabledZones().length > 0);
+    } else if (c.label === "Climate") {
+      const alertEl = document.getElementById(`ov2-alert-${i}`);
+      if (alertEl) {
+        alertEl.title = "A thermostat has an alert";
+        alertEl.classList.toggle("visible", lennoxAlertActive().length > 0);
+      }
     }
   }
 }
@@ -17754,6 +17784,9 @@ function _refreshOv3SidebarControls() {
     if (c.label === "Irrigation") {
       const alertDot = document.getElementById(`ov3-sb-alert-${i}`);
       if (alertDot) alertDot.classList.toggle("visible", irrigationDisabledZones().length > 0);
+    } else if (c.label === "Climate") {
+      const alertDot = document.getElementById(`ov3-sb-alert-${i}`);
+      if (alertDot) alertDot.classList.toggle("visible", lennoxAlertActive().length > 0);
     }
   });
 }

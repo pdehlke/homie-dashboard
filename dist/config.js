@@ -257,8 +257,16 @@ const CONFIG = {
       action: "thermostat",
       showCount: true,
       subEntities: [
-        { label: "Main House", entity: "climate.casasolar_south_zone_1" },
-        { label: "Office Wing", entity: "climate.casasolar_north_zone_1" },
+        {
+          label: "Main House",
+          entity: "climate.casasolar_south_zone_1",
+          alertEntity: "sensor.basement_casasolar_south_casasolar_south_alert",
+        },
+        {
+          label: "Office Wing",
+          entity: "climate.casasolar_north_zone_1",
+          alertEntity: "sensor.basement_casasolar_north_casasolar_north_alert",
+        },
       ],
     },
     {

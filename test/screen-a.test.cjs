@@ -433,7 +433,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260808.15");
+  assert.equal(version, "20260809.2");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -563,6 +563,13 @@ test("control row and popup mappings match the approved design", () => {
     [
       ["Main House", "climate.casasolar_south_zone_1"],
       ["Office Wing", "climate.casasolar_north_zone_1"],
+    ],
+  );
+  assert.deepEqual(
+    Array.from(config.controls[1].subEntities, (entry) => entry.alertEntity),
+    [
+      "sensor.basement_casasolar_south_casasolar_south_alert",
+      "sensor.basement_casasolar_north_casasolar_north_alert",
     ],
   );
   assert.deepEqual(
@@ -1142,6 +1149,35 @@ test("Entry-point badges (Overview A chip, Overview B sidebar list, Overview C s
   // Opposite corner from .ov3-sb-dot (the on-state glow) so both can show at once.
   assert.match(cssDeclarations(source, ".ov3-sb-dot"), /right:\s*7px/);
   assert.match(cssDeclarations(source, ".ov3-sb-alert-dot"), /left:\s*7px/);
+});
+
+test("Climate entry-point badges reuse the same three dots for a Lennox alert, keyed off alertEntity", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Shared source of truth, mirroring irrigationDisabledZones().
+  assert.match(source, /function lennoxAlertActive\(\)/);
+  assert.match(source, /CONFIG\.controls \|\| \[\]\)\.find\(c => c\.label === "Climate"\)/);
+  assert.match(source, /d\.state !== "none"/);
+
+  // Overview A's chip reuses #chip-alert-i, not a new element.
+  assert.match(
+    source,
+    /if \(c\.label === "Irrigation"\) \{[\s\S]*?\} else if \(c\.label === "Climate"\) \{\s*const alertEl = document\.getElementById\(`chip-alert-\$\{i\}`\)/,
+  );
+
+  // Overview B's mirror reuses #ov2-alert-i.
+  const refreshOv2Start = source.indexOf("function _refreshOv2()");
+  const refreshOv2End = source.indexOf("\n}", source.indexOf("Disabled-zone badge", refreshOv2Start));
+  assert.match(
+    source.slice(refreshOv2Start, refreshOv2End),
+    /\} else if \(c\.label === "Climate"\) \{\s*const alertEl = document\.getElementById\(`ov2-alert-\$\{i\}`\)[\s\S]*?lennoxAlertActive\(\)\.length > 0/,
+  );
+
+  // Overview C's sidebar dot reuses #ov3-sb-alert-i.
+  assert.match(
+    source,
+    /\} else if \(c\.label === "Climate"\) \{\s*const alertDot = document\.getElementById\(`ov3-sb-alert-\$\{i\}`\)\s*;?\s*if \(alertDot\) alertDot\.classList\.toggle\("visible", lennoxAlertActive\(\)\.length > 0\)/,
+  );
 });
 
 test("Overview C Garden card's irrigation row is a non-scrolling 2x3 grid, and marks disabled zones inert", () => {
