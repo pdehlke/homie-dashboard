@@ -6,6 +6,10 @@ The expanded Solar view will replace its single unbound inverter-temperature car
 unbound cards labeled `Left Inverter` and `Right Inverter`. Both display `— °F` until their Tesla
 inverter entities are configured.
 
+**Superseded 2026-08-09:** the Tesla inverter integration was cancelled and isn't happening. Both
+cards were repurposed into "% Green Today" and "CO2 Intensity Today" (`f3a1531`); see
+`overview-c-solar-today-totals.md` in `pdehlke/homeassistant`.
+
 ## Layout
 
 The lower Solar statistics row will contain five equal flex children: Production, Grid, Left

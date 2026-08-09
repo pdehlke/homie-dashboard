@@ -356,8 +356,9 @@ bounds, no overflow at either edge.
 
 All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations
 that expose another unit must convert their values to Fahrenheit before displaying them. The two
-Solar inverter cards intentionally remain unbound as `— °F` until the Left Inverter and Right
-Inverter entities are available.
+Solar inverter cards that used to sit unbound as `— °F`, reserved for a Tesla inverter integration
+that isn't happening, were repurposed into "% Green Today" and "CO2 Intensity Today" (`f3a1531`,
+2026-08-09); see `overview-c-solar-today-totals.md` in `pdehlke/homeassistant`.
 
 ## Verification
 

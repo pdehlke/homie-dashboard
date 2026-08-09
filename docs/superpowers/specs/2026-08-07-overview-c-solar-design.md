@@ -19,7 +19,10 @@ The configuration provides these roles:
 - Grid fossil-fuel percentage: `sensor.electricity_maps_grid_fossil_fuel_percentage` in percent
 - Grid carbon intensity: `sensor.electricity_maps_co2_intensity` in gCO2eq/kWh
 - Left and Right Inverter temperatures: intentionally unbound as `— °F` until the Tesla inverter
-  integration is installed; all dashboard temperatures use Fahrenheit
+  integration is installed; all dashboard temperatures use Fahrenheit. **Superseded 2026-08-09:**
+  that integration was cancelled and isn't happening. Both placeholders were repurposed into
+  "% Green Today" and "CO2 Intensity Today" (`f3a1531`); see
+  `overview-c-solar-today-totals.md` in `pdehlke/homeassistant`.
 
 ## Sign Convention
 
@@ -67,7 +70,7 @@ The second statistics row contains:
 1. Live solar production in kW
 2. Directional live grid flow in kW
 3. Left Inverter and Right Inverter temperature placeholders, retained as `— °F` until their Tesla
-   inverter entities are configured
+   inverter entities are configured. **Superseded 2026-08-09:** see the note above.
 4. Outdoor temperature from the configured weather entity, displayed in Fahrenheit
 
 ## Hourly Chart
