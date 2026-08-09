@@ -499,7 +499,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260809.5");
+  assert.equal(version, "20260809.6");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1129,6 +1129,20 @@ test("Alert triangle's color is hardcoded against theming, and both indicators s
   assert.ok(source.indexOf('class="ov3-sb-spacer"') < source.indexOf('id="ov3-alert-btn"'));
 });
 
+test("Overview C's alert-triangle hidden rule out-specifies .ov3-sb-btn's display:flex, regardless of source order", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // .ov3-alert-btn shares the .ov3-sb-btn base class, whose own
+  // display:flex is declared later in the stylesheet (the shared
+  // sidebar-button block). A single-class ".ov3-alert-btn { display: none; }"
+  // carries the exact same specificity as ".ov3-sb-btn { display: flex; }",
+  // so the later rule won regardless of the .visible toggle -- the triangle
+  // rendered unconditionally on Overview C even with an empty pnCache. The
+  // hidden-by-default rule must carry both classes to out-specify the base
+  // rule no matter which comes first in the file.
+  assert.match(cssDeclarations(source, ".ov3-sb-btn.ov3-alert-btn"), /display:\s*none/);
+});
+
 test("Alert overlay lists notifications newest first, dismisses via persistent_notification.dismiss, and closes on Escape", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
 
@@ -1251,7 +1265,7 @@ test("Climate entry-point badges reuse the same three dots for a Lennox alert, k
   // Shared source of truth, mirroring irrigationDisabledZones().
   assert.match(source, /function lennoxAlertActive\(\)/);
   assert.match(source, /CONFIG\.controls \|\| \[\]\)\.find\(c => c\.label === "Climate"\)/);
-  assert.match(source, /d\.state !== "none"/);
+  assert.match(source, /d\.state === "critical"/);
 
   // Overview A's chip reuses #chip-alert-i, not a new element.
   assert.match(
@@ -1272,6 +1286,23 @@ test("Climate entry-point badges reuse the same three dots for a Lennox alert, k
     source,
     /\} else if \(c\.label === "Climate"\) \{\s*const alertDot = document\.getElementById\(`ov3-sb-alert-\$\{i\}`\)\s*;?\s*if \(alertDot\) alertDot\.classList\.toggle\("visible", lennoxAlertActive\(\)\.length > 0\)/,
   );
+});
+
+test("lennoxAlertActive lights only for moderate/critical severities, matching the phone-notification threshold, not info or minor", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function lennoxAlertActive()");
+  assert.ok(fnStart > -1, "lennoxAlertActive must be found");
+  const fnEnd = source.indexOf("\n}", fnStart);
+  const fnBody = source.slice(fnStart, fnEnd);
+
+  // The dashboard badge originally lit for any state other than
+  // none/unavailable/unknown, deliberately including info and minor -- a
+  // more permissive bar than the phone/persistent_notification threshold
+  // (see lennox-thermostat-alerts.md). Revised on pde's call to match that
+  // threshold instead: only moderate or critical light the dot.
+  assert.match(fnBody, /d\.state === "critical"/);
+  assert.match(fnBody, /d\.state === "moderate"/);
+  assert.doesNotMatch(fnBody, /d\.state !== "none"/);
 });
 
 test("Overview C Garden card's irrigation row is a non-scrolling 2x3 grid, and marks disabled zones inert", () => {

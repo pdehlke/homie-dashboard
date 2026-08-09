@@ -2004,8 +2004,14 @@
   body.ov3-active .alert-indicator-corner { display: none !important; }
 
   /* Overview C's copy, pinned to the bottom of .ov3-sidebar (after
-   * .ov3-sb-spacer) rather than floating loose in a corner. */
-  .ov3-alert-btn { display: none; }
+   * .ov3-sb-spacer) rather than floating loose in a corner. Selector must
+   * carry both classes: a bare ".ov3-alert-btn" has the same specificity as
+   * ".ov3-sb-btn" (the shared sidebar-button base style, declared later in
+   * this stylesheet with its own unconditional display:flex), so source
+   * order alone used to decide and the base rule won -- the triangle showed
+   * unconditionally on Overview C regardless of pnCache. Two classes here
+   * out-specifies the one-class base rule no matter which comes first. */
+  .ov3-sb-btn.ov3-alert-btn { display: none; }
   .ov3-alert-btn.visible { display: flex; }
 
   /* ─── ALERT OVERLAY (tap either indicator above) ─── */
@@ -8759,7 +8765,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260809.5";
+      const HOMIE_ASSET_VERSION = "20260809.6";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -11057,11 +11063,16 @@ function irrigationDisabledZones() {
 
 /**
  * lennoxAlertActive — the Climate control's subEntities whose paired
- * alertEntity currently reports anything other than "none" (see
+ * alertEntity currently reports "moderate" or "critical" (see
  * lennox-thermostat-alerts.md in the docs repo; each Lennox S30's alert
  * sensor mirrors its own console, separate from its active_alerts detail
- * list). Shared by every Climate entry point, the same way
- * irrigationDisabledZones() is for Irrigation.
+ * list). Matches the same "moderate or worse" bar
+ * automation.lennox_thermostat_alert uses for the phone/persistent_notification
+ * push, on pde's call: the dashboard badge originally lit for any state other
+ * than "none" (including "info" and "minor"), which meant it stayed lit
+ * indefinitely for the low-priority, effectively-permanent info states both
+ * thermostats tend to sit in. Shared by every Climate entry point, the same
+ * way irrigationDisabledZones() is for Irrigation.
  */
 function lennoxAlertActive() {
   const climateCtrl = (CONFIG.controls || []).find(c => c.label === "Climate");
@@ -11069,7 +11080,7 @@ function lennoxAlertActive() {
   return (climateCtrl.subEntities || []).filter(s => {
     if (!s.alertEntity) return false;
     const d = haGetCached(s.alertEntity);
-    return d && d.state && d.state !== "none" && d.state !== "unavailable" && d.state !== "unknown";
+    return d && (d.state === "critical" || d.state === "moderate");
   });
 }
 
