@@ -224,6 +224,83 @@
     return Math.round(Math.min(100, Math.max(0, percent)) * 100) / 100;
   }
 
+  // Aligns several recorder-statistics series (one per role) by hourly bucket
+  // start time into one array of per-hour records. A bucket present in only
+  // some series still appears, with null for the roles that have no point at
+  // that start time — callers decide what a missing value means for them.
+  function mergeHourlyStatistics(seriesByRole) {
+    const roles = seriesByRole || {};
+    const fieldByRole = {
+      solar: ["solarChange", "change"],
+      export: ["exportChange", "change"],
+      import: ["importChange", "change"],
+      fossilPct: ["fossilPctMean", "mean"],
+      co2: ["co2Mean", "mean"],
+    };
+    const pointsByStart = new Map();
+    for (const [role, [outKey, sourceField]] of Object.entries(fieldByRole)) {
+      for (const point of roles[role] || []) {
+        if (!pointsByStart.has(point.start)) pointsByStart.set(point.start, { start: point.start });
+        pointsByStart.get(point.start)[outKey] = point[sourceField];
+      }
+    }
+    return Array.from(pointsByStart.values())
+      .sort((a, b) => a.start - b.start)
+      .map((hour) => ({
+        start: hour.start,
+        solarChange: hour.solarChange ?? null,
+        exportChange: hour.exportChange ?? null,
+        importChange: hour.importChange ?? null,
+        fossilPctMean: hour.fossilPctMean ?? null,
+        co2Mean: hour.co2Mean ?? null,
+      }));
+  }
+
+  // Time-weighted extension of homeGreenPercentage: sums self-consumed solar
+  // plus grid-import green share across every elapsed hour today that has a
+  // complete set of inputs, then divides by today's live consumption total
+  // (the same figure already shown as "Today's Usage"). An hour missing any
+  // required input is skipped rather than counted as zero, so the running
+  // total understates a gappy day instead of going blank.
+  function todayGreenPercentage(hourlyBuckets, todayConsumptionKwh) {
+    const consumption = numericState(todayConsumptionKwh);
+    if (consumption === null || consumption <= 0 || !Array.isArray(hourlyBuckets)) return null;
+    let greenKwh = 0;
+    let countedHours = 0;
+    for (const hour of hourlyBuckets) {
+      const solar = numericState(hour.solarChange);
+      const exported = numericState(hour.exportChange);
+      const imported = numericState(hour.importChange);
+      const fossilPct = numericState(hour.fossilPctMean);
+      if (solar === null || exported === null || imported === null || fossilPct === null) continue;
+      const selfConsumed = Math.max(0, solar - exported);
+      const gridGreenPct = Math.min(100, Math.max(0, 100 - fossilPct));
+      greenKwh += selfConsumed + imported * (gridGreenPct / 100);
+      countedHours++;
+    }
+    if (countedHours === 0) return null;
+    const percent = (greenKwh / consumption) * 100;
+    return Math.round(Math.min(100, Math.max(0, percent)) * 100) / 100;
+  }
+
+  // Same shape as todayGreenPercentage but for carbon mass: grid import
+  // carries the hour's mean CO2 intensity, self-consumed solar carries none.
+  function todayCo2Intensity(hourlyBuckets, todayConsumptionKwh) {
+    const consumption = numericState(todayConsumptionKwh);
+    if (consumption === null || consumption <= 0 || !Array.isArray(hourlyBuckets)) return null;
+    let totalGrams = 0;
+    let countedHours = 0;
+    for (const hour of hourlyBuckets) {
+      const imported = numericState(hour.importChange);
+      const co2Mean = numericState(hour.co2Mean);
+      if (imported === null || co2Mean === null) continue;
+      totalGrams += Math.max(0, imported) * co2Mean;
+      countedHours++;
+    }
+    if (countedHours === 0) return null;
+    return Math.round((totalGrams / consumption) * 100) / 100;
+  }
+
   function aqiPollutantView(statesByType) {
     const states = statesByType || {};
     const format = type => {
@@ -381,6 +458,7 @@
     homeGreenPercentage,
     hourlyPowerAverages,
     lowCarbonPercentage,
+    mergeHourlyStatistics,
     powerKw,
     requiresStartConfirmation,
     securityMessage,
@@ -397,6 +475,8 @@
     thermostatTemperatureView,
     thermostatToFahrenheit,
     thermostatFromFahrenheit,
+    todayCo2Intensity,
+    todayGreenPercentage,
     weatherUvValue,
   };
 });

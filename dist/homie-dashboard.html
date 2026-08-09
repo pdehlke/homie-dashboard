@@ -7678,6 +7678,9 @@
     font-size: 0.65rem;
     color: rgba(255,255,255,0.85);
   }
+  .sfs-stat-value-green {
+    color: #4ade80;
+  }
 
     /* ── CONSUMPTION STATS ROW (top row — energy & cost) ── */
   .sfs-consumption-row {
@@ -8756,7 +8759,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260809.3";
+      const HOMIE_ASSET_VERSION = "20260809.4";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -9869,8 +9872,10 @@ function _sfsRefresh() {
   const fmt = (v, dec) => v === null ? "—" : (dec ? v.toFixed(2) : Math.round(v));
   document.getElementById("sfs-stat-solar").textContent   = fmt(solar, true);
   document.getElementById("sfs-stat-export").textContent  = fmt(exp, true);
-  document.getElementById("sfs-stat-left-inverter").textContent  = view.inverterTemp;
-  document.getElementById("sfs-stat-right-inverter").textContent = view.inverterTemp;
+  // % Green Today / CO2 Intensity Today have their own fetch and 5-minute
+  // cache (see _sfsRefreshTodayStats below); this just renders whatever the
+  // cache currently holds so the two stats don't flicker on every 5s tick.
+  _sfsRenderTodayStats(_sfsTodayStatsCache);
 
   // Update outdoor weather temperature
   const _wxData = haGetCached(CONFIG.weather.entity);
@@ -9902,6 +9907,9 @@ function _sfsRefresh() {
 
   // Trigger hourly chart refresh (non-blocking)
   _sfsRefreshChart(cfg);
+
+  // Trigger today's green %/CO2 intensity refresh (non-blocking, own 5-min cache)
+  _sfsRefreshTodayStats(cfg);
 
   // Show/hide flow animations based on values
   const solarFlowing = solar !== null && solar > 0.05;
@@ -9952,6 +9960,121 @@ function _updateOv3EnergyCard() {
 setTimeout(_updateOv3EnergyCard, 1500);
 
 /* ─── SOLAR HOURLY CHART ─── */
+let _sfsTodayStatsCache = null;
+let _sfsTodayStatsLastFetch = 0;
+let _todayStatsWsHandler = null;
+let _todayStatsWsTimeout = null;
+
+// Requests hourly recorder statistics (sum/mean per hour, from local midnight
+// to now) for the given entities over Homie's existing live WebSocket
+// connection. Follows the same send-with-id/match-response/timeout-cleanup
+// pattern already used for the alarm panel's call_service calls, since this
+// codebase has no generic WS request/response helper to reuse instead.
+function _sfsFetchHourlyStatistics(entityIds) {
+  return new Promise((resolve) => {
+    if (!_ws || !_wsReady) { resolve(null); return; }
+    if (_todayStatsWsHandler) {
+      _ws.removeEventListener("message", _todayStatsWsHandler);
+      _todayStatsWsHandler = null;
+    }
+    if (_todayStatsWsTimeout) {
+      clearTimeout(_todayStatsWsTimeout);
+      _todayStatsWsTimeout = null;
+    }
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const msgId = _wsNextId();
+    _ws.send(JSON.stringify({
+      id: msgId,
+      type: "recorder/statistics_during_period",
+      start_time: start.toISOString(),
+      period: "hour",
+      statistic_ids: entityIds,
+    }));
+
+    _todayStatsWsHandler = (evt) => {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch { return; }
+      if (msg.id !== msgId) return;
+      clearTimeout(_todayStatsWsTimeout);
+      _todayStatsWsTimeout = null;
+      _ws.removeEventListener("message", _todayStatsWsHandler);
+      _todayStatsWsHandler = null;
+      resolve(msg.success ? msg.result : null);
+    };
+    _ws.addEventListener("message", _todayStatsWsHandler);
+
+    // Safety cleanup: resolve null after 10s if no matching response ever
+    // arrives (e.g. the WS closes mid-flight during the request).
+    _todayStatsWsTimeout = setTimeout(() => {
+      if (_todayStatsWsHandler) {
+        _ws.removeEventListener("message", _todayStatsWsHandler);
+        _todayStatsWsHandler = null;
+      }
+      resolve(null);
+    }, 10_000);
+  });
+}
+
+function _sfsRenderTodayStats(computed) {
+  const greenEl = document.getElementById("sfs-stat-green-today");
+  const co2El = document.getElementById("sfs-stat-co2-today");
+  const green = computed && computed.greenPercent;
+  const co2 = computed && computed.co2Intensity;
+  if (greenEl) greenEl.textContent = green === null || green === undefined ? "—" : green.toFixed(1);
+  if (co2El) co2El.textContent = co2 === null || co2 === undefined ? "—" : String(Math.round(co2));
+}
+
+// % Green Today and CO2 Intensity Today: hourly time-weighted extensions of
+// the instantaneous Low Carbon / CO2 Intensity stats. See
+// overview-c-solar-today-totals.md in the pdehlke/homeassistant repo for the
+// formulas and the alternatives rejected before building this.
+async function _sfsRefreshTodayStats(cfg) {
+  const now = Date.now();
+  if (_sfsTodayStatsCache && now - _sfsTodayStatsLastFetch < 300_000) {
+    _sfsRenderTodayStats(_sfsTodayStatsCache);
+    return;
+  }
+
+  const stats = (CONFIG.solar && CONFIG.solar.stats) || (cfg ? cfg.sensors : []);
+  const entityFor = (type) => {
+    const found = stats.find((x) => x.type === type);
+    return found && found.entity ? found.entity : null;
+  };
+  const roles = {
+    solar: entityFor("daily-production"),
+    export: entityFor("daily-to-grid"),
+    import: entityFor("daily-from-grid"),
+    fossilPct: entityFor("fossil-percentage"),
+    co2: entityFor("co2-intensity"),
+  };
+  const ids = Object.values(roles).filter(Boolean);
+  if (ids.length < 5) return; // roles not fully configured — leave the cache/display as-is
+
+  const raw = await _sfsFetchHourlyStatistics(ids);
+  if (!raw) return; // fetch failed or timed out — keep showing whatever the cache last had
+
+  const merged = HOMIE_CUSTOM.mergeHourlyStatistics({
+    solar: raw[roles.solar] || [],
+    export: raw[roles.export] || [],
+    import: raw[roles.import] || [],
+    fossilPct: raw[roles.fossilPct] || [],
+    co2: raw[roles.co2] || [],
+  });
+
+  const consumptionState = haGetCached(entityFor("daily-consumption"));
+  const consumptionKwh = consumptionState ? consumptionState.state : null;
+
+  const computed = {
+    greenPercent: HOMIE_CUSTOM.todayGreenPercentage(merged, consumptionKwh),
+    co2Intensity: HOMIE_CUSTOM.todayCo2Intensity(merged, consumptionKwh),
+  };
+  _sfsTodayStatsCache = computed;
+  _sfsTodayStatsLastFetch = now;
+  _sfsRenderTodayStats(computed);
+}
+
 let _sfsChartCache = null;
 let _sfsChartLastFetch = 0;
 
@@ -21468,21 +21591,21 @@ _applyDailyI18n();
         <div class="sfs-stat-value"><span id="sfs-stat-export">—</span><span class="sfs-stat-unit"> kW</span></div>
         <div class="sfs-stat-label">Grid</div>
       </div>
-      <!-- Left Inverter -->
+      <!-- % Green Today (repurposed from the never-bound Left Inverter placeholder) -->
       <div class="sfs-stat-card">
         <div class="sfs-stat-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 3.2C14 3.5 7.2 5.8 4.5 11.1c-1.6 3.1-.7 6.8 2.2 8.7 2.9-5.4 7.2-9.2 12.8-11.5-4.7 3-8.2 7-10.5 12.1 3.3.7 6.7-.9 8.3-4 2.7-5.3 3.4-9.4 3.5-13.2z"/></svg>
         </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-left-inverter">—</span><span class="sfs-stat-unit"> °F</span></div>
-        <div class="sfs-stat-label">Left Inverter</div>
+        <div class="sfs-stat-value"><span id="sfs-stat-green-today" class="sfs-stat-value-green">—</span><span class="sfs-stat-unit"> %</span></div>
+        <div class="sfs-stat-label">% Green Today</div>
       </div>
-      <!-- Right Inverter -->
+      <!-- CO2 Intensity Today (repurposed from the never-bound Right Inverter placeholder) -->
       <div class="sfs-stat-card">
         <div class="sfs-stat-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1 .4-8A6 6 0 0 1 19 12a3 3 0 0 1-1 5.8"/><path d="M9 21h6M12 17v4"/></svg>
         </div>
-        <div class="sfs-stat-value"><span id="sfs-stat-right-inverter">—</span><span class="sfs-stat-unit"> °F</span></div>
-        <div class="sfs-stat-label">Right Inverter</div>
+        <div class="sfs-stat-value"><span id="sfs-stat-co2-today">—</span><span class="sfs-stat-unit"> gCO2/kWh</span></div>
+        <div class="sfs-stat-label">CO2 Intensity Today</div>
       </div>
       <!-- Weather Temp -->
       <div class="sfs-stat-card">

@@ -165,6 +165,9 @@ test("solar data roles bind the accepted Sense and Electricity Maps entities", (
       ["daily-consumption", "sensor.sense_287516_daily_energy"],
       ["monthly-kwh", "sensor.sense_287516_monthly_energy"],
       ["net-today", "sensor.sense_287516_daily_net_production"],
+      ["daily-production", "sensor.sense_287516_daily_production"],
+      ["daily-from-grid", "sensor.sense_287516_daily_from_grid"],
+      ["daily-to-grid", "sensor.sense_287516_daily_to_grid"],
       ["fossil-percentage", "sensor.electricity_maps_grid_fossil_fuel_percentage"],
       ["co2-intensity", "sensor.electricity_maps_co2_intensity"],
       ["solar-temp", ""],
@@ -203,6 +206,69 @@ test("home green percentage blends solar and grid-import green share", () => {
   assert.equal(custom.homeGreenPercentage(null, 1, 2, 50), null);
   assert.equal(custom.homeGreenPercentage(1, 1, 0, 50), null);
   assert.equal(custom.homeGreenPercentage(1, 2, 3, null), null);
+});
+
+test("mergeHourlyStatistics aligns per-hour series by bucket start, nulling absent points", () => {
+  const custom = loadCustomizations();
+  assert.deepEqual(
+    custom.mergeHourlyStatistics({
+      solar: [{ start: 1000, change: 2 }, { start: 2000, change: 0 }],
+      export: [{ start: 1000, change: 0.5 }, { start: 2000, change: 0 }],
+      import: [{ start: 1000, change: 1 }, { start: 2000, change: 3 }, { start: 3000, change: 5 }],
+      fossilPct: [{ start: 1000, mean: 40 }, { start: 2000, mean: 70 }],
+      co2: [{ start: 1000, mean: 400 }],
+    }),
+    [
+      { start: 1000, solarChange: 2, exportChange: 0.5, importChange: 1, fossilPctMean: 40, co2Mean: 400 },
+      { start: 2000, solarChange: 0, exportChange: 0, importChange: 3, fossilPctMean: 70, co2Mean: null },
+      // import reported an hour none of the other series has yet; still shows up, nulled elsewhere.
+      { start: 3000, solarChange: null, exportChange: null, importChange: 5, fossilPctMean: null, co2Mean: null },
+    ],
+  );
+});
+
+test("today's green % sums self-consumed solar plus grid-import green share across the elapsed hours", () => {
+  const custom = loadCustomizations();
+  const hours = [
+    // 2 kWh solar, 0.5 kWh exported: 1.5 kWh self-consumed + 1 kWh import at 60% green = 2.1
+    { solarChange: 2, exportChange: 0.5, importChange: 1, fossilPctMean: 40 },
+    // No solar: 3 kWh import at 30% green = 0.9
+    { solarChange: 0, exportChange: 0, importChange: 3, fossilPctMean: 70 },
+  ];
+  // (2.1 + 0.9) / 5 kWh today = 60%
+  assert.equal(custom.todayGreenPercentage(hours, 5), 60);
+
+  // An hour missing any required input is skipped, not zeroed — result is unchanged.
+  const withGap = hours.concat([{ solarChange: 1, exportChange: 0, importChange: 1, fossilPctMean: null }]);
+  assert.equal(custom.todayGreenPercentage(withGap, 5), 60);
+
+  // Clamped to 100 even if independently-metered sensors would blend past it.
+  assert.equal(custom.todayGreenPercentage([{ solarChange: 10, exportChange: 0, importChange: 10, fossilPctMean: 0 }], 5), 100);
+
+  // No hour today has a complete set of inputs: nothing to report.
+  assert.equal(custom.todayGreenPercentage([{ solarChange: null, exportChange: 0, importChange: 1, fossilPctMean: 50 }], 5), null);
+
+  // No live consumption reading yet (e.g. just after midnight): can't divide.
+  assert.equal(custom.todayGreenPercentage(hours, null), null);
+  assert.equal(custom.todayGreenPercentage(hours, 0), null);
+});
+
+test("today's CO2 intensity weights grid import by that hour's CO2 mean, solar hours contribute zero", () => {
+  const custom = loadCustomizations();
+  const hours = [
+    { importChange: 1, co2Mean: 400 },
+    { importChange: 3, co2Mean: 500 },
+  ];
+  // (400 + 1500) grams / 5 kWh today = 380 gCO2/kWh
+  assert.equal(custom.todayCo2Intensity(hours, 5), 380);
+
+  // An hour missing CO2 data is skipped, not zeroed.
+  const withGap = hours.concat([{ importChange: 2, co2Mean: null }]);
+  assert.equal(custom.todayCo2Intensity(withGap, 5), 380);
+
+  assert.equal(custom.todayCo2Intensity([{ importChange: null, co2Mean: 400 }], 5), null);
+  assert.equal(custom.todayCo2Intensity(hours, null), null);
+  assert.equal(custom.todayCo2Intensity(hours, 0), null);
 });
 
 test("Overview C solar view model formats live, daily, solar, and grid values", () => {
@@ -306,12 +372,12 @@ test("full-screen solar markup removes battery and exposes accepted readings", (
   assert.doesNotMatch(source, /id="sfs-node-bat-val"|id="sfs-stat-battery"|id="sfs-lbl-charge"/);
   assert.match(source, />Low Carbon</);
   assert.match(source, />CO2 Intensity</);
-  assert.match(source, /id="sfs-stat-left-inverter"/);
-  assert.match(source, /id="sfs-stat-right-inverter"/);
-  assert.match(source, />Left Inverter</);
-  assert.match(source, />Right Inverter</);
-  assert.match(source, /id="sfs-stat-left-inverter">—<\/span><span class="sfs-stat-unit"> °F<\/span>/);
-  assert.match(source, /id="sfs-stat-right-inverter">—<\/span><span class="sfs-stat-unit"> °F<\/span>/);
+  // The old, permanently-unbound inverter-temperature placeholders are gone.
+  assert.doesNotMatch(source, /id="sfs-stat-left-inverter"|id="sfs-stat-right-inverter"|>Left Inverter<|>Right Inverter</);
+  assert.match(source, />% Green Today</);
+  assert.match(source, />CO2 Intensity Today</);
+  assert.match(source, /id="sfs-stat-green-today" class="sfs-stat-value-green">—<\/span><span class="sfs-stat-unit"> %<\/span>/);
+  assert.match(source, /id="sfs-stat-co2-today">—<\/span><span class="sfs-stat-unit"> gCO2\/kWh<\/span>/);
   const statsRow = source.slice(
     source.indexOf('<div class="sfs-stats-row">'),
     source.indexOf("<!-- Hourly chart -->"),
@@ -433,7 +499,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260809.3");
+  assert.equal(version, "20260809.4");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
