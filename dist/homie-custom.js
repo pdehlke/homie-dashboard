@@ -204,6 +204,26 @@
     return fossil === null || fossil < 0 || fossil > 100 ? null : Math.round((100 - fossil) * 100) / 100;
   }
 
+  // Share of the home's own consumption that is green, not the grid's raw mix.
+  // Solar production counts as 100% green. While exporting or neutral, solar
+  // alone covers consumption, so the result is 100 regardless of the grid's
+  // mix. While importing, the result blends solar and imported grid power
+  // (at the grid's green fraction) weighted by each source's share of
+  // homeKw. Clamped to [0, 100] to absorb noise between independently
+  // metered sensors.
+  function homeGreenPercentage(solarKw, gridKw, homeKw, gridGreenPercent) {
+    const solar = numericState(solarKw);
+    const grid = numericState(gridKw);
+    const home = numericState(homeKw);
+    if (solar === null || grid === null || home === null || home <= 0) return null;
+    if (gridDirection(grid).mode !== "import") return 100;
+    const gridGreen = numericState(gridGreenPercent);
+    if (gridGreen === null) return null;
+    const greenKw = solar + grid * (gridGreen / 100);
+    const percent = (greenKw / home) * 100;
+    return Math.round(Math.min(100, Math.max(0, percent)) * 100) / 100;
+  }
+
   function aqiPollutantView(statesByType) {
     const states = statesByType || {};
     const format = type => {
@@ -280,18 +300,19 @@
     const number = type => states[type] ? numericState(states[type].state) : null;
     const daily = number("daily-consumption");
     const monthly = number("monthly-kwh");
-    const lowCarbon = lowCarbonPercentage(number("fossil-percentage"));
+    const gridGreenPercent = lowCarbonPercentage(number("fossil-percentage"));
     const co2 = number("co2-intensity");
     const temp = number("solar-temp");
     const solarKw = powerKw(states.solar);
     const homeKw = powerKw(states["live-consumption"]);
     const gridKw = powerKw(states.export);
     const direction = gridDirection(gridKw);
+    const homeGreen = homeGreenPercentage(solarKw, gridKw, homeKw, gridGreenPercent);
     return {
       liveWatts: card.liveWatts,
       dailyUsage: daily === null ? "—" : daily.toFixed(1),
       monthlyUsage: monthly === null ? "—" : monthly.toFixed(1),
-      lowCarbon: lowCarbon === null ? "—" : lowCarbon.toFixed(1),
+      lowCarbon: homeGreen === null ? "—" : homeGreen.toFixed(1),
       co2Intensity: co2 === null ? "—" : String(Math.round(co2)),
       solarKw,
       homeKw,
@@ -357,6 +378,7 @@
     installDefaults,
     gridDirection,
     futureForecastDays,
+    homeGreenPercentage,
     hourlyPowerAverages,
     lowCarbonPercentage,
     powerKw,

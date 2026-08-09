@@ -186,6 +186,25 @@ test("solar value helpers preserve units and house-centric grid direction", () =
   assert.equal(custom.lowCarbonPercentage(120), null);
 });
 
+test("home green percentage blends solar and grid-import green share", () => {
+  const custom = loadCustomizations();
+  // Exporting: home consumption is fully covered by solar, so it's 100% green
+  // regardless of the grid's own mix.
+  assert.equal(custom.homeGreenPercentage(3.354, -2.1, 1.269, 26.48), 100);
+  // Neutral grid (no meaningful import or export): same, still fully solar-covered.
+  assert.equal(custom.homeGreenPercentage(1, 0, 1, 50), 100);
+  // No solar at all: home green % collapses to the raw grid green %.
+  assert.equal(custom.homeGreenPercentage(0, 2, 2, 40), 40);
+  // Mixed solar + grid import: weighted by each source's share of consumption.
+  assert.equal(custom.homeGreenPercentage(1, 1, 2, 50), 75);
+  // Clamped even if sensor noise would push the blend past 100.
+  assert.equal(custom.homeGreenPercentage(5, 0.5, 3, 100), 100);
+  // Missing inputs, or importing with no grid-mix data, yield null.
+  assert.equal(custom.homeGreenPercentage(null, 1, 2, 50), null);
+  assert.equal(custom.homeGreenPercentage(1, 1, 0, 50), null);
+  assert.equal(custom.homeGreenPercentage(1, 2, 3, null), null);
+});
+
 test("Overview C solar view model formats live, daily, solar, and grid values", () => {
   const custom = loadCustomizations();
   assert.deepEqual(
@@ -235,7 +254,9 @@ test("full-screen solar view model uses real usage and Electricity Maps values",
       liveWatts: "1269",
       dailyUsage: "8.6",
       monthlyUsage: "271.1",
-      lowCarbon: "26.5",
+      // Exporting, so solar alone covers all consumption: 100% green, not the
+      // raw grid mix (which would have been 26.5).
+      lowCarbon: "100.0",
       co2Intensity: "450",
       solarKw: 3.354,
       homeKw: 1.269,
@@ -245,6 +266,24 @@ test("full-screen solar view model uses real usage and Electricity Maps values",
       inverterTemp: "—",
     },
   );
+});
+
+test("full-screen solar view model blends solar and grid-import green share while importing", () => {
+  const custom = loadCustomizations();
+  const view = custom.solarFullscreenView({
+    "live-consumption": { state: "2000", attributes: { unit_of_measurement: "W" } },
+    "daily-consumption": { state: "8.6", attributes: { unit_of_measurement: "kWh" } },
+    "monthly-kwh": { state: "271.1", attributes: { unit_of_measurement: "kWh" } },
+    "fossil-percentage": { state: "50", attributes: { unit_of_measurement: "%" } },
+    "co2-intensity": { state: "450", attributes: { unit_of_measurement: "gCO2eq/kWh" } },
+    solar: { state: "1000", attributes: { unit_of_measurement: "W" } },
+    export: { state: "1", attributes: { unit_of_measurement: "kW" } },
+    "solar-temp": null,
+  });
+  // 1 kW solar (100% green) + 1 kW grid import at 50% green, over 2 kW total
+  // consumption, is 75% green.
+  assert.equal(view.lowCarbon, "75.0");
+  assert.equal(view.gridLabel, "Import");
 });
 
 test("hourly power averages convert both Sense series from W to kW", () => {
