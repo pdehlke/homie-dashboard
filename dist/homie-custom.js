@@ -68,14 +68,21 @@
     const targetHigh = numericState(attributes.target_temp_high);
     const targetLow = numericState(attributes.target_temp_low);
     const isRangeMode = targetHigh !== null && targetLow !== null && (mode === "heat_cool" || mode === "auto");
-    // A dual-setpoint band has no single "the" setpoint. hvac_action reports which bound
-    // the equipment is actually working toward right now, so prefer that one; with no
-    // active action (idle, fan, or unreported) there is no single correct answer, so show
-    // the midpoint of the band instead.
+    // A dual-setpoint band has no single "the" setpoint. hvac_action reports which bound the
+    // equipment is actively working toward right now, so prefer that one. With no active action
+    // (idle, fan, or unreported) -- which is the *normal resting state* of a satisfied
+    // thermostat, not a rare edge case -- fall back to whichever bound current_temperature sits
+    // closer to. That was previously the band midpoint, but the midpoint isn't a setpoint either
+    // bound is actually near, so it reads as wrong (e.g. 70 shown for a 62/78 band idling at 76)
+    // even though the underlying data is fine. A tied or unknown current_temperature defaults to
+    // the high (cooling) bound.
+    const currentNative = numericState(attributes.current_temperature);
     const rangeTarget = isRangeMode
       ? (hvacAction === "cooling" ? targetHigh
         : hvacAction === "heating" ? targetLow
-        : (targetHigh + targetLow) / 2)
+        : (currentNative !== null && Math.abs(currentNative - targetLow) < Math.abs(currentNative - targetHigh)
+          ? targetLow
+          : targetHigh))
       : null;
     const target = targetTemperature
       ?? rangeTarget

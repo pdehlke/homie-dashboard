@@ -499,7 +499,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260809.6");
+  assert.equal(version, "20260810.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -738,6 +738,8 @@ test("thermostat view normalizes Fahrenheit display and range setpoints", () => 
       nativeUnit: "°C",
     },
   );
+  // No hvac_action reported (unavailable/unreported), so the nearest-bound fallback applies:
+  // 78.4 sits 2.5° from the 75.9 high bound and 9.3° from the 69.1 low bound.
   assert.deepEqual(
     custom.thermostatTemperatureView({
       state: "heat_cool",
@@ -750,9 +752,9 @@ test("thermostat view normalizes Fahrenheit display and range setpoints", () => 
     }),
     {
       currentTemperature: "78 °F",
-      targetTemperature: "73 °F",
+      targetTemperature: "76 °F",
       currentTemperatureValue: 78.4,
-      targetTemperatureValue: 72.5,
+      targetTemperatureValue: 75.9,
       hasRange: true,
       nativeUnit: "°F",
     },
@@ -840,14 +842,41 @@ test("thermostat range setpoint follows the active hvac_action bound, not a midp
     { target_temp_high: 78, target_temp_low: 61.5 },
   );
 
-  // Idle or unreported hvac_action: no single bound is "active", so fall back to shifting
-  // the whole band together, matching the existing no-hvac_action behavior.
+  // Idle or unreported hvac_action: no single bound is "active", so show whichever setpoint
+  // current_temperature is actually closer to, not the band midpoint. Real live fixture:
+  // climate.casasolar_south_zone_1 idling at 76 in a 62/78 band -- the midpoint (70) matches
+  // neither setpoint and reads as wrong next to the Lennox Home dashboard's native thermostat
+  // card, which never collapses the band and shows 78 for the same state.
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: { current_temperature: 76, target_temp_high: 78, target_temp_low: 62, hvac_action: "idle" },
+    }).targetTemperature,
+    "78 °F",
+  );
+  // Idling nearer the low bound picks the low bound instead.
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: { current_temperature: 64, target_temp_high: 78, target_temp_low: 62, hvac_action: "idle" },
+    }).targetTemperature,
+    "62 °F",
+  );
+  // Exactly equidistant, or current_temperature missing entirely: defaults to the high
+  // (cooling) bound rather than averaging.
   assert.deepEqual(
     custom.thermostatTemperatureView({
       state: "heat_cool",
       attributes: { current_temperature: 70, target_temp_high: 78, target_temp_low: 62, hvac_action: "idle" },
     }).targetTemperature,
-    "70 °F",
+    "78 °F",
+  );
+  assert.deepEqual(
+    custom.thermostatTemperatureView({
+      state: "heat_cool",
+      attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: "fan" },
+    }).targetTemperature,
+    "78 °F",
   );
 });
 
