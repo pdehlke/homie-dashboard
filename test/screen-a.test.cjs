@@ -499,10 +499,33 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260810.1");
+  assert.equal(version, "20260810.2");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
+});
+
+test("Bladerunner (Goudy Bookletter 1911) is registered as the default font", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Catalogue entry: single weight (400 only — Goudy Bookletter 1911 has no
+  // light/thin variant), serif generic fallback.
+  assert.match(
+    source,
+    /\{ name: 'Goudy Bookletter 1911', weights: \[400\],\s*generic: 'serif' \}/,
+  );
+
+  // Registered as the default in both places that carry a literal fallback.
+  assert.match(source, /dashFont:\s*'Goudy Bookletter 1911',/);
+  assert.match(source, /dashFontWeight:\s*400,/);
+  assert.match(source, /_settings\.dashFont\s*\|\| 'Goudy Bookletter 1911',/);
+  assert.match(source, /_settings\.dashFontWeight \|\| 400/);
+
+  // Settings panel radio: labeled "Bladerunner", wired to the real family name.
+  assert.match(
+    source,
+    /onclick="applyFontSetting\('font','Goudy Bookletter 1911'\)">\s*<input type="radio" name="dashFont" value="Goudy Bookletter 1911"[^>]*>\s*<span class="startup-mode-label">Bladerunner<\/span>/,
+  );
 });
 
 test("Overview C sidebar's Irrigation icon uses material-symbols:sprinkler-rounded, not the generic switch icon", () => {

@@ -352,6 +352,52 @@ written directly in the card's HTML and never touched by JS. Styled to match
 a card that already has one. Verified live: heading and grid both measured fully inside the card's
 bounds, no overflow at either edge.
 
+## Default Font: Bladerunner / Goudy Bookletter 1911 (release `20260810.2`)
+
+For fun, pde wanted the dashboard's default font to nod to the *Blade Runner* title-card
+typography, referencing [Rands's writeup](https://randsinrepose.com/archives/blade-runner-title-cards/),
+which identifies that typeface as Goudy Oldstyle: "This is a single typeface. It's Goudy
+Oldstyle — that's it."
+
+The real Goudy Oldstyle is a commercial Monotype/URW typeface with no free, pixel-accurate
+digitization, and both this fork and its upstream (`Big-Edge2297/homie-dashboard`) are public
+repos — committing a licensed font file would be redistribution most font EULAs forbid, and
+Homie's font picker only knows how to load fonts from Google Fonts anyway (`_buildGoogleFontsUrl`
+builds a `fonts.googleapis.com/css2?family=...` URL; there's no self-hosted `@font-face`
+infrastructure in this fork). **Goudy Bookletter 1911** — Barry Schwartz's OFL-licensed
+digitization of Goudy's own Kennerley Oldstyle cut, hosted on Google Fonts — was chosen as the
+closest legally-clean stand-in: same designer, same old-style serif family feel, free to embed,
+and it drops straight into the existing Google-Fonts-only loader with no new code.
+
+The dropdown shows it as **"Bladerunner"** while the real font-family loaded from Google Fonts
+stays `Goudy Bookletter 1911`. This split cost nothing because the Settings → Fonts list is
+hand-written HTML (each `<label>` has its own display text and its own
+`onclick="applyFontSetting('font','<name>')"` value), not generated from `FONT_CATALOGUE` — the
+visible label and the functional value were already two different things.
+
+Two other things fell out of implementing this:
+
+- **Single weight.** Querying `fonts.googleapis.com/css2?family=Goudy+Bookletter+1911` directly
+  returns only a 400 (Regular) `@font-face` — no Thin/Light variant exists. `FONT_CATALOGUE`'s
+  entry declares `weights: [400]`, and the existing weight-picker logic (`_syncFontUI()` already
+  filters `WEIGHT_OPTIONS` down to `entry.weights`, and `applyFontSetting('font', …)` already
+  falls back to a valid weight on font switch) handled this with zero new UI code — the Thin/Light
+  buttons simply don't render for this font.
+- **Generic-fallback fix.** `applyFonts()`'s injected override previously hardcoded `sans-serif`
+  as the CSS generic fallback for every font, which was already wrong for the two existing serif
+  entries (Libre Baskerville, Lora) — if the Google Fonts CDN were ever unreachable, they'd fall
+  back to a sans-serif system font instead of a serif one. Added a `generic: 'serif' |
+  'sans-serif'` field to every `FONT_CATALOGUE` entry and had `applyFonts()` look it up instead of
+  hardcoding, fixing the pre-existing gap for all three serif fonts as a side effect of adding the
+  new one.
+
+Made the new entry the default (`SETTINGS_DEFAULTS.dashFont`, plus the literal fallback in
+`applyAllSettings()`, plus the `<head>` preload link and the base `html, body` CSS rule, so there's
+no flash of the old default before JS runs). No settings migration was needed: `loadSettings()`
+only ever persists `dashFont` to `localStorage` when a device's Settings panel is actually
+touched, and pde confirmed no device (including the Fire HD 10 kiosk) had ever had a font
+explicitly picked, so the new code default took effect everywhere on next load.
+
 ## Temperature Display Convention
 
 All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations

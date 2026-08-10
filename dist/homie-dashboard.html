@@ -34,7 +34,7 @@
 <title>Homie Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Goudy+Bookletter+1911:wght@400&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -63,7 +63,7 @@
   html, body {
     width: 100%; height: 100%;
     background: #07080a;  /* matches the applyThemeBg() base colour */
-    font-family: 'Montserrat', sans-serif;
+    font-family: 'Goudy Bookletter 1911', serif;
     color: #fff;
     overflow: hidden;
     user-select: none;
@@ -8765,7 +8765,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260810.1";
+      const HOMIE_ASSET_VERSION = "20260810.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -19014,16 +19014,17 @@ function _refreshOv3() {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 const FONT_CATALOGUE = [
-  { name: 'Montserrat',        weights: [300, 400] },
-  { name: 'DM Sans',           weights: [300, 400] },
-  { name: 'Inter',             weights: [300, 400] },
-  { name: 'Jost',              weights: [300, 400] },
-  { name: 'Lato',              weights: [300, 400] },
-  { name: 'Libre Baskerville', weights: [300, 400] },
-  { name: 'Lora',              weights: [300, 400] },
-  { name: 'Nunito',            weights: [300, 400] },
-  { name: 'Poppins',           weights: [300, 400] },
-  { name: 'Raleway',           weights: [300, 400] },
+  { name: 'Goudy Bookletter 1911', weights: [400],      generic: 'serif' },
+  { name: 'DM Sans',               weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Inter',                 weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Jost',                  weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Lato',                  weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Libre Baskerville',     weights: [300, 400], generic: 'serif' },
+  { name: 'Lora',                  weights: [300, 400], generic: 'serif' },
+  { name: 'Montserrat',            weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Nunito',                weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Poppins',               weights: [300, 400], generic: 'sans-serif' },
+  { name: 'Raleway',               weights: [300, 400], generic: 'sans-serif' },
 ];
 
 // Fixed weight options shown to the user — Thin (100), Light (300), Regular (400)
@@ -19058,7 +19059,9 @@ function applyFonts(font, weight) {
     styleEl.id = 'homie-font-override';
     document.head.appendChild(styleEl);
   }
-  styleEl.textContent = `* { font-family: '${font}', sans-serif !important; font-weight: ${weight} !important; }`;
+  const catalogueEntry = FONT_CATALOGUE.find(f => f.name === font);
+  const generic = catalogueEntry?.generic || 'sans-serif';
+  styleEl.textContent = `* { font-family: '${font}', ${generic} !important; font-weight: ${weight} !important; }`;
 
 
 }
@@ -19129,8 +19132,8 @@ const SETTINGS_DEFAULTS = {
   showPetButton:       true,
   showSecurityButton:  true,
   sensorPanels:        {},     // keyed by floor label → true/false
-  dashFont:            'Montserrat',
-  dashFontWeight:      300,
+  dashFont:            'Goudy Bookletter 1911',
+  dashFontWeight:      400,
   timeOfDayThemes:     { morning: null, afternoon: null, evening: null, night: null },
   exitGesture:         "swipe-down",  // "swipe-down" | "swipe-up" | "pinch"
   screensaverEnabled:  false,
@@ -19251,8 +19254,8 @@ function applyAllSettings() {
 
   // Fonts
   applyFonts(
-    _settings.dashFont       || 'Montserrat',
-    _settings.dashFontWeight || 300
+    _settings.dashFont       || 'Goudy Bookletter 1911',
+    _settings.dashFontWeight || 400
   );
 
   // Screensaver — re-arm idle timer whenever settings change
@@ -21003,6 +21006,11 @@ _applyDailyI18n();
     <div class="settings-section-body">
       <div class="font-picker-group">
         <div class="startup-mode-list" id="st-dash-font">
+          <label class="startup-mode-option" onclick="applyFontSetting('font','Goudy Bookletter 1911')">
+            <input type="radio" name="dashFont" value="Goudy Bookletter 1911" id="st-font-goudybookletter1911">
+            <span class="startup-mode-label">Bladerunner</span>
+            <span class="startup-mode-check"><svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg></span>
+          </label>
           <label class="startup-mode-option" onclick="applyFontSetting('font','Montserrat')">
             <input type="radio" name="dashFont" value="Montserrat" id="st-font-montserrat">
             <span class="startup-mode-label">Montserrat</span>
