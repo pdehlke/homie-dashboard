@@ -20,7 +20,7 @@ Not designed for:
 ❌ Desktop browsers as primary usage
 ❌ Small screens
 
-[Screenshots](https://github.com/Big-Edge2297/homie-dashboard/blob/main/README.md#Screenshots) · [Installation](https://github.com/Big-Edge2297/homie-dashboard/blob/main/README.md#Installation) · [Security](https://github.com/Big-Edge2297/homie-dashboard/blob/main/README.md#security) · [Release Highlights](https://github.com/Big-Edge2297/homie-dashboard/blob/main/README.md#Release-Highlights)
+[Screenshots](https://github.com/pdehlke/homie-dashboard/blob/main/README.md#Screenshots) · [Installation](https://github.com/pdehlke/homie-dashboard/blob/main/README.md#Installation) · [Security](https://github.com/pdehlke/homie-dashboard/blob/main/README.md#security) · [Release Highlights](https://github.com/pdehlke/homie-dashboard/blob/main/README.md#Release-Highlights)
 
 ## Quick Start
 
@@ -115,7 +115,7 @@ http://YOUR_HA_IP:8123/local/homie-dashboard.html
 1. In your Home Assistant sidebar, click on HACS.
 2. Click the three dots (menu icon) in the top-right corner and select Custom repositories.
 3. In the window that pops up, fill out the following fields:
-   - Repository: https://github.com/Big-Edge2297/homie-dashboard
+   - Repository: https://github.com/pdehlke/homie-dashboard
    - Type: Select Dashboard.
 4. Click Add.
 5. Once added, find Homie Dashboard in your HACS list, click it, and click Download.
@@ -288,7 +288,7 @@ First Release v1.0.0
   
 </details>
 
-More information for the Homie Dashboard Elements can be found [homie-dashboard-elements](https://github.com/Big-Edge2297/homie-dashboard/blob/main/docs/homie-dashboard-elements.md)
+More information for the Homie Dashboard Elements can be found [homie-dashboard-elements](https://github.com/pdehlke/homie-dashboard/blob/main/docs/homie-dashboard-elements.md)
 
 ---
 
