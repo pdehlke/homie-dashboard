@@ -936,6 +936,9 @@
   .tv-action-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
   .tv-action-btn.active { background: var(--ac-12); border-color: var(--ac-5); color: var(--accent-hi); }
   .tv-action-btn--off.active { background: rgba(230,57,70,0.12); border-color: rgba(230,57,70,0.5); color: #f28a92; }
+  /* Volume/mute row: greyed out at PowerOff, see refreshTVControlUI. Native
+   * :disabled rather than a .disabled class, since these are real <button>s. */
+  .tv-action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
   .tv-feedback {
     min-height: 20px;
@@ -8871,6 +8874,21 @@
       </button>
     </div>
 
+    <div class="tv-action-row">
+      <button class="tv-action-btn" id="tv-action-vol_down" onclick="tvVolumeAction('VolumeDown')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        <span>VOL DOWN</span>
+      </button>
+      <button class="tv-action-btn" id="tv-action-mute" onclick="tvVolumeAction('Mute')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+        <span>MUTE</span>
+      </button>
+      <button class="tv-action-btn" id="tv-action-vol_up" onclick="tvVolumeAction('VolumeUp')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+        <span>VOL UP</span>
+      </button>
+    </div>
+
     <div id="tv-feedback" class="tv-feedback"></div>
   </div>
 </div>
@@ -9035,7 +9053,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260811.6";
+      const HOMIE_ASSET_VERSION = "20260811.7";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -13829,7 +13847,8 @@ function closeSecurityOverlay(e) {
 }
 
 /* ─── TV CONTROL (Harmony Hub) ────────────────────────────────────────────
- * openTVControl() / closeTVControlOverlay() / tvControlAction(activity)
+ * openTVControl() / closeTVControlOverlay() / tvControlAction(activity) /
+ * tvVolumeAction(command)
  * Wraps CONFIG.harmonyEntity (remote.harmony_hub). Three fixed activities,
  * matching what's actually programmed into the physical hub right now:
  * "Watch TV", "Watch a Movie", and Harmony's own built-in all-off activity,
@@ -13840,12 +13859,28 @@ function closeSecurityOverlay(e) {
  * extra plumbing. Badge and button highlight are fetch-on-open plus a
  * local optimistic update right after a tap, same pattern as the Security
  * overlay — no live subscription while the popup sits open.
+ *
+ * Volume/mute relay raw button presses to TV_VOLUME_DEVICE via
+ * remote.send_command, bypassing the activity layer entirely — confirmed
+ * live 2026-08-11 (5x VolumeUp moved the Integra receiver from 50 to 55,
+ * Mute/Mute toggled cleanly). Harmony reports no volume level or mute state
+ * back for any device, so unlike the activity buttons there's no badge or
+ * "active" class to keep in sync; each tap only gets the shared Sending…/Done
+ * line, never a persistent highlight that could drift from reality (e.g. if
+ * the physical remote or the receiver's own front panel is used instead).
+ * See docs/harmony-hub/harmony-hub-integration.md in the pdehlke/homeassistant
+ * repo for the full integration inventory this was built from.
  * ────────────────────────────────────────────────────────────────────────── */
 const TV_ACTIVITY_LABELS = {
   PowerOff: "OFF",
   "Watch TV": "WATCH TV",
   "Watch a Movie": "WATCH A MOVIE",
 };
+
+// The one device (of Harmony's six) that actually owns audio in both
+// configured activities — not a per-activity setting Harmony exposes to HA,
+// so it's hardcoded here the same way the three activity names above are.
+const TV_VOLUME_DEVICE = "Integra AV Receiver";
 
 /** Maps a Harmony activity name to the matching action button's DOM id suffix. */
 function tvActionIdFor(activity) {
@@ -13866,6 +13901,15 @@ function refreshTVControlUI(activity) {
   });
   const activeId = tvActionIdFor(activity);
   if (activeId) document.getElementById(`tv-action-${activeId}`)?.classList.add("active");
+
+  // Volume/mute only reach a powered device once an activity is running;
+  // grey them out at PowerOff (or before the first fetch resolves) instead
+  // of shipping a button that silently does nothing when tapped.
+  const volumeDisabled = !activity || activity === "PowerOff";
+  ["vol_down", "mute", "vol_up"].forEach(id => {
+    const btn = document.getElementById(`tv-action-${id}`);
+    if (btn) btn.disabled = volumeDisabled;
+  });
 }
 
 async function openTVControl() {
@@ -13900,6 +13944,25 @@ async function tvControlAction(activity) {
   } else {
     await haService("remote", "turn_on", { entity_id: CONFIG.harmonyEntity, activity });
   }
+  setTVFeedback("Done", "success", true);
+}
+
+/**
+ * tvVolumeAction — one raw button press to TV_VOLUME_DEVICE. command is one
+ * of "VolumeUp", "VolumeDown", "Mute" (Mute toggles, it isn't one-directional).
+ * "light" haptic matches nudgeAcTemp's +/- stepper, not tvControlAction's
+ * "medium": this is a repeatable small nudge, not a room-wide mode switch.
+ * No optimistic UI update beyond the shared feedback line — see module
+ * comment above for why there's nothing to optimistically update.
+ */
+async function tvVolumeAction(command) {
+  haptic("light");
+  setTVFeedback("Sending…", "");
+  await haService("remote", "send_command", {
+    entity_id: CONFIG.harmonyEntity,
+    device: TV_VOLUME_DEVICE,
+    command,
+  });
   setTVFeedback("Done", "success", true);
 }
 

@@ -504,7 +504,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260811.6");
+  assert.equal(version, "20260811.7");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -710,6 +710,79 @@ test("control row and popup mappings match the approved design", () => {
       "switch.back_yard_irrigation",
     ],
   );
+});
+
+test("TV overlay has a second action row for volume/mute, styled like the activity row", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  const volDown = elements.get("tv-action-vol_down");
+  const mute = elements.get("tv-action-mute");
+  const volUp = elements.get("tv-action-vol_up");
+  assert.ok(volDown && mute && volUp, "volume/mute buttons must exist");
+
+  // Same row/button classes as the activity buttons above them — no new
+  // visual language, just a second tv-action-row.
+  for (const btn of [volDown, mute, volUp]) {
+    assert.equal(btn.tagName, "button");
+    assert.equal(btn.className, "tv-action-btn");
+    assert.equal(btn.parent?.className, "tv-action-row");
+  }
+  // The volume row is a distinct row element from the activity row, not the same one.
+  assert.notEqual(volDown.parent, elements.get("tv-action-watch_tv").parent);
+
+  assert.equal(volDown.onclick, "tvVolumeAction('VolumeDown')");
+  assert.equal(mute.onclick, "tvVolumeAction('Mute')");
+  assert.equal(volUp.onclick, "tvVolumeAction('VolumeUp')");
+});
+
+test("tvVolumeAction relays a raw button press to the Integra receiver via remote.send_command", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  assert.match(source, /const TV_VOLUME_DEVICE = "Integra AV Receiver";/);
+
+  const fnStart = source.indexOf("async function tvVolumeAction(command)");
+  const fnEnd = source.indexOf("\n}", fnStart) + 2;
+  assert.ok(fnStart > -1, "tvVolumeAction must be found");
+  const body = source.slice(fnStart, fnEnd);
+
+  assert.match(body, /haptic\("light"\)/); // repeatable nudge, not a mode switch
+  assert.match(
+    body,
+    /haService\("remote",\s*"send_command",\s*\{\s*entity_id:\s*CONFIG\.harmonyEntity,\s*device:\s*TV_VOLUME_DEVICE,\s*command,\s*\}\)/,
+  );
+});
+
+test("refreshTVControlUI disables volume/mute at PowerOff and re-enables once an activity is running", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  // Slice from TV_ACTIVITY_LABELS so refreshTVControlUI's own dependencies
+  // (the labels map, tvActionIdFor) come along with it, self-contained.
+  const start = source.indexOf("const TV_ACTIVITY_LABELS = {");
+  const end = source.indexOf("\nasync function openTVControl", start);
+  assert.ok(start > -1 && end > start, "refreshTVControlUI and its helpers must be found");
+  const body = source.slice(start, end);
+
+  const tracked = { vol_down: { disabled: false }, mute: { disabled: false }, vol_up: { disabled: false } };
+  const context = {
+    document: {
+      getElementById: (id) => {
+        if (id === "tv-status-badge") return { classList: { add() {}, remove() {} } };
+        const key = id.replace("tv-action-", "");
+        return tracked[key] ? tracked[key] : { classList: { add() {}, remove() {} } };
+      },
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${body}\nglobalThis.__refresh = refreshTVControlUI;`, context);
+
+  context.__refresh("PowerOff");
+  assert.deepEqual(Object.values(tracked).map((b) => b.disabled), [true, true, true]);
+
+  context.__refresh("Watch TV");
+  assert.deepEqual(Object.values(tracked).map((b) => b.disabled), [false, false, false]);
+
+  context.__refresh(undefined);
+  assert.deepEqual(Object.values(tracked).map((b) => b.disabled), [true, true, true]);
 });
 
 test("shared UI defaults select Screen A, Classic Gold, and 12-hour time", () => {
