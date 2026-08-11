@@ -4,7 +4,9 @@
  */
 
 const HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN";
-const WS_URL = "ws://homeassistant.local:8123/api/websocket";
+// Literal IP, not homeassistant.local: the Fire HD tablet's FireOS has no mDNS
+// resolver, so the hostname never resolves there. See homie-dashboard-install-plan.md.
+const WS_URL = "ws://192.168.4.125:8123/api/websocket";
 const BASE = WS_URL
   .replace(/^wss:\/\//, "https://")
   .replace(/^ws:\/\//, "http://")
