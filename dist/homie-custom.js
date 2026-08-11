@@ -14,6 +14,9 @@
     if (control && control.action === "media_browser") {
       return "openMediaBrowser()";
     }
+    if (control && control.action === "harmony") {
+      return "openTVControl()";
+    }
     if (control && (control.subEntities || control.subGroups)) {
       return `openPopup(${index})`;
     }

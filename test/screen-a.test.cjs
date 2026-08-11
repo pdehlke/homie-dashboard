@@ -499,7 +499,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260810.3");
+  assert.equal(version, "20260811.2");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -671,10 +671,11 @@ test("solar chart history status distinguishes failures from empty history", () 
 
 test("control row and popup mappings match the approved design", () => {
   const config = loadConfig();
-  assert.deepEqual(Array.from(config.controls, (entry) => entry.label), ["Lights", "Climate", "A/V", "Irrigation"]);
+  assert.deepEqual(Array.from(config.controls, (entry) => entry.label), ["Lights", "Climate", "A/V", "TV", "Irrigation"]);
   assert.equal(config.controls[1].action, "thermostat");
   assert.equal(config.controls[2].action, "media_browser");
-  assert.equal(config.controls[3].confirmStart, true);
+  assert.equal(config.controls[3].action, "harmony");
+  assert.equal(config.controls[4].confirmStart, true);
   assert.deepEqual(
     Array.from(config.controls[1].subEntities, (entry) => [entry.label, entry.entity]),
     [
@@ -694,7 +695,7 @@ test("control row and popup mappings match the approved design", () => {
     ["Dining Room", "Entry", "Kitchen", "Office", "Primary Suite"],
   );
   assert.deepEqual(
-    Array.from(config.controls[3].subEntities, (entry) => entry.entity),
+    Array.from(config.controls[4].subEntities, (entry) => entry.entity),
     [
       "switch.main_irrigation_east_of_garage",
       "switch.main_irrigation_east_triangle",

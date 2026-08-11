@@ -14,6 +14,11 @@ const BASE = WS_URL
 
 const ALARM_CODE = "";
 const ALARM_ENTITY = "";
+// The three activities below (Watch TV, Watch a Movie, and Harmony's own
+// built-in "PowerOff" all-off activity) are what's actually programmed into
+// the physical hub right now. See docs/harmony-hub/harmony-hub-integration.md
+// in the pdehlke/homeassistant repo for the full integration inventory.
+const HARMONY_ENTITY = "remote.harmony_hub";
 const PHOTO_FRAME_IMAGES = [];
 const PHOTO_FRAME_INTERVAL = 20;
 const BACKGROUND_IMAGES = [];
@@ -49,6 +54,7 @@ const CONFIG = {
   alarmEntity: ALARM_ENTITY,
   alarm: { entity: "" },
   security: [],
+  harmonyEntity: HARMONY_ENTITY,
 
   weather: {
     entity: "weather.openweathermap",
@@ -277,6 +283,17 @@ const CONFIG = {
     {
       label: "A/V",
       action: "media_browser",
+    },
+    {
+      label: "TV",
+      action: "harmony",
+      // Drives the chip's on/off glow via the generic entityIsOn() path in
+      // refreshControls() (remote domain: state "on" whenever any activity
+      // other than PowerOff is running) — same shared .chip.on styling
+      // Climate uses, no bespoke activity-detection needed the way Climate's
+      // hvac_action check is, since this entity's own state is already
+      // exactly the right signal.
+      entity: HARMONY_ENTITY,
     },
     {
       label: "Irrigation",

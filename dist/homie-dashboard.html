@@ -892,6 +892,63 @@
   .alarm-feedback.error { color: #f28a92; }
   .alarm-feedback.success { color: var(--accent-hi); }
 
+  /* ─── TV CONTROL (Harmony Hub) ── same shape as the alarm styles above,
+   * a status badge plus a row of fixed action buttons, just for the
+   * TV Control chip instead of Security. ────────────────────────────── */
+  .popup--tv {
+    max-width: 380px;
+    width: min(380px, 92vw);
+  }
+  .tv-badge {
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .tv-badge--off { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.55); border: 1px solid rgba(255,255,255,0.15); }
+  .tv-badge--on  { background: var(--accent-glow);     color: var(--accent-hi);        border: 1px solid var(--ac-4); }
+
+  .tv-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .tv-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 6px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    color: rgba(255,255,255,0.65);
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    touch-action: manipulation;
+  }
+  .tv-action-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+  .tv-action-btn.active { background: var(--ac-12); border-color: var(--ac-5); color: var(--accent-hi); }
+  .tv-action-btn--off.active { background: rgba(230,57,70,0.12); border-color: rgba(230,57,70,0.5); color: #f28a92; }
+
+  .tv-feedback {
+    min-height: 20px;
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    transition: color 0.3s;
+  }
+  .tv-feedback.error { color: #f28a92; }
+  .tv-feedback.success { color: var(--accent-hi); }
+
   /* Security button shield icon colour synced to alarm state */
   .topbar-security-btn.armed-home svg { stroke: var(--accent-hi); }
   .topbar-security-btn.armed-away svg { stroke: #3fd49a; }
@@ -8605,6 +8662,32 @@
   </div>
 </div>
 
+<div class="popup-overlay" id="tv-control-overlay" onclick="closeTVControlOverlay(event)">
+  <div class="popup popup--tv">
+    <div class="popup-title popup-title--flex">
+      <span>TV</span>
+      <span id="tv-status-badge" class="tv-badge tv-badge--off">OFF</span>
+    </div>
+
+    <div class="tv-action-row">
+      <button class="tv-action-btn" id="tv-action-watch_tv" onclick="tvControlAction('Watch TV')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
+        <span>WATCH TV</span>
+      </button>
+      <button class="tv-action-btn" id="tv-action-watch_movie" onclick="tvControlAction('Watch a Movie')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+        <span>WATCH A MOVIE</span>
+      </button>
+      <button class="tv-action-btn tv-action-btn--off" id="tv-action-all_off" onclick="tvControlAction('PowerOff')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        <span>ALL OFF</span>
+      </button>
+    </div>
+
+    <div id="tv-feedback" class="tv-feedback"></div>
+  </div>
+</div>
+
 <div class="popup-overlay" id="pet-overlay" onclick="closePetStats(event)">
   <div class="popup popup--pet">
     <div class="popup-title">Pet Status</div>
@@ -8765,7 +8848,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260810.3";
+      const HOMIE_ASSET_VERSION = "20260811.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -13558,6 +13641,103 @@ function closeSecurityOverlay(e) {
   document.getElementById("security-overlay").classList.remove("open");
 }
 
+/* ─── TV CONTROL (Harmony Hub) ────────────────────────────────────────────
+ * openTVControl() / closeTVControlOverlay() / tvControlAction(activity)
+ * Wraps CONFIG.harmonyEntity (remote.harmony_hub). Three fixed activities,
+ * matching what's actually programmed into the physical hub right now:
+ * "Watch TV", "Watch a Movie", and Harmony's own built-in all-off activity,
+ * "PowerOff". Uses haService() like every other simple toggle in this file
+ * (fire-and-forget REST call, state arrives back over the WS subscription
+ * as usual) rather than the alarm's bespoke WS round-trip: unlike arm/disarm
+ * there's no PIN to get wrong here, so there's no failure mode worth the
+ * extra plumbing. Badge and button highlight are fetch-on-open plus a
+ * local optimistic update right after a tap, same pattern as the Security
+ * overlay — no live subscription while the popup sits open.
+ * ────────────────────────────────────────────────────────────────────────── */
+const TV_ACTIVITY_LABELS = {
+  PowerOff: "OFF",
+  "Watch TV": "WATCH TV",
+  "Watch a Movie": "WATCH A MOVIE",
+};
+
+/** Maps a Harmony activity name to the matching action button's DOM id suffix. */
+function tvActionIdFor(activity) {
+  if (activity === "Watch TV") return "watch_tv";
+  if (activity === "Watch a Movie") return "watch_movie";
+  if (activity === "PowerOff") return "all_off";
+  return null; // an activity added later in the Harmony app, not one of ours
+}
+
+function refreshTVControlUI(activity) {
+  const badge = document.getElementById("tv-status-badge");
+  if (badge) {
+    badge.textContent = TV_ACTIVITY_LABELS[activity] || (activity || "").toUpperCase();
+    badge.className = "tv-badge " + (activity === "PowerOff" ? "tv-badge--off" : "tv-badge--on");
+  }
+  ["watch_tv", "watch_movie", "all_off"].forEach(id => {
+    document.getElementById(`tv-action-${id}`)?.classList.remove("active");
+  });
+  const activeId = tvActionIdFor(activity);
+  if (activeId) document.getElementById(`tv-action-${activeId}`)?.classList.add("active");
+}
+
+async function openTVControl() {
+  haptic("light");
+  setTVFeedback("", "");
+  const data = await haGet(CONFIG.harmonyEntity);
+  if (data) {
+    refreshTVControlUI(data.attributes?.current_activity);
+  } else {
+    // Entity not found — show a clear message rather than fetching all states.
+    console.warn(
+      `[Homie] Harmony entity "${CONFIG.harmonyEntity}" not found in HA. ` +
+      `Check the HARMONY_ENTITY value in config.js.`
+    );
+    setTVFeedback("Entity not found — check HARMONY_ENTITY in config.js", "error");
+  }
+  document.getElementById("tv-control-overlay").classList.add("open");
+}
+
+function closeTVControlOverlay(e) {
+  if (e && e.target !== document.getElementById("tv-control-overlay")) return;
+  haptic("light");
+  document.getElementById("tv-control-overlay").classList.remove("open");
+}
+
+async function tvControlAction(activity) {
+  haptic("medium");
+  refreshTVControlUI(activity); // optimistic — see module comment above
+  setTVFeedback("Sending…", "");
+  if (activity === "PowerOff") {
+    await haService("remote", "turn_off", CONFIG.harmonyEntity);
+  } else {
+    await haService("remote", "turn_on", { entity_id: CONFIG.harmonyEntity, activity });
+  }
+  setTVFeedback("Done", "success", true);
+}
+
+const TV_FEEDBACK_MIN_MS = 2000; // minimum time success feedback stays visible
+let _tvFeedbackTimer = null;
+
+/**
+ * setTVFeedback — same shape as setAlarmFeedback, scoped to the TV overlay.
+ * @param {boolean} [timed] — if true, automatically clears after TV_FEEDBACK_MIN_MS
+ */
+function setTVFeedback(msg, cls, timed = false) {
+  const el = document.getElementById("tv-feedback");
+  if (!el) return;
+  clearTimeout(_tvFeedbackTimer);
+  _tvFeedbackTimer = null;
+  el.textContent = msg;
+  el.className = "tv-feedback" + (cls ? " " + cls : "");
+  if (timed && msg) {
+    _tvFeedbackTimer = setTimeout(() => {
+      el.textContent = "";
+      el.className = "tv-feedback";
+    }, TV_FEEDBACK_MIN_MS);
+  }
+}
+
 // Module-level references for the active alarm WS handler and its safety
 // timeout. Stored here so a second alarmAction() call can cancel the first
 // before registering a new one — preventing duplicate handlers from building
@@ -16760,6 +16940,7 @@ document.addEventListener('keydown', e => {
   if (document.getElementById("pet-overlay")?.classList.contains("open"))         closePetStats();
   if (document.getElementById("alert-overlay")?.classList.contains("open"))       closeAlertOverlay();
   if (document.getElementById("security-overlay")?.classList.contains("open"))    closeSecurity();
+  if (document.getElementById("tv-control-overlay")?.classList.contains("open"))  closeTVControlOverlay();
   if (document.getElementById("thermostat-overlay")?.classList.contains("open"))  closeThermostat();
   if (document.getElementById("weather-fs-overlay")?.classList.contains("open"))  closeWeatherFS();
   if (document.getElementById("solar-fs-overlay")?.classList.contains("open"))    closeSolarFS();
@@ -17861,6 +18042,9 @@ function _buildOv3SidebarControls() {
   function _sbIcon(ctrl) {
     if (ctrl.action === "media_browser") {
       return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>`;
+    }
+    if (ctrl.action === "harmony") {
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>`;
     }
     const subs = ctrl.subGroups
       ? ctrl.subGroups.flatMap(g => g.subEntities || [])
