@@ -4890,14 +4890,25 @@
     align-items: center;
     justify-content: center;
     padding: 0 2rem 2rem;
-    overflow: hidden;
+    /* overflow-y: auto, not hidden: the 2026-08-11 content additions (readouts row,
+       dial-mode toggle, Preset/Fan controls) were budgeted to fit the Fire HD 10's 800px
+       at the tightened margins above, but this is the same defensive fallback the
+       "Overview C vertical overflow" fix used -- a future addition that doesn't fit
+       becomes a visible, scrollable cutoff instead of silently clipped content. */
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   /* Room tabs */
   .therm-rooms {
     display: flex;
     gap: 6px;
-    margin-bottom: 2.2rem;
+    /* Tighter than the pre-2026-08-11 2.2rem: the overlay now carries a readouts row, a
+       dial-mode toggle, and Preset/Fan controls below the dial that didn't exist before,
+       so every fixed margin here was re-budgeted to keep the whole stack inside 800px on
+       the Fire HD 10 -- see the "Overview C vertical overflow" section of
+       homie-dashboard-install-plan.md for why that number matters. */
+    margin-bottom: 1rem;
     flex-wrap: wrap;
     justify-content: center;
   }
@@ -4963,6 +4974,13 @@
     width: 100%;
     height: 100%;
     transform: rotate(135deg);
+    /* A 360x360 element rotated 45 degrees paints (and hit-tests) across a diagonal
+       bounding box of roughly 509px, well outside its own 360px layout box. Harmless while
+       nothing else sat close beneath the dial, but the new dial-mode toggle row right below
+       it landed inside that overflow and silently ate its clicks -- found live via
+       Playwright, "element intercepts pointer events" on this svg. The dial is decorative;
+       only the real <button> elements (+/-, and now the toggle) need clicks. */
+    pointer-events: none;
   }
   .therm-dial-track {
     fill: none;
@@ -5094,22 +5112,22 @@
   .therm-modes {
     display: flex;
     gap: 10px;
-    margin-top: 2rem;
+    margin-top: 1rem;
     justify-content: center;
   }
   .therm-mode-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 7px;
-    padding: 14px 20px;
+    gap: 5px;
+    padding: 10px 18px;
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.1);
     background: rgba(255,255,255,0.03);
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s;
     -webkit-tap-highlight-color: transparent;
-    min-width: 76px;
+    min-width: 72px;
   }
   .therm-mode-btn span {
     font-size: 10px;
@@ -5125,6 +5143,175 @@
   }
   .therm-mode-btn.active span { color: var(--accent-hi); }
   .therm-mode-btn.active svg { opacity: 1; }
+
+  /* Current temperature / current humidity readout, above the dial */
+  .therm-readouts {
+    display: flex;
+    gap: 2.5rem;
+    margin-bottom: 0.75rem;
+    justify-content: center;
+  }
+  .therm-readout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+  .therm-readout-label {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+  }
+  .therm-readout-value {
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: #fff;
+  }
+
+  /* Temperature/Humidity view swap inside the dial centre -- thermSetDialMode() toggles
+     .active between .therm-dial-view--temp and .therm-dial-view--humidity. Both share the
+     outer .therm-dial-center's centered flex layout and padding-bottom (clearance for the
+     +/- buttons), so the humidity view lines up on the same vertical centre as the temp
+     view despite having less content. */
+  .therm-dial-view {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .therm-dial-view.active { display: flex; }
+
+  /* Temperature/Humidity dial-mode toggle, below the dial */
+  .therm-dial-toggle {
+    display: flex;
+    gap: 10px;
+    margin-top: 0.5rem;
+    justify-content: center;
+  }
+  .therm-dial-toggle-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .therm-dial-toggle-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    color: var(--accent-hi);
+  }
+
+  /* Preset + Fan mode, below the mode pills */
+  .therm-features {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+    width: 100%;
+    max-width: 380px;
+  }
+  .therm-feature-label {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    display: block;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+  /* Preset: a single trigger button (styled like the codebase's existing .popup-item rows)
+     that expands into a scrollable list -- ten raw preset_modes values is too many for a
+     button grid the way Mode/Fan mode get one. */
+  .therm-feature-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .therm-feature-trigger .therm-feature-label { margin-bottom: 0; }
+  .therm-feature-value {
+    color: var(--accent-hi);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: capitalize;
+  }
+  .therm-feature-chevron { opacity: 0.5; transition: transform 0.2s; margin-left: auto; }
+  #therm-preset-feature.open .therm-feature-chevron { transform: rotate(180deg); }
+  .therm-preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease, margin-top 0.25s ease;
+    margin-top: 0;
+  }
+  #therm-preset-feature.open .therm-preset-list {
+    max-height: 220px;
+    overflow-y: auto;
+    margin-top: 8px;
+  }
+  .therm-preset-item {
+    padding: 10px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.7);
+    font-size: 12px;
+    text-transform: capitalize;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+  }
+  .therm-preset-item.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    color: var(--accent-hi);
+  }
+  /* Fan mode: a button row, same pattern as Mode -- only three options, no need to expand */
+  .therm-fan-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .therm-fan-btn {
+    flex: 1;
+    padding: 9px 10px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.03);
+    color: rgba(255,255,255,0.55);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .therm-fan-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    color: var(--accent-hi);
+  }
 
   /* ─── BOTTOM PAGE DOTS ─── */
   .page-dots {
@@ -8848,7 +9035,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260811.2";
+      const HOMIE_ASSET_VERSION = "20260811.6";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -16958,6 +17145,9 @@ let _thermActive    = 0;    // index of currently selected room tab
 let _thermSetpoint  = null; // pending setpoint (user hasn't sent yet if dragging)
 let _thermSendTimer = null; // debounce timer for HA calls
 let _thermEntityFilter = null;
+let _thermDialMode  = "temp";  // "temp" | "humidity" -- which dial view is showing
+let _thermHumiditySetpoint  = null; // pending humidity target, same pattern as _thermSetpoint
+let _thermHumiditySendTimer = null; // debounce timer for climate.set_humidity
 
 /**
  * _buildThermEntities — scans CONFIG.controls for climate.* sub-entities
@@ -16990,6 +17180,8 @@ function openThermostat(entityId) {
   }
 
   _thermActive = 0;
+  _thermDialMode = "temp";
+  document.getElementById("therm-preset-feature")?.classList.remove("open");
   _buildThermTabs();
   _renderThermRoom(_thermActive);
 
@@ -17002,6 +17194,8 @@ function closeThermostat() {
   haptic("light");
   document.getElementById("thermostat-overlay").classList.remove("open");
   _thermEntityFilter = null;
+  clearTimeout(_thermSendTimer);
+  clearTimeout(_thermHumiditySendTimer);
 }
 
 /** _buildThermTabs — renders one tab button per climate entity */
@@ -17034,6 +17228,8 @@ function _refreshThermTabStates() {
 function thermSelectRoom(i) {
   haptic("light");
   _thermActive = i;
+  _thermDialMode = "temp"; // each room opens on the temperature view, matching HA's own more-info dialog
+  document.getElementById("therm-preset-feature")?.classList.remove("open");
   // Update tab active states
   document.querySelectorAll(".therm-room-tab").forEach((el, idx) => {
     el.classList.toggle("active", idx === i);
@@ -17051,7 +17247,7 @@ function _renderThermRoom(i) {
 
   const d     = haGetCached(ent.entity);
   const attrs = d ? (d.attributes || {}) : {};
-  const state = d ? d.state : "off";          // off | cool | heat | fan_only | dry | auto
+  const state = d ? d.state : "off";          // off | cool | heat | heat_cool | fan_only | dry | auto
   const isOn  = state !== "off" && state !== "unavailable";
   const temps = HOMIE_CUSTOM.thermostatTemperatureView
     ? HOMIE_CUSTOM.thermostatTemperatureView(d)
@@ -17065,23 +17261,51 @@ function _renderThermRoom(i) {
   // Use HA value as canonical setpoint
   _thermSetpoint = temps.targetTemperatureValue;
 
-  // ── Current temperature ──
+  // ── Current temperature: big dial number, and the readout row above it ──
+  const curText = temps.currentTemperatureValue != null ? `${Math.round(temps.currentTemperatureValue)}` : "—";
   const curEl = document.getElementById("therm-current-temp");
-  if (curEl) curEl.textContent = temps.currentTemperatureValue != null ? `${Math.round(temps.currentTemperatureValue)}` : "—";
+  if (curEl) curEl.textContent = curText;
+  const readoutTempEl = document.getElementById("therm-readout-temp");
+  if (readoutTempEl) readoutTempEl.textContent = curText;
 
   // ── Target / setpoint display ──
   _updateThermSetpointDisplay();
 
-  // ── Dial arc fill ──
-  _updateThermDial(temps.currentTemperatureValue, temps.targetTemperatureValue, state);
+  // ── Current/target humidity, and whether the humidity dial view even applies to this
+  // entity (TARGET_HUMIDITY feature bit) -- North and South both do, but this stays
+  // generic rather than assuming every configured climate entity will. ──
+  const humidity      = HOMIE_CUSTOM.thermostatHumidityView ? HOMIE_CUSTOM.thermostatHumidityView(d) : null;
+  const humidityWrap   = document.getElementById("therm-readout-humidity-wrap");
+  const dialToggleEl   = document.getElementById("therm-dial-toggle");
+  if (humidity) {
+    if (humidityWrap) humidityWrap.style.display = "";
+    if (dialToggleEl) dialToggleEl.style.display = "";
+    const readoutHumEl = document.getElementById("therm-readout-humidity");
+    if (readoutHumEl) readoutHumEl.textContent = humidity.currentHumidity != null ? `${Math.round(humidity.currentHumidity)}` : "—";
+    _thermHumiditySetpoint = humidity.targetHumidity;
+    _updateThermHumidityDisplay();
+  } else {
+    if (humidityWrap) humidityWrap.style.display = "none";
+    if (dialToggleEl) dialToggleEl.style.display = "none";
+    _thermDialMode = "temp"; // nothing to toggle to
+  }
+  _syncThermDialViewClasses();
 
-  // ── Mode badge inside dial ──
-  _updateThermModeBadge(state, isOn);
+  // ── Dial arc fill (whichever view -- temperature or humidity -- is active) ──
+  _updateThermDialForMode();
 
-  // ── Mode buttons (includes "off" button) ──
+  // ── Action badge inside dial + overlay tint ──
+  _updateThermModeBadge(attrs.hvac_action, state, isOn);
+
+  // ── Mode buttons: rebuilt from the entity's own hvac_modes every render, so switching
+  // to a room with different capabilities never inherits stale buttons ──
+  _buildThermModes(HOMIE_CUSTOM.thermostatHvacModeOptions ? HOMIE_CUSTOM.thermostatHvacModeOptions(d) : []);
   document.querySelectorAll(".therm-mode-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.mode === state);
   });
+
+  // ── Preset + Fan mode (each hidden entirely when the entity doesn't support it) ──
+  _buildThermFeatures(d);
 
   // ── Room tab on-state highlights ──
   _refreshThermTabStates();
@@ -17096,32 +17320,73 @@ function _updateThermSetpointDisplay() {
   if (small) small.textContent = val;
 }
 
+/** _updateThermHumidityDisplay — syncs the big number in the humidity dial view */
+function _updateThermHumidityDisplay() {
+  const el = document.getElementById("therm-humidity-target");
+  if (el) el.textContent = _thermHumiditySetpoint != null ? `${Math.round(_thermHumiditySetpoint)}` : "—";
+}
+
+/** _syncThermDialViewClasses — shows whichever of the temp/humidity dial views (and their
+ * matching toggle button) matches _thermDialMode, hides the other. */
+function _syncThermDialViewClasses() {
+  document.getElementById("therm-dial-view-temp")?.classList.toggle("active", _thermDialMode === "temp");
+  document.getElementById("therm-dial-view-humidity")?.classList.toggle("active", _thermDialMode === "humidity");
+  document.getElementById("therm-dial-toggle-temp")?.classList.toggle("active", _thermDialMode === "temp");
+  document.getElementById("therm-dial-toggle-humidity")?.classList.toggle("active", _thermDialMode === "humidity");
+}
+
+/** thermSetDialMode — switches the dial between adjusting temperature and adjusting
+ * humidity target, matching HA's own more-info dialog's thermometer/droplet toggle. */
+function thermSetDialMode(mode) {
+  if ((mode !== "temp" && mode !== "humidity") || mode === _thermDialMode) return;
+  haptic("light");
+  _thermDialMode = mode;
+  _syncThermDialViewClasses();
+  _updateThermDialForMode();
+}
+
+// Colour per hvac_mode, used by the dial arc fill.
+const THERM_STATE_COLOR = {
+  cool: "#78c8ff", heat: "#ff8c50", fan_only: "rgba(255,255,255,0.55)",
+  dry: "#b4dcff", auto: "var(--accent)", heat_cool: "var(--accent)", off: "rgba(255,255,255,0.08)",
+};
+
 /**
- * _updateThermDial — updates the SVG arc fill colour and length based on
- * current vs target temperature and hvac mode.
+ * _updateThermDialForMode — updates the SVG arc fill colour and length for
+ * whichever dial view (_thermDialMode) is currently showing.
  * Arc is 270° with the gap at the bottom (6 o'clock). The SVG is rotated
  * 135° so the arc starts at bottom-left and sweeps clockwise to bottom-right.
- * Arc range maps MIN_TEMP..MAX_TEMP → 0..ARC of the 270° sweep.
+ * Arc range maps MIN..MAX → 0..ARC of the 270° sweep.
  */
-function _updateThermDial(current, target, state) {
+function _updateThermDialForMode() {
+  const ent = _thermEntities[_thermActive];
+  if (!ent) return;
+  const d = haGetCached(ent.entity);
+  const state = d ? d.state : "off";
+
+  if (_thermDialMode === "humidity") {
+    const view = HOMIE_CUSTOM.thermostatHumidityView ? HOMIE_CUSTOM.thermostatHumidityView(d) : null;
+    if (!view) return;
+    const target = _thermHumiditySetpoint ?? view.targetHumidity;
+    _setThermDialArc(target, view.minHumidity, view.maxHumidity, "#78c8ff", state);
+    return;
+  }
+
+  const temps  = HOMIE_CUSTOM.thermostatTemperatureView ? HOMIE_CUSTOM.thermostatTemperatureView(d) : null;
+  const target = _thermSetpoint ?? (temps ? temps.targetTemperatureValue : null);
+  const current = temps ? temps.currentTemperatureValue : null;
+  _setThermDialArc(target ?? current, 60, 90, THERM_STATE_COLOR[state] || "var(--accent)", state);
+}
+
+/** _setThermDialArc — the actual SVG stroke-dasharray/colour math, shared by both dial views */
+function _setThermDialArc(value, min, max, color, state) {
   const fill = document.getElementById("therm-dial-fill");
   if (!fill) return;
 
-  // Colour by mode
-  const modeColors = {
-    cool:     "#78c8ff",
-    heat:     "#ff8c50",
-    fan_only: "rgba(255,255,255,0.55)",
-    dry:      "#b4dcff",
-    auto:     "var(--accent)",
-    off:      "rgba(255,255,255,0.08)",
-  };
-  fill.setAttribute("stroke", modeColors[state] || "var(--accent)");
+  fill.setAttribute("stroke", color);
 
-  // Arc fill: use target temp to set arc length; fallback to current
-  const MIN = 60, MAX = 90;
-  const refTemp = (target ?? current) ?? MIN;
-  const pct = Math.max(0, Math.min(1, (refTemp - MIN) / (MAX - MIN)));
+  const refValue = value ?? min;
+  const pct = Math.max(0, Math.min(1, (refValue - min) / (max - min)));
 
   // 270° arc on r=80 circle: circumference = 2π×80 ≈ 502.65; arc = 502.65×0.75 ≈ 376.99
   const ARC  = 376.99;
@@ -17131,32 +17396,68 @@ function _updateThermDial(current, target, state) {
   fill.setAttribute("stroke-dashoffset", "0");
 }
 
-/** _updateThermModeBadge — updates the small badge text in the dial centre */
-function _updateThermModeBadge(state, isOn) {
+// hvac_action -> badge/tint appearance. hvac_action is what the equipment is actually
+// doing right now (cooling/heating/idle/...), as opposed to hvac_mode, which is only the
+// selected mode (off/cool/heat/heat_cool/...) and is already shown by the Mode button row
+// below. For heat_cool -- both real Lennox zones, almost always -- hvac_mode alone
+// collapses to a constant "Auto" that never says whether the unit is doing anything,
+// which is exactly the gap pde flagged live: the circle needs the actual
+// heating/cooling/idle status, not a repeat of the mode row. Same hvac_action-over-mode
+// preference climateIsActive() already uses for the Climate chip's "N on" count and glow;
+// see climate-chip-activity-count.md. Covers HA's full HVACAction enum.
+const THERM_ACTION_META = {
+  cooling:    { label: "Cooling",    bg: "rgba(120,200,255,0.18)", text: "#78c8ff",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(40,120,200,0.22) 0%, transparent 65%)" },
+  heating:    { label: "Heating",    bg: "rgba(255,140,80,0.18)",  text: "#ff8c50",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(220,90,30,0.22) 0%, transparent 65%)" },
+  preheating: { label: "Preheating", bg: "rgba(255,140,80,0.18)",  text: "#ff8c50",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(220,90,30,0.22) 0%, transparent 65%)" },
+  defrosting: { label: "Defrosting", bg: "rgba(255,140,80,0.18)",  text: "#ff8c50",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(220,90,30,0.22) 0%, transparent 65%)" },
+  drying:     { label: "Drying",     bg: "rgba(180,220,255,0.15)", text: "#b4dcff",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(80,160,230,0.18) 0%, transparent 65%)" },
+  fan:        { label: "Fan",        bg: "rgba(255,255,255,0.1)",  text: "rgba(255,255,255,0.55)",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(160,160,180,0.15) 0%, transparent 65%)" },
+  idle:       { label: "Idle",       bg: "rgba(255,255,255,0.08)", text: "rgba(255,255,255,0.65)",
+    tint: "none" },
+  off:        { label: "",           bg: "transparent",            text: "transparent", tint: "none" },
+};
+
+// Fallback when the entity reports no hvac_action at all (some climate integrations
+// don't). This is the badge's pre-2026-08-11 behavior, unchanged, keyed by hvac_mode.
+const THERM_MODE_BADGE_FALLBACK = {
+  cool:      { label: "Cooling",  bg: "rgba(120,200,255,0.18)", text: "#78c8ff",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(40,120,200,0.22) 0%, transparent 65%)" },
+  heat:      { label: "Heating",  bg: "rgba(255,140,80,0.18)",  text: "#ff8c50",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(220,90,30,0.22) 0%, transparent 65%)" },
+  fan_only:  { label: "Fan Only", bg: "rgba(255,255,255,0.1)",  text: "rgba(255,255,255,0.55)",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(160,160,180,0.15) 0%, transparent 65%)" },
+  dry:       { label: "Drying",   bg: "rgba(180,220,255,0.15)", text: "#b4dcff",
+    tint: "radial-gradient(ellipse at 50% 0%, rgba(80,160,230,0.18) 0%, transparent 65%)" },
+  auto:      { label: "Auto",     bg: "var(--accent-glow)",     text: "var(--accent-hi)",
+    tint: "radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 65%)" },
+  heat_cool: { label: "Auto",     bg: "var(--accent-glow)",     text: "var(--accent-hi)",
+    tint: "radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 65%)" },
+  off:       { label: "",         bg: "transparent",            text: "transparent", tint: "none" },
+};
+
+/**
+ * _updateThermModeBadge — updates the small action badge in the dial centre and the
+ * overlay's ambient tint, from hvac_action with a hvac_mode-keyed fallback.
+ */
+function _updateThermModeBadge(hvacAction, mode, isOn) {
   const badge = document.getElementById("therm-mode-badge");
   if (!badge) return;
 
-  const labels = { cool: "Cooling", heat: "Heating", fan_only: "Fan Only", dry: "Drying", auto: "Auto", heat_cool: "Auto", off: "" };
-  const colors = { cool: "rgba(120,200,255,0.18)", heat: "rgba(255,140,80,0.18)", fan_only: "rgba(255,255,255,0.1)", dry: "rgba(180,220,255,0.15)", auto: "var(--accent-glow)", heat_cool: "var(--accent-glow)", off: "" };
-  const textColors = { cool: "#78c8ff", heat: "#ff8c50", fan_only: "rgba(255,255,255,0.55)", dry: "#b4dcff", auto: "var(--accent-hi)", heat_cool: "var(--accent-hi)", off: "transparent" };
+  const meta = THERM_ACTION_META[hvacAction] || THERM_MODE_BADGE_FALLBACK[mode] || THERM_MODE_BADGE_FALLBACK.off;
 
-  badge.textContent        = isOn ? (labels[state] || state) : "";
-  badge.style.background   = isOn ? (colors[state]     || "transparent") : "transparent";
-  badge.style.color        = isOn ? (textColors[state]  || "#fff")        : "transparent";
-  badge.style.border       = isOn ? `1px solid ${textColors[state] || "transparent"}` : "none";
+  badge.textContent      = isOn ? meta.label : "";
+  badge.style.background = isOn ? meta.bg    : "transparent";
+  badge.style.color      = isOn ? meta.text  : "transparent";
+  badge.style.border      = isOn ? `1px solid ${meta.text}` : "none";
 
-  // ── Background tint on the overlay ──
-  const overlayBg = {
-    cool:     "radial-gradient(ellipse at 50% 0%, rgba(40,120,200,0.22) 0%, transparent 65%)",
-    heat:     "radial-gradient(ellipse at 50% 0%, rgba(220,90,30,0.22) 0%, transparent 65%)",
-    fan_only: "radial-gradient(ellipse at 50% 0%, rgba(160,160,180,0.15) 0%, transparent 65%)",
-    dry:      "radial-gradient(ellipse at 50% 0%, rgba(80,160,230,0.18) 0%, transparent 65%)",
-    auto:     "radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 65%)",
-    heat_cool:"radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 65%)",
-    off:      "none",
-  };
   const tint = document.getElementById("thermostat-overlay-tint");
-  if (tint) tint.style.background = overlayBg[state] || "none";
+  if (tint) tint.style.background = isOn ? meta.tint : "none";
 }
 
 /**
@@ -17181,6 +17482,11 @@ function thermAdjust(direction) {
   // Can't adjust if off
   if (state === "off" || state === "unavailable") return;
 
+  if (_thermDialMode === "humidity") {
+    _thermAdjustHumidity(direction, ent, d);
+    return;
+  }
+
   const step  = HOMIE_CUSTOM.thermostatStepSize ? HOMIE_CUSTOM.thermostatStepSize(d) : 0.5;
   const delta = direction * step;
 
@@ -17195,13 +17501,33 @@ function thermAdjust(direction) {
   const payload = HOMIE_CUSTOM.thermostatSetTemperaturePayload
     ? HOMIE_CUSTOM.thermostatSetTemperaturePayload(d, delta)
     : { temperature: _thermSetpoint };
-  const view = HOMIE_CUSTOM.thermostatTemperatureView
-    ? HOMIE_CUSTOM.thermostatTemperatureView(d)
-    : { currentTemperatureValue: attrs.current_temperature ?? null };
-  _updateThermDial(view.currentTemperatureValue, _thermSetpoint, state);
+  _updateThermDialForMode();
   clearTimeout(_thermSendTimer);
   _thermSendTimer = setTimeout(() => {
     haService("climate", "set_temperature", { entity_id: ent.entity, ...payload });
+  }, 800);
+}
+
+/**
+ * _thermAdjustHumidity — mirrors thermAdjust's debounce pattern for the humidity dial
+ * view. HA's set_humidity service takes a whole percent and the entity declares no
+ * per-entity step attribute the way target_temp_step does, so the step is always 1.
+ */
+function _thermAdjustHumidity(direction, ent, d) {
+  const view = HOMIE_CUSTOM.thermostatHumidityView ? HOMIE_CUSTOM.thermostatHumidityView(d) : null;
+  if (!view) return;
+
+  if (_thermHumiditySetpoint == null) _thermHumiditySetpoint = view.targetHumidity ?? 45;
+  const next = _thermHumiditySetpoint + direction;
+  _thermHumiditySetpoint = HOMIE_CUSTOM.thermostatClampHumidity
+    ? HOMIE_CUSTOM.thermostatClampHumidity(d, next)
+    : next;
+
+  _updateThermHumidityDisplay();
+  _updateThermDialForMode();
+  clearTimeout(_thermHumiditySendTimer);
+  _thermHumiditySendTimer = setTimeout(() => {
+    haService("climate", "set_humidity", { entity_id: ent.entity, humidity: Math.round(_thermHumiditySetpoint) });
   }, 800);
 }
 
@@ -17226,6 +17552,150 @@ async function thermSetMode(mode) {
     await haService("climate", "set_hvac_mode", { entity_id: ent.entity, hvac_mode: mode });
   } catch {}
   // Re-render again after HA confirms, in case real state differs
+  setTimeout(() => _renderThermRoom(_thermActive), 1500);
+}
+
+// Icon markup per hvac_mode, reused verbatim from the overlay's previous static button row
+// for off/cool/heat/fan_only/dry. heat_cool/auto are new: both real Lennox zones here run in
+// heat_cool almost always and previously had no button at all -- see
+// docs/homie-dashboard/homie-dashboard-install-plan.md's 2026-08-11 checkpoint.
+const THERM_MODE_ICON = {
+  off: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+    </svg>`,
+  cool: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(120,200,255,0.9)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
+      <polyline points="8 6 12 2 16 6"/><polyline points="18 8 22 12 18 16"/>
+      <polyline points="16 18 12 22 8 18"/><polyline points="6 16 2 12 6 8"/>
+    </svg>`,
+  heat: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,140,80,0.9)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2c-1 0-3.5 1.5-3.5 5 0 0 1.5-1.5 3.5-1.5s3.5 1.5 3.5 1.5C15.5 3.5 13 2 12 2z"/>
+      <path d="M6.5 9C4 9 2 11.5 2 14c0 4 3 8 10 8s10-4 10-8c0-2.5-2-5-4.5-5-1.5 0-2.5 1-5.5 1S8 9 6.5 9z"/>
+    </svg>`,
+  fan_only: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 12 C12 8 15 5 18 6 C19 9 17 12 14 12"/><path d="M12 12 C16 12 19 15 18 18 C15 19 12 17 12 14"/>
+      <path d="M12 12 C12 16 9 19 6 18 C5 15 7 12 10 12"/><path d="M12 12 C8 12 5 9 6 6 C9 5 12 7 12 10"/>
+      <circle cx="12" cy="12" r="2"/>
+    </svg>`,
+  dry: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(180,220,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+    </svg>`,
+  // Half snowflake, half flame: same two glyphs as cool/heat above, scaled and offset into
+  // one 24x24 viewBox rather than a new symbol, so it reads as "both" at a glance.
+  heat_cool: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <g transform="translate(-1,1) scale(0.6)" stroke="rgba(120,200,255,0.9)">
+        <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
+        <polyline points="8 6 12 2 16 6"/><polyline points="18 8 22 12 18 16"/>
+        <polyline points="16 18 12 22 8 18"/><polyline points="6 16 2 12 6 8"/>
+      </g>
+      <g transform="translate(11,2) scale(0.6)" stroke="rgba(255,140,80,0.9)">
+        <path d="M12 2c-1 0-3.5 1.5-3.5 5 0 0 1.5-1.5 3.5-1.5s3.5 1.5 3.5 1.5C15.5 3.5 13 2 12 2z"/>
+        <path d="M6.5 9C4 9 2 11.5 2 14c0 4 3 8 10 8s10-4 10-8c0-2.5-2-5-4.5-5-1.5 0-2.5 1-5.5 1S8 9 6.5 9z"/>
+      </g>
+    </svg>`,
+};
+THERM_MODE_ICON.auto = THERM_MODE_ICON.heat_cool;
+
+/** _buildThermModes — renders one button per hvac_mode the entity itself declares */
+function _buildThermModes(options) {
+  const container = document.getElementById("therm-modes");
+  if (!container) return;
+  container.innerHTML = (options || []).map(opt => `
+    <button class="therm-mode-btn" data-mode="${opt.mode}" onclick="thermSetMode('${opt.mode}')" title="${escapeHtml(opt.label)}">
+      ${THERM_MODE_ICON[opt.mode] || THERM_MODE_ICON.off}
+      <span>${escapeHtml(opt.label)}</span>
+    </button>
+  `).join("");
+}
+
+/**
+ * _buildThermFeatures — renders the Preset (tap-to-expand list) and Fan mode (button row)
+ * controls for the selected entity, hiding each entirely when the entity's own
+ * supported_features doesn't include it. Rebuilt on every render rather than diffed in
+ * place, matching _buildThermModes -- these lists are short and this only runs on user
+ * interaction, not on a timer.
+ */
+function _buildThermFeatures(d) {
+  const ent = _thermEntities[_thermActive];
+  if (!ent) return;
+
+  const presetFeature = document.getElementById("therm-preset-feature");
+  const preset = HOMIE_CUSTOM.thermostatPresetOptions ? HOMIE_CUSTOM.thermostatPresetOptions(d) : null;
+  if (presetFeature) {
+    if (preset && preset.options.length) {
+      presetFeature.style.display = "";
+      const valueEl = document.getElementById("therm-preset-value");
+      if (valueEl) valueEl.textContent = preset.current || "—";
+      const list = document.getElementById("therm-preset-list");
+      if (list) {
+        list.innerHTML = preset.options.map(opt => `
+          <button class="therm-preset-item${opt === preset.current ? " active" : ""}"
+            onclick="thermSelectPreset('${opt.replace(/'/g, "\\'")}')">${escapeHtml(opt)}</button>
+        `).join("");
+      }
+    } else {
+      presetFeature.style.display = "none";
+      presetFeature.classList.remove("open");
+    }
+  }
+
+  const fanFeature = document.getElementById("therm-fan-feature");
+  const fan = HOMIE_CUSTOM.thermostatFanModeOptions ? HOMIE_CUSTOM.thermostatFanModeOptions(d) : null;
+  if (fanFeature) {
+    if (fan && fan.options.length) {
+      fanFeature.style.display = "";
+      const row = document.getElementById("therm-fan-row");
+      if (row) {
+        row.innerHTML = fan.options.map(opt => `
+          <button class="therm-fan-btn${opt === fan.current ? " active" : ""}"
+            onclick="thermSelectFanMode('${opt.replace(/'/g, "\\'")}')">${escapeHtml(opt)}</button>
+        `).join("");
+      }
+    } else {
+      fanFeature.style.display = "none";
+    }
+  }
+}
+
+/** thermTogglePresetList — expands/collapses the Preset control's option list */
+function thermTogglePresetList() {
+  haptic("light");
+  document.getElementById("therm-preset-feature")?.classList.toggle("open");
+}
+
+/** thermSelectPreset — sets preset_mode, optimistic update matching thermSetMode's pattern */
+async function thermSelectPreset(value) {
+  haptic("medium");
+  const ent = _thermEntities[_thermActive];
+  if (!ent) return;
+
+  const cached = haGetCached(ent.entity);
+  if (cached) {
+    stateCache.set(ent.entity, { ...cached, attributes: { ...cached.attributes, preset_mode: value } });
+  }
+  _renderThermRoom(_thermActive); // rebuilds the preset list closed, with the new value marked active
+
+  try {
+    await haService("climate", "set_preset_mode", { entity_id: ent.entity, preset_mode: value });
+  } catch {}
+  setTimeout(() => _renderThermRoom(_thermActive), 1500);
+}
+
+/** thermSelectFanMode — sets fan_mode, optimistic update matching thermSetMode's pattern */
+async function thermSelectFanMode(value) {
+  haptic("medium");
+  const ent = _thermEntities[_thermActive];
+  if (!ent) return;
+
+  const cached = haGetCached(ent.entity);
+  if (cached) {
+    stateCache.set(ent.entity, { ...cached, attributes: { ...cached.attributes, fan_mode: value } });
+  }
+  _renderThermRoom(_thermActive);
+
+  try {
+    await haService("climate", "set_fan_mode", { entity_id: ent.entity, fan_mode: value });
+  } catch {}
   setTimeout(() => _renderThermRoom(_thermActive), 1500);
 }
 
@@ -20808,6 +21278,20 @@ _applyDailyI18n();
     <!-- Room tabs (built by JS) -->
     <div class="therm-rooms" id="therm-rooms"></div>
 
+    <!-- Current temperature / current humidity readout. The humidity column only appears
+         when the selected entity's supported_features includes TARGET_HUMIDITY -- see
+         _renderThermRoom in the JS below. -->
+    <div class="therm-readouts" id="therm-readouts">
+      <div class="therm-readout">
+        <span class="therm-readout-label">Current Temperature</span>
+        <span class="therm-readout-value"><span id="therm-readout-temp">—</span>°</span>
+      </div>
+      <div class="therm-readout" id="therm-readout-humidity-wrap" style="display:none;">
+        <span class="therm-readout-label">Current Humidity</span>
+        <span class="therm-readout-value"><span id="therm-readout-humidity">—</span>%</span>
+      </div>
+    </div>
+
     <!-- Dial: gap at bottom, − and + sit inside the gap -->
     <div class="therm-dial-wrap">
       <svg class="therm-dial-svg" viewBox="0 0 200 200" id="therm-dial-svg">
@@ -20816,20 +21300,29 @@ _applyDailyI18n();
         <circle class="therm-dial-fill" id="therm-dial-fill" cx="100" cy="100" r="80"
           stroke="var(--accent)" stroke-dasharray="0 503" stroke-dashoffset="0"/>
       </svg>
-      <!-- Centre info -->
+      <!-- Centre info: two views, toggled by thermSetDialMode() via the .active class -->
       <div class="therm-dial-center">
-        <div class="therm-temp-wrap">
-          <span class="therm-current-temp" id="therm-current-temp">—</span>
-          <span class="therm-current-deg">°</span>
+        <div class="therm-dial-view therm-dial-view--temp active" id="therm-dial-view-temp">
+          <div class="therm-temp-wrap">
+            <span class="therm-current-temp" id="therm-current-temp">—</span>
+            <span class="therm-current-deg">°</span>
+          </div>
+          <div class="therm-target-wrap">
+            <span class="therm-set-label">Target</span>
+            <div class="therm-set-wrap">
+              <span class="therm-set-temp" id="therm-set-temp-display">—</span>
+              <span class="therm-set-deg">°</span>
+            </div>
+          </div>
+          <span class="therm-mode-badge" id="therm-mode-badge"></span>
         </div>
-        <div class="therm-target-wrap">
-          <span class="therm-set-label">Target</span>
-          <div class="therm-set-wrap">
-            <span class="therm-set-temp" id="therm-set-temp-display">—</span>
-            <span class="therm-set-deg">°</span>
+        <div class="therm-dial-view therm-dial-view--humidity" id="therm-dial-view-humidity">
+          <span class="therm-set-label">Humidity Target</span>
+          <div class="therm-temp-wrap">
+            <span class="therm-current-temp" id="therm-humidity-target">—</span>
+            <span class="therm-current-deg">%</span>
           </div>
         </div>
-        <span class="therm-mode-badge" id="therm-mode-badge"></span>
       </div>
       <!-- − button in bottom-left of gap -->
       <button class="therm-adj-btn therm-adj-btn--minus" onclick="thermAdjust(-1)" title="Decrease">−</button>
@@ -20837,43 +21330,44 @@ _applyDailyI18n();
       <button class="therm-adj-btn therm-adj-btn--plus"  onclick="thermAdjust(+1)" title="Increase">+</button>
     </div>
 
-    <!-- Mode buttons -->
-    <div class="therm-modes" id="therm-modes">
-      <button class="therm-mode-btn" data-mode="off" onclick="thermSetMode('off')" title="Off">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+    <!-- Temperature / Humidity dial toggle, matching HA's own thermometer/droplet icons.
+         Hidden entirely when the entity has no TARGET_HUMIDITY feature bit. -->
+    <div class="therm-dial-toggle" id="therm-dial-toggle" style="display:none;">
+      <button class="therm-dial-toggle-btn active" id="therm-dial-toggle-temp"
+        onclick="thermSetDialMode('temp')" title="Temperature">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a2 2 0 0 0-2 2v9.17a4 4 0 1 0 4 0V4a2 2 0 0 0-2-2z"/>
+          <line x1="12" y1="6" x2="12" y2="13"/>
         </svg>
-        <span>Off</span>
       </button>
-      <button class="therm-mode-btn" data-mode="cool" onclick="thermSetMode('cool')" title="Cool">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(120,200,255,0.9)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
-          <polyline points="8 6 12 2 16 6"/><polyline points="18 8 22 12 18 16"/>
-          <polyline points="16 18 12 22 8 18"/><polyline points="6 16 2 12 6 8"/>
+      <button class="therm-dial-toggle-btn" id="therm-dial-toggle-humidity"
+        onclick="thermSetDialMode('humidity')" title="Humidity">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2s6 7.5 6 12a6 6 0 0 1-12 0c0-4.5 6-12 6-12z"/>
         </svg>
-        <span>Cool</span>
       </button>
-      <button class="therm-mode-btn" data-mode="heat" onclick="thermSetMode('heat')" title="Heat">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,140,80,0.9)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2c-1 0-3.5 1.5-3.5 5 0 0 1.5-1.5 3.5-1.5s3.5 1.5 3.5 1.5C15.5 3.5 13 2 12 2z"/>
-          <path d="M6.5 9C4 9 2 11.5 2 14c0 4 3 8 10 8s10-4 10-8c0-2.5-2-5-4.5-5-1.5 0-2.5 1-5.5 1S8 9 6.5 9z"/>
-        </svg>
-        <span>Heat</span>
-      </button>
-      <button class="therm-mode-btn" data-mode="fan_only" onclick="thermSetMode('fan_only')" title="Fan">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 12 C12 8 15 5 18 6 C19 9 17 12 14 12"/><path d="M12 12 C16 12 19 15 18 18 C15 19 12 17 12 14"/>
-          <path d="M12 12 C12 16 9 19 6 18 C5 15 7 12 10 12"/><path d="M12 12 C8 12 5 9 6 6 C9 5 12 7 12 10"/>
-          <circle cx="12" cy="12" r="2"/>
-        </svg>
-        <span>Fan</span>
-      </button>
-      <button class="therm-mode-btn" data-mode="dry" onclick="thermSetMode('dry')" title="Dry">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(180,220,255,0.7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
-        </svg>
-        <span>Dry</span>
-      </button>
+    </div>
+
+    <!-- Mode buttons: built by JS from the entity's own hvac_modes, not a fixed list -->
+    <div class="therm-modes" id="therm-modes"></div>
+
+    <!-- Preset (tap-to-expand list) and Fan mode (button row). Each is built by JS and
+         hidden entirely when the entity doesn't support it. -->
+    <div class="therm-features" id="therm-features">
+      <div class="therm-feature therm-feature--preset" id="therm-preset-feature" style="display:none;">
+        <button class="therm-feature-trigger" onclick="thermTogglePresetList()">
+          <span class="therm-feature-label">Preset</span>
+          <span class="therm-feature-value" id="therm-preset-value">—</span>
+          <svg class="therm-feature-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        <div class="therm-preset-list" id="therm-preset-list"></div>
+      </div>
+      <div class="therm-feature therm-feature--fan" id="therm-fan-feature" style="display:none;">
+        <span class="therm-feature-label">Fan Mode</span>
+        <div class="therm-fan-row" id="therm-fan-row"></div>
+      </div>
     </div>
   </div>
 </div>

@@ -80,6 +80,11 @@ function loadThermostatOverlay() {
     _buildThermTabs: () => {},
     _renderThermRoom: () => {},
     window: {},
+    // closeThermostat clears its debounce timers on close (2026-08-11, alongside the
+    // humidity dial); the real runtime always has these, this minimal sandbox needs them
+    // passed through explicitly like every other global it stubs.
+    setTimeout,
+    clearTimeout,
   };
   vm.createContext(context);
   vm.runInContext(
@@ -499,7 +504,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260811.2");
+  assert.equal(version, "20260811.6");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -717,10 +722,11 @@ test("shared UI defaults select Screen A, Classic Gold, and 12-hour time", () =>
   assert.deepEqual(Array.from(config.backgroundImages || []), []);
 });
 
-test("Homie connects to Home Assistant by literal IP (FireOS tablet has no mDNS resolver)", () => {
+test("Homie connects to Home Assistant by real DNS name, not the old mDNS hostname or literal IP", () => {
   const source = fs.readFileSync(path.join(workDir, "config.js"), "utf8");
-  assert.match(source, /const WS_URL = "ws:\/\/192\.168\.4\.125:8123\/api\/websocket";/);
+  assert.match(source, /const WS_URL = "ws:\/\/hass\.ehlke\.net:8123\/api\/websocket";/);
   assert.doesNotMatch(source, /const WS_URL = .*homeassistant\.local/);
+  assert.doesNotMatch(source, /const WS_URL = .*192\.168\.4\.125/);
 });
 
 test("custom actions route Climate and A/V without generic toggles", () => {
@@ -931,6 +937,158 @@ test("thermostat step size follows the entity's declared target_temp_step", () =
   assert.equal(custom.thermostatStepSize({ attributes: {} }), 0.5);
   assert.equal(custom.thermostatStepSize(null), 0.5);
   assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 0 } }), 0.5);
+});
+
+// Real fixture: both CasaSolar zones report supported_features 158 =
+// TURN_OFF(128) + PRESET_MODE(16) + FAN_MODE(8) + TARGET_HUMIDITY(4) +
+// TARGET_TEMPERATURE_RANGE(2), and hvac_modes ["off","cool","heat","heat_cool"] --
+// no fan_only, no dry, no single-setpoint mode.
+const LENNOX_ZONE_FIXTURE = {
+  state: "heat_cool",
+  attributes: {
+    supported_features: 158,
+    hvac_modes: ["off", "cool", "heat", "heat_cool"],
+    current_temperature: 74,
+    target_temp_high: 74,
+    target_temp_low: 62,
+    current_humidity: 53,
+    humidity: 45,
+    min_humidity: 40,
+    max_humidity: 60,
+    fan_mode: "auto",
+    fan_modes: ["auto", "on", "circulate"],
+    preset_mode: "summer",
+    preset_modes: [
+      "schedule IQ", "summer", "winter", "spring/fall", "save energy", "away",
+      "cancel hold", "cancel away mode", "schedule hold", "none",
+    ],
+  },
+};
+
+test("the dial SVG doesn't eat clicks meant for controls below it", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // .therm-dial-svg is a 360x360 element rotated 45deg, so its painted/hit-test area is a
+  // ~509px diagonal bounding box -- well outside its own layout box. Found live: the new
+  // dial-mode toggle row sits right below the dial and landed inside that overflow, so
+  // Playwright's click on the humidity toggle silently hit the (decorative, non-interactive)
+  // svg instead. pointer-events: none is the fix; regressing it would resurrect a real,
+  // click-swallowing bug, not just a cosmetic one.
+  assert.match(cssDeclarations(source, ".therm-dial-svg"), /pointer-events:\s*none/);
+});
+
+test("the dial's action badge shows hvac_action (Cooling/Heating/Idle), not a repeat of hvac_mode", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // pde live-caught this against the deployed .5 release: for heat_cool (both real Lennox
+  // zones, almost always), the badge collapsed to a constant "Auto" -- exactly what the
+  // Mode button row below it already shows -- and never said whether the unit was actually
+  // idle, heating, or cooling. Matching HA's native more-info dialog, and the codebase's
+  // own climateIsActive() precedent, means keying the badge off hvac_action instead.
+  assert.match(source, /function _updateThermModeBadge\(hvacAction, mode, isOn\)/);
+  assert.match(source, /_updateThermModeBadge\(attrs\.hvac_action, state, isOn\)/);
+
+  const actionTableStart = source.indexOf("const THERM_ACTION_META");
+  const actionTable = source.slice(actionTableStart, source.indexOf("const THERM_MODE_BADGE_FALLBACK", actionTableStart));
+  assert.match(actionTable, /cooling:\s*\{\s*label:\s*"Cooling"/);
+  assert.match(actionTable, /heating:\s*\{\s*label:\s*"Heating"/);
+  assert.match(actionTable, /idle:\s*\{\s*label:\s*"Idle"/);
+
+  // Falls back to a mode-keyed label -- the badge's pre-2026-08-11 behavior -- for an
+  // entity that reports no hvac_action at all, rather than showing nothing.
+  assert.match(source, /THERM_ACTION_META\[hvacAction\] \|\| THERM_MODE_BADGE_FALLBACK\[mode\]/);
+});
+
+test("thermostat hvac-mode options come from the entity's own hvac_modes, not a static list", () => {
+  const custom = loadCustomizations();
+
+  // The overlay used to offer a fixed off/cool/heat/fan_only/dry row: neither real Lennox zone
+  // supports fan_only or dry, and heat_cool -- the mode they're actually in almost always -- had
+  // no button at all. Options must instead track whatever the entity itself declares.
+  assert.deepEqual(custom.thermostatHvacModeOptions(LENNOX_ZONE_FIXTURE), [
+    { mode: "off", label: "Off" },
+    { mode: "cool", label: "Cool" },
+    { mode: "heat", label: "Heat" },
+    { mode: "heat_cool", label: "Auto" },
+  ]);
+  assert.deepEqual(
+    custom.thermostatHvacModeOptions({ attributes: { hvac_modes: ["off", "fan_only", "dry"] } }),
+    [
+      { mode: "off", label: "Off" },
+      { mode: "fan_only", label: "Fan" },
+      { mode: "dry", label: "Dry" },
+    ],
+  );
+  assert.deepEqual(custom.thermostatHvacModeOptions({ attributes: {} }), []);
+  assert.deepEqual(custom.thermostatHvacModeOptions(null), []);
+});
+
+test("thermostat feature bits gate humidity/preset/fan support independently", () => {
+  const custom = loadCustomizations();
+
+  assert.equal(custom.thermostatSupportsFeature(LENNOX_ZONE_FIXTURE, 4), true);  // TARGET_HUMIDITY
+  assert.equal(custom.thermostatSupportsFeature(LENNOX_ZONE_FIXTURE, 8), true);  // FAN_MODE
+  assert.equal(custom.thermostatSupportsFeature(LENNOX_ZONE_FIXTURE, 16), true); // PRESET_MODE
+  assert.equal(custom.thermostatSupportsFeature({ attributes: { supported_features: 1 } }, 4), false);
+  assert.equal(custom.thermostatSupportsFeature({ attributes: {} }, 4), false);
+  assert.equal(custom.thermostatSupportsFeature(null, 4), false);
+});
+
+test("thermostat humidity view reads current/target and the entity's own min/max bounds", () => {
+  const custom = loadCustomizations();
+
+  assert.deepEqual(custom.thermostatHumidityView(LENNOX_ZONE_FIXTURE), {
+    currentHumidity: 53,
+    targetHumidity: 45,
+    minHumidity: 40,
+    maxHumidity: 60,
+  });
+  // No TARGET_HUMIDITY bit at all -- nothing to show or control.
+  assert.equal(
+    custom.thermostatHumidityView({ attributes: { supported_features: 0, current_humidity: 50 } }),
+    null,
+  );
+  // Missing min/max_humidity attributes fall back to the widest plausible range rather than null.
+  assert.deepEqual(
+    custom.thermostatHumidityView({ attributes: { supported_features: 4 } }),
+    { currentHumidity: null, targetHumidity: null, minHumidity: 0, maxHumidity: 100 },
+  );
+});
+
+test("thermostatClampHumidity keeps an adjusted target inside the entity's declared bounds", () => {
+  const custom = loadCustomizations();
+
+  assert.equal(custom.thermostatClampHumidity(LENNOX_ZONE_FIXTURE, 65), 60);
+  assert.equal(custom.thermostatClampHumidity(LENNOX_ZONE_FIXTURE, 30), 40);
+  assert.equal(custom.thermostatClampHumidity(LENNOX_ZONE_FIXTURE, 50), 50);
+  // Unsupported entity: nothing to clamp against, value passes through unchanged.
+  assert.equal(custom.thermostatClampHumidity({ attributes: { supported_features: 0 } }, 65), 65);
+});
+
+test("thermostat preset options pass the entity's raw preset_modes through verbatim", () => {
+  const custom = loadCustomizations();
+
+  // Deliberately not curated: "cancel hold" / "cancel away mode" / "none" are odd on a
+  // touchscreen picker, but replicating Home Assistant's own Preset chip exactly was the
+  // explicit call here, not judging which Lennox schedule states are worth showing.
+  assert.deepEqual(custom.thermostatPresetOptions(LENNOX_ZONE_FIXTURE), {
+    options: [
+      "schedule IQ", "summer", "winter", "spring/fall", "save energy", "away",
+      "cancel hold", "cancel away mode", "schedule hold", "none",
+    ],
+    current: "summer",
+  });
+  assert.equal(custom.thermostatPresetOptions({ attributes: { supported_features: 0 } }), null);
+});
+
+test("thermostat fan-mode options pass the entity's fan_modes through, or null if unsupported", () => {
+  const custom = loadCustomizations();
+
+  assert.deepEqual(custom.thermostatFanModeOptions(LENNOX_ZONE_FIXTURE), {
+    options: ["auto", "on", "circulate"],
+    current: "auto",
+  });
+  assert.equal(custom.thermostatFanModeOptions({ attributes: { supported_features: 0 } }), null);
 });
 
 test("floorThermostatEntity resolves the visible floor's climate entity", () => {

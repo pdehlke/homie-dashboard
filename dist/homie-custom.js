@@ -160,6 +160,95 @@
     return { temperature: shifted(base) };
   }
 
+  // ClimateEntityFeature bitmask values, per Home Assistant core's stable enum
+  // (homeassistant/components/climate/const.py). Both real thermostats here
+  // report 158 = TURN_OFF(128) + PRESET_MODE(16) + FAN_MODE(8) +
+  // TARGET_HUMIDITY(4) + TARGET_TEMPERATURE_RANGE(2): no swing, no aux heat,
+  // no single-setpoint TARGET_TEMPERATURE. A future climate entity could
+  // support a different subset, so every humidity/preset/fan control below is
+  // gated on its own bit rather than assumed present.
+  const CLIMATE_FEATURE_TARGET_HUMIDITY = 4;
+  const CLIMATE_FEATURE_FAN_MODE = 8;
+  const CLIMATE_FEATURE_PRESET_MODE = 16;
+
+  function thermostatSupportsFeature(state, bit) {
+    const supported = numericState(state && state.attributes && state.attributes.supported_features);
+    return supported !== null && (supported & bit) === bit;
+  }
+
+  // Display metadata for hvac_mode buttons. Only modes the entity actually
+  // lists in hvac_modes are ever shown -- see thermostatHvacModeOptions --
+  // so an entity that doesn't support e.g. fan_only or dry never offers a
+  // button for it, unlike the previous static off/cool/heat/fan_only/dry
+  // row, which showed two modes neither real Lennox zone here supports and
+  // omitted heat_cool, the mode they're actually in almost all the time.
+  const HVAC_MODE_META = {
+    off:       { label: "Off" },
+    cool:      { label: "Cool" },
+    heat:      { label: "Heat" },
+    heat_cool: { label: "Auto" },
+    auto:      { label: "Auto" },
+    fan_only:  { label: "Fan" },
+    dry:       { label: "Dry" },
+  };
+
+  /** thermostatHvacModeOptions — the entity's own hvac_modes, each with a display label */
+  function thermostatHvacModeOptions(state) {
+    const attrs = state && state.attributes ? state.attributes : {};
+    const modes = Array.isArray(attrs.hvac_modes) ? attrs.hvac_modes : [];
+    return modes.map((mode) => ({
+      mode,
+      label: (HVAC_MODE_META[mode] && HVAC_MODE_META[mode].label) || mode,
+    }));
+  }
+
+  /**
+   * thermostatHumidityView — current/target humidity and the entity's own
+   * min/max_humidity bounds, or null when the entity has no TARGET_HUMIDITY
+   * feature bit at all (nothing to show or control).
+   */
+  function thermostatHumidityView(state) {
+    if (!thermostatSupportsFeature(state, CLIMATE_FEATURE_TARGET_HUMIDITY)) return null;
+    const attrs = state && state.attributes ? state.attributes : {};
+    return {
+      currentHumidity: numericState(attrs.current_humidity),
+      targetHumidity: numericState(attrs.humidity),
+      minHumidity: numericState(attrs.min_humidity) ?? 0,
+      maxHumidity: numericState(attrs.max_humidity) ?? 100,
+    };
+  }
+
+  /** thermostatClampHumidity — keeps an adjusted target inside the entity's own bounds */
+  function thermostatClampHumidity(state, value) {
+    const view = thermostatHumidityView(state);
+    if (!view) return value;
+    return Math.min(view.maxHumidity, Math.max(view.minHumidity, value));
+  }
+
+  /**
+   * thermostatPresetOptions — the entity's raw preset_modes list and current
+   * preset_mode, verbatim (including integration-specific one-shot entries
+   * like "cancel hold"), or null when PRESET_MODE isn't supported.
+   */
+  function thermostatPresetOptions(state) {
+    if (!thermostatSupportsFeature(state, CLIMATE_FEATURE_PRESET_MODE)) return null;
+    const attrs = state && state.attributes ? state.attributes : {};
+    return {
+      options: Array.isArray(attrs.preset_modes) ? attrs.preset_modes : [],
+      current: attrs.preset_mode || null,
+    };
+  }
+
+  /** thermostatFanModeOptions — the entity's fan_modes list and current fan_mode, or null if unsupported */
+  function thermostatFanModeOptions(state) {
+    if (!thermostatSupportsFeature(state, CLIMATE_FEATURE_FAN_MODE)) return null;
+    const attrs = state && state.attributes ? state.attributes : {};
+    return {
+      options: Array.isArray(attrs.fan_modes) ? attrs.fan_modes : [],
+      current: attrs.fan_mode || null,
+    };
+  }
+
   function requiresStartConfirmation(control, isOn) {
     return Boolean(control && control.confirmStart && !isOn);
   }
@@ -479,8 +568,14 @@
     startConfirmationMessage,
     statColumns,
     sunEventTimes,
+    thermostatClampHumidity,
+    thermostatFanModeOptions,
+    thermostatHumidityView,
+    thermostatHvacModeOptions,
+    thermostatPresetOptions,
     thermostatSetTemperaturePayload,
     thermostatStepSize,
+    thermostatSupportsFeature,
     thermostatTemperatureUnit,
     thermostatTemperatureView,
     thermostatToFahrenheit,

@@ -4,9 +4,11 @@
  */
 
 const HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN";
-// Literal IP, not homeassistant.local: the Fire HD tablet's FireOS has no mDNS
-// resolver, so the hostname never resolves there. See homie-dashboard-install-plan.md.
-const WS_URL = "ws://192.168.4.125:8123/api/websocket";
+// hass.ehlke.net resolves via real DNS (not mDNS), so it works everywhere:
+// the Fire HD tablet included, whose FireOS has no mDNS resolver and could
+// never reach homeassistant.local. Replaces the literal-IP workaround this
+// file used from 2026-08-10 to 2026-08-11; see homie-dashboard-install-plan.md.
+const WS_URL = "ws://hass.ehlke.net:8123/api/websocket";
 const BASE = WS_URL
   .replace(/^wss:\/\//, "https://")
   .replace(/^ws:\/\//, "http://")
