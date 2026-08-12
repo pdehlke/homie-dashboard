@@ -595,7 +595,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260812.4");
+  assert.equal(version, "20260812.6");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -804,6 +804,188 @@ test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls,
   assert.match(source, /refreshOpenAcCards\(\);\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*refreshOpenScenePopup\(\);/);
 });
 
+// loadMusicToggle: musicStationIsOn/musicChipIsOn/togglePopupMusic against a fake
+// stateCache and a fake bubble element, the same slice-real-source approach as
+// loadSceneToggle above. Reuses the identical source slice — Scenes' and Music's
+// helper/toggle functions sit adjacent in the real file — and just exposes the
+// Music-specific globals instead.
+function loadMusicToggle() {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const entityIsOnStart = source.indexOf("function entityIsOn(state, entity)");
+  const entityIsOnSource = source.slice(entityIsOnStart, source.indexOf("}", entityIsOnStart) + 1);
+  const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
+  const helpersEnd = source.indexOf("function irrigationDisabledZones()");
+  const helpersSource = source.slice(helpersStart, helpersEnd);
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId)");
+  const toggleEnd = source.indexOf("\n/**\n * closePopup", toggleStart);
+  const toggleSource = source.slice(toggleStart, toggleEnd);
+  assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
+    "entityIsOn/musicStationIsOn/musicChipIsOn/togglePopupMusic must all be found");
+
+  const stateCache = new Map();
+  const calls = [];
+  const classSets = new Map(); // bubbleId -> Set<string>
+  const bubble = (id) => {
+    if (!classSets.has(id)) classSets.set(id, new Set());
+    const classes = classSets.get(id);
+    return {
+      offsetWidth: 0,
+      classList: {
+        add: (c) => classes.add(c),
+        remove: (c) => classes.delete(c),
+        toggle: (c, force) => { (force ?? !classes.has(c)) ? classes.add(c) : classes.delete(c); },
+        contains: (c) => classes.has(c),
+      },
+    };
+  };
+  const context = {
+    haGetCached: (id) => stateCache.get(id) ?? null,
+    haService: async (domain, service, data) => { calls.push({ domain, service, data }); },
+    haptic: () => {},
+    document: { getElementById: bubble },
+    setTimeout: () => {}, // fired-class removal not exercised by these tests
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${entityIsOnSource}\n${helpersSource}\n${toggleSource}\n` +
+      `globalThis.__toggle = togglePopupMusic;\n` +
+      `globalThis.__stationIsOn = musicStationIsOn;\n` +
+      `globalThis.__chipIsOn = musicChipIsOn;`,
+    context,
+  );
+  return {
+    toggle: context.__toggle,
+    stationIsOn: context.__stationIsOn,
+    chipIsOn: context.__chipIsOn,
+    setState: (id, state, attributes = {}) => stateCache.set(id, { state, attributes }),
+    calls,
+    classesOf: (id) => classSets.get(id) || new Set(),
+  };
+}
+
+test("Overview C sidebar's Music icon uses the explicit icons.music override, not the media_player domain fallback", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function _sbIcon(ctrl)");
+  const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
+  const fnBody = source.slice(fnStart, fnEnd);
+
+  // A Music chip does have a top-level entity (media_player.crestron), but
+  // "media_player" isn't a key in the generic icons map, so without this
+  // override it would silently fall through to the generic default icon.
+  assert.match(fnBody, /if \(ctrl\.isMusicChip\) return icons\.music;/);
+  const overrideIndex = fnBody.indexOf("if (ctrl.isMusicChip)");
+  const iconsIndex = fnBody.indexOf("const icons = {");
+  assert.ok(iconsIndex > -1 && overrideIndex > iconsIndex, "override must come after icons is defined, not before (TDZ)");
+});
+
+test("musicStationIsOn requires both an exact media_content_id match and a playing state", () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "paused", { media_content_id: "library://radio/38" });
+  assert.equal(music.stationIsOn("media_player.crestron", "library://radio/38"), false); // paused, not playing
+
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/1" });
+  assert.equal(music.stationIsOn("media_player.crestron", "library://radio/38"), false); // wrong station
+
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/38" });
+  assert.equal(music.stationIsOn("media_player.crestron", "library://radio/38"), true);
+});
+
+test("musicChipIsOn is on only when the target player is mid-playback of one of that chip's own configured stations", () => {
+  const music = loadMusicToggle();
+  const chip = {
+    entity: "media_player.crestron",
+    subGroups: [{ stations: [
+      { uri: "library://radio/1", label: "Hiromi + more" },
+      { uri: "library://radio/2", label: "80s 90s Radio" },
+    ] }],
+  };
+  music.setState("media_player.crestron", "idle", {});
+  assert.equal(music.chipIsOn(chip), false);
+
+  // Playing something real, but not one of this chip's own presets — should
+  // not glow, the same way an unrelated AirPlay session shouldn't light it up.
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/99" });
+  assert.equal(music.chipIsOn(chip), false);
+
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/2" });
+  assert.equal(music.chipIsOn(chip), true);
+});
+
+test("togglePopupMusic plays and resets volume to 40% when the player was idle", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "idle", {});
+  await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
+  assert.equal(music.calls.length, 2);
+  assert.equal(music.calls[0].domain, "media_player");
+  assert.equal(music.calls[0].service, "volume_set");
+  assert.equal(music.calls[0].data.entity_id, "media_player.crestron");
+  assert.equal(music.calls[0].data.volume_level, 0.4);
+  assert.equal(music.calls[1].domain, "music_assistant");
+  assert.equal(music.calls[1].service, "play_media");
+  assert.equal(music.calls[1].data.entity_id, "media_player.crestron");
+  assert.equal(music.calls[1].data.media_id, "library://radio/38");
+  assert.equal(music.calls[1].data.media_type, "radio");
+  assert.ok(music.classesOf("pmb-0-4").has("on"), "bubble should show on optimistically after playing");
+});
+
+test("togglePopupMusic hot-switches straight to a new station without touching volume when already playing", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/1" });
+  await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
+  assert.equal(music.calls.length, 1); // no volume_set call this time
+  assert.equal(music.calls[0].domain, "music_assistant");
+  assert.equal(music.calls[0].service, "play_media");
+  assert.equal(music.calls[0].data.media_id, "library://radio/38");
+});
+
+test("togglePopupMusic stops playback, rather than pausing it, when tapping the currently-active station's own bubble", () => {
+  return (async () => {
+    const music = loadMusicToggle();
+    music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/38" });
+    await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
+    assert.equal(music.calls.length, 1);
+    assert.equal(music.calls[0].domain, "media_player");
+    assert.equal(music.calls[0].service, "media_stop");
+    assert.equal(music.calls[0].data.entity_id, "media_player.crestron");
+    assert.ok(!music.classesOf("pmb-0-4").has("on"), "bubble should show off optimistically after stopping");
+  })();
+});
+
+test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Popup bubble render.
+  const openStart = source.indexOf("async function openPopup(i)");
+  const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
+  assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
+  assert.match(source.slice(openStart, openEnd), /const on = musicStationIsOn\(c\.entity, st\.uri\)/);
+
+  // Bottom chip glow (no count badge, see the config comment).
+  const rcStart = source.indexOf("function refreshControls()");
+  const rcEnd = source.indexOf("\nfunction refreshNotifications()", rcStart);
+  assert.ok(rcStart > -1 && rcEnd > rcStart, "refreshControls must be found");
+  assert.match(source.slice(rcStart, rcEnd), /isOn = musicChipIsOn\(c\)/);
+
+  // Overview C sidebar glow.
+  const sbStart = source.indexOf("function _refreshOv3SidebarControls()");
+  const sbEnd = source.indexOf("\n/* Build/rebuild the entire purifier card", sbStart);
+  assert.ok(sbStart > -1 && sbEnd > sbStart, "_refreshOv3SidebarControls must be found");
+  assert.match(source.slice(sbStart, sbEnd), /musicChipIsOn\(c\)/);
+
+  // Live popup refresh (only surface that doesn't reuse refreshControls' loop).
+  const ropStart = source.indexOf("function refreshOpenMusicPopup()");
+  const ropEnd = source.indexOf("\n/**\n * isPopupOpen", ropStart);
+  assert.ok(ropStart > -1 && ropEnd > ropStart, "refreshOpenMusicPopup must be found");
+  assert.match(source.slice(ropStart, ropEnd), /musicStationIsOn\(c\.entity, st\.uri\)/);
+
+  // Called from the popup-open branch of refreshAllUI, not just defined.
+  const rauStart = source.indexOf("function refreshAllUI()");
+  const rauEnd = source.indexOf("\n/**\n * refreshOpenAcCards", rauStart);
+  assert.ok(rauStart > -1 && rauEnd > rauStart, "refreshAllUI must be found");
+  assert.match(source.slice(rauStart, rauEnd), /refreshOpenScenePopup\(\);[\s\S]*refreshOpenMusicPopup\(\);/);
+});
+
 test("Overview C sidebar pins Settings, Modes, and Security; everything else is the dynamic list", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const elements = dashboardElementsById(source);
@@ -931,11 +1113,14 @@ test("solar chart history status distinguishes failures from empty history", () 
 
 test("control row and popup mappings match the approved design", () => {
   const config = loadConfig();
-  assert.deepEqual(Array.from(config.controls, (entry) => entry.label), ["Lights", "Climate", "A/V", "TV", "Irrigation", "Scenes"]);
+  assert.deepEqual(
+    Array.from(config.controls, (entry) => entry.label),
+    ["Lights", "Climate", "A/V", "Music", "TV", "Irrigation", "Scenes"],
+  );
   assert.equal(config.controls[1].action, "thermostat");
   assert.equal(config.controls[2].action, "media_browser");
-  assert.equal(config.controls[3].action, "harmony");
-  assert.equal(config.controls[4].confirmStart, true);
+  assert.equal(config.controls[4].action, "harmony");
+  assert.equal(config.controls[5].confirmStart, true);
   assert.deepEqual(
     Array.from(config.controls[1].subEntities, (entry) => [entry.label, entry.entity]),
     [
@@ -955,7 +1140,7 @@ test("control row and popup mappings match the approved design", () => {
     ["Dining Room", "Entry", "Kitchen", "Office", "Primary Suite"],
   );
   assert.deepEqual(
-    Array.from(config.controls[4].subEntities, (entry) => entry.entity),
+    Array.from(config.controls[5].subEntities, (entry) => entry.entity),
     [
       "switch.main_irrigation_east_of_garage",
       "switch.main_irrigation_east_triangle",
@@ -965,20 +1150,44 @@ test("control row and popup mappings match the approved design", () => {
       "switch.back_yard_irrigation",
     ],
   );
+  // Music: isMusicChip / subGroups[].stations[], the Scenes chip's shape
+  // adapted for radio presets. Every bubble shares the one chip-level
+  // `entity` (there's only one physical player), unlike Scenes where each
+  // bubble carries its own entities — see
+  // docs/homie-dashboard/homie-music-chip.md in the pdehlke/homeassistant
+  // repo. Deliberately no showCount (see the config comment).
+  assert.equal(config.controls[3].isMusicChip, true);
+  assert.equal(config.controls[3].entity, "media_player.crestron");
+  assert.equal(config.controls[3].showCount, undefined);
+  assert.equal(config.controls[3].subGroups.length, 1);
+  assert.deepEqual(
+    Array.from(config.controls[3].subGroups[0].stations, (station) => [station.uri, station.label]),
+    [
+      ["library://radio/1", "Jazz: Hiromi"],
+      ["library://radio/2", "80s/90s"],
+      ["library://radio/4", "Dinner Party"],
+      ["library://radio/5", "The Jam"],
+      ["library://radio/38", "1st Wave"],
+      ["library://radio/39", "Blues"],
+    ],
+  );
+  for (const station of config.controls[3].subGroups[0].stations) {
+    assert.match(station.uri, /^library:\/\/radio\/\d+$/);
+  }
   // Scenes: stock isSceneChip mechanism. Each scene's "entities" is one or
   // more real scene.* entities — togglePopupScene fires scene.turn_on /
   // homeassistant.turn_off directly (see
   // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
   // repo), no wrapping automation needed. Primary Suite groups both Bedroom
   // and Bathroom's scenes into a single bubble, the multi-entity case.
-  assert.equal(config.controls[5].isSceneChip, true);
-  assert.equal(config.controls[5].showCount, true);
+  assert.equal(config.controls[6].isSceneChip, true);
+  assert.equal(config.controls[6].showCount, true);
   assert.deepEqual(
-    Array.from(config.controls[5].subGroups, (group) => group.label),
+    Array.from(config.controls[6].subGroups, (group) => group.label),
     ["Bedroom", "Bathroom", "Primary Suite"],
   );
   assert.deepEqual(
-    Array.from(config.controls[5].subGroups, (group) =>
+    Array.from(config.controls[6].subGroups, (group) =>
       Array.from(group.scenes, (scene) => [Array.from(scene.entities), scene.label])),
     [
       [[["scene.bedroom_evening"], "Evening"]],
@@ -986,7 +1195,7 @@ test("control row and popup mappings match the approved design", () => {
       [[["scene.bedroom_evening", "scene.bathroom_evening"], "Evening"]],
     ],
   );
-  for (const group of config.controls[5].subGroups) {
+  for (const group of config.controls[6].subGroups) {
     for (const scene of group.scenes) {
       for (const entity of scene.entities) assert.match(entity, /^scene\./);
     }

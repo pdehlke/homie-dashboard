@@ -287,6 +287,57 @@ const CONFIG = {
       action: "media_browser",
     },
     {
+      // Bottom-row equivalent of the Scenes chip (isSceneChip / subGroups[].scenes[])
+      // but for radio presets: isMusicChip / subGroups[].stations[]. Every bubble
+      // targets the one fixed `entity` below rather than carrying its own, since
+      // there's only one physical player these presets can play through. On-state
+      // is derived live from that entity's own state/media_content_id
+      // (musicStationIsOn(), homie-dashboard.html) rather than tracked separately,
+      // same reasoning as sceneIsOn() — see docs/homie-dashboard/homie-music-chip.md
+      // in the pdehlke/homeassistant repo for the full design writeup (parallels
+      // homie-scenes-chip.md). Deliberately no showCount: at most one of these can
+      // ever be "on" at once, so an "N on" badge would only ever read 0 or 1.
+      label: "Music",
+      isMusicChip: true,
+      entity: "media_player.crestron",
+      subGroups: [
+        {
+          stations: [
+            {
+              uri: "library://radio/1",
+              label: "Jazz: Hiromi",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+            {
+              uri: "library://radio/2",
+              label: "80s/90s",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+            {
+              uri: "library://radio/4",
+              label: "Dinner Party",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+            {
+              uri: "library://radio/5",
+              label: "The Jam",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+            {
+              uri: "library://radio/38",
+              label: "1st Wave",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+            {
+              uri: "library://radio/39",
+              label: "Blues",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
       label: "TV",
       action: "harmony",
       // Drives the chip's on/off glow via the generic entityIsOn() path in

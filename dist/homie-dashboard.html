@@ -8681,7 +8681,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260812.4";
+      const HOMIE_ASSET_VERSION = "20260812.6";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -10995,6 +10995,34 @@ function sceneIsOn(entities) {
 }
 
 /**
+ * musicStationIsOn — a Music chip bubble reads "on" only when its target
+ * media_player is actually mid-playback of that exact station's URI, not
+ * merely powered on. Unlike a scene (whose own state carries nothing useful,
+ * so "on" has to be inferred from what it controls), a media_player's own
+ * state and media_content_id already say everything needed, so there's no
+ * separate affected-entities step the way sceneAffectedEntities() has.
+ * Shared by the popup bubble ring, the chip glow (via musicChipIsOn()), and
+ * the Overview C sidebar dot, same discipline sceneIsOn() follows for Scenes.
+ */
+function musicStationIsOn(entity, uri) {
+  const d = haGetCached(entity);
+  return !!d && d.state === "playing" && !!d.attributes && d.attributes.media_content_id === uri;
+}
+
+/**
+ * musicChipIsOn — true when a Music chip's target media_player is currently
+ * playing any one of that chip's configured stations. Deliberately narrower
+ * than "is it playing anything at all": audio someone else sends to the same
+ * player (AirPlay from a phone, a different dashboard) shouldn't light this
+ * chip up, the same way a Music chip bubble itself only rings for an exact
+ * station match.
+ */
+function musicChipIsOn(c) {
+  return (c.subGroups || []).flatMap(g => g.stations || [])
+    .some(st => musicStationIsOn(c.entity, st.uri));
+}
+
+/**
  * irrigationDisabledZones — the Irrigation control's subEntities currently
  * `unavailable`, HA's signal that a Rachio zone or valve has been disabled
  * (see rachio-zone-disabled-alert.md in the docs repo; a disabled zone's
@@ -11073,6 +11101,13 @@ function refreshControls() {
           }
         }
       }
+    } else if (c.isMusicChip) {
+      // Music chip deliberately has no showCount in config: at most one of
+      // its stations can ever be playing, so an "N on" badge would only
+      // ever read "0 on" or "1 on", unlike every other chip here. The glow
+      // itself reuses musicChipIsOn(), the same shared helper the popup
+      // bubble ring and the Overview C sidebar dot read.
+      isOn = musicChipIsOn(c);
     } else if (allSubs.length > 0) {
       const isClimateChip = allSubs[0].entity.startsWith("climate.");
       let activeCount;
@@ -11860,6 +11895,29 @@ async function openPopup(i) {
     list.innerHTML = "";
     _openPopupOverlay("popup--scene");
     requestAnimationFrame(() => { list.innerHTML = sceneHtml; });
+    return;
+  }
+
+  // ── Music chip: render station bubbles, each showing live on/off ────────
+  if (c.isMusicChip) {
+    let musicHtml = "";
+    (c.subGroups || []).forEach((group, gIdx) => {
+      if (group.label) musicHtml += `<div class="popup-group-label">${escapeHtml(group.label)}</div>`;
+      musicHtml += `<div class="popup-scenes-grid">`;
+      (group.stations || []).forEach((st, idx) => {
+        const bubbleId = `pmb-${gIdx}-${idx}`;
+        const on = musicStationIsOn(c.entity, st.uri);
+        musicHtml += `
+          <div class="popup-scene-bubble" onclick="togglePopupMusic('${escapeHtml(c.entity)}','${escapeHtml(st.uri)}','${escapeHtml(bubbleId)}')">
+            <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:var(--accent)">${st.icon}</div>
+            <div class="popup-scene-label">${escapeHtml(st.label)}</div>
+          </div>`;
+      });
+      musicHtml += `</div>`;
+    });
+    list.innerHTML = "";
+    _openPopupOverlay("popup--scene");
+    requestAnimationFrame(() => { list.innerHTML = musicHtml; });
     return;
   }
 
@@ -13457,6 +13515,50 @@ async function togglePopupScene(entities, bubbleId) {
 }
 
 /**
+ * togglePopupMusic — plays or stops a Music chip station on its target
+ * media_player.
+ *
+ * Off is an explicit media_player.media_stop, not pause — pde chose a clean
+ * stop over a resumable pause for this chip (unlike Scenes, which has no
+ * off action of its own and has to synthesize one; media_player already has
+ * a real stop). On plays the station through Music Assistant's own
+ * play_media service (media_id/media_type, the pattern already confirmed
+ * working for radio content on this instance — see the home-assistant
+ * skill's music-assistant.md), and only resets volume to 40% when the
+ * player wasn't already mid-playback: switching directly between two
+ * configured stations, or away from whatever else happened to be playing,
+ * leaves the volume exactly where it was rather than jumping on every tap.
+ *
+ * @param {string} entity   — target media_player entity_id (chip-level, not per-bubble)
+ * @param {string} uri      — this bubble's station URI (library://radio/n)
+ * @param {string} bubbleId — DOM id of the bubble element for animation
+ */
+async function togglePopupMusic(entity, uri, bubbleId) {
+  haptic("heavy");
+  const bubble = document.getElementById(bubbleId);
+  if (bubble) {
+    bubble.classList.remove("fired");
+    void bubble.offsetWidth; // force reflow to restart animation
+    bubble.classList.add("fired");
+    setTimeout(() => bubble.classList.remove("fired"), 700);
+  }
+  const wasOn = musicStationIsOn(entity, uri);
+  if (wasOn) {
+    await haService("media_player", "media_stop", { entity_id: entity });
+  } else {
+    const wasPlaying = haGetCached(entity)?.state === "playing";
+    if (!wasPlaying) {
+      await haService("media_player", "volume_set", { entity_id: entity, volume_level: 0.4 });
+    }
+    await haService("music_assistant", "play_media", { entity_id: entity, media_id: uri, media_type: "radio" });
+  }
+  // Optimistic instant feedback, same as togglePopupScene()'s — the WS
+  // state_changed subscription reconciles this from real state shortly
+  // after, via refreshOpenMusicPopup() while this popup stays open.
+  if (bubble) bubble.classList.toggle("on", !wasOn);
+}
+
+/**
  * closePopup — closes the control detail popup when the backdrop is tapped.
  * Also resets the open accordion tracker so re-opening the popup starts fresh.
  */
@@ -14360,6 +14462,10 @@ function refreshAllUI() {
     // Same idea for a visible Scenes popup: without this, a bubble's "on"
     // ring would only ever reflect the moment the popup was opened.
     refreshOpenScenePopup();
+    // Same idea again for a visible Music popup — a station switch or stop
+    // triggered from elsewhere (another dashboard, HA itself) should still
+    // show up live while the popup stays open.
+    refreshOpenMusicPopup();
   }
   refreshMusic();
   // Keep overview 2 in sync whenever it has been built (regardless of active screen)
@@ -14410,6 +14516,27 @@ function refreshOpenScenePopup() {
         const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
         const el = document.getElementById(bubbleId);
         if (el) el.classList.toggle("on", sceneIsOn(sc.entities));
+      });
+    });
+  }
+}
+
+/**
+ * refreshOpenMusicPopup — re-hydrates every rendered Music station bubble's
+ * "on" ring from live state while a Music popup is open. Mirrors
+ * refreshOpenScenePopup() just above for the same reason: refreshAllUI()
+ * skips refreshControls() whenever any popup is open, so without this a
+ * bubble's ring would only ever reflect the instant the popup was opened,
+ * not a station switch or stop triggered from elsewhere.
+ */
+function refreshOpenMusicPopup() {
+  for (const c of activeControls) {
+    if (!c.isMusicChip) continue;
+    (c.subGroups || []).forEach((group, gIdx) => {
+      (group.stations || []).forEach((st, idx) => {
+        const bubbleId = `pmb-${gIdx}-${idx}`;
+        const el = document.getElementById(bubbleId);
+        if (el) el.classList.toggle("on", musicStationIsOn(c.entity, st.uri));
       });
     });
   }
@@ -17904,6 +18031,7 @@ function _buildOv3SidebarControls() {
       cover:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 12 3 21 6"/><rect x="3" y="6" width="18" height="13" rx="1"/><line x1="3" y1="11" x2="21" y2="11"/></svg>`,
       fan:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c1-2 3-3 5-2s3 3 2 5-3 3-5 2"/><path d="M12 12c-1-2-3-3-5-2s-3 3-2 5 3 3 5 2"/><path d="M12 12c2 1 3 3 2 5s-3 3-5 2-3-3-2-5"/><path d="M12 12c-2-1-3-3-2-5s3-3 5-2 3 3 2 5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>`,
       scene:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+      music:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
       script:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
       input_boolean: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="8" cy="12" r="3" fill="currentColor"/></svg>`,
     };
@@ -17912,6 +18040,12 @@ function _buildOv3SidebarControls() {
     // generic domain lookup above always falls through to "switch" for them.
     // icons.scene exists for exactly this case; use it directly.
     if (ctrl.isSceneChip) return icons.scene;
+    // Music chips do carry a top-level entity (media_player.crestron), but
+    // "media_player" isn't a key in the icons map above, so without this
+    // override it would silently fall through to the generic default below
+    // rather than reading as music — same reasoning as the Scenes override
+    // just above, applied to a chip that happens to have an entity anyway.
+    if (ctrl.isMusicChip) return icons.music;
     return icons[domain] || `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M4 12H2M22 12h-2M12 4V2M12 22v-2"/></svg>`;
   }
 
@@ -17951,9 +18085,11 @@ function _refreshOv3SidebarControls() {
       : (c.subEntities || []);
     const isOn = c.isSceneChip
       ? (c.subGroups || []).flatMap(g => g.scenes || []).some(sc => sceneIsOn(sc.entities))
-      : subs.length
-        ? subs.some(s => entityIsActive(s.entity))
-        : entityIsActive(c.entity);
+      : c.isMusicChip
+        ? musicChipIsOn(c)
+        : subs.length
+          ? subs.some(s => entityIsActive(s.entity))
+          : entityIsActive(c.entity);
     btn.classList.toggle("on", isOn);
 
     if (c.label === "Irrigation") {
