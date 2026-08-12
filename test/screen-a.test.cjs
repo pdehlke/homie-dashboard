@@ -58,7 +58,23 @@ function dashboardElementsById(source) {
   return elements;
 }
 
-function loadThermostatOverlay() {
+// Minimal CustomEvent stand-in: a fresh vm context has none of Node's WHATWG globals,
+// only the JS language's own built-ins, so openThermostatNative's `new CustomEvent(...)`
+// needs this passed in explicitly like every other global the sandbox stubs.
+class FakeCustomEvent {
+  constructor(type, init) {
+    this.type = type;
+    this.detail = init && init.detail;
+    this.bubbles = Boolean(init && init.bubbles);
+    this.composed = Boolean(init && init.composed);
+  }
+}
+
+// withParentFrame: false simulates Homie having no reachable parent HA frame at all (e.g. a
+// future change to iframe sandboxing, or the page loaded directly with no parent) -- used by
+// the "can't reach the parent frame" test below, sharing the real sliced source rather than
+// a hand-copied duplicate that could drift from it.
+function loadThermostatOverlay({ withParentFrame = true } = {}) {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const thermostatSource = source.slice(
     source.indexOf("let _thermEntities"),
@@ -66,7 +82,17 @@ function loadThermostatOverlay() {
   );
   const openerStart = source.indexOf("function _openFloorsThermostat");
   const openerSource = source.slice(openerStart, source.indexOf("}", openerStart) + 1);
+  // thermSelectRoom lives after the _thermEntities..._buildThermTabs slice above (it calls
+  // closeThermostat/openThermostatNative, defined inside that slice), so it's grabbed the
+  // same way as _openFloorsThermostat rather than widening the main slice to also swallow
+  // _buildThermTabs/_refreshThermTabStates, which this harness stubs out instead.
+  const selectRoomStart = source.indexOf("function thermSelectRoom");
+  const selectRoomSource = source.slice(selectRoomStart, source.indexOf("}", selectRoomStart) + 1);
   const overlayClasses = new Set();
+  const dispatchedEvents = [];
+  // Stands in for the real parent HA frame's <home-assistant> element, which
+  // openThermostatNative reaches via window.parent.document.querySelector(...).
+  const mockHomeAssistantEl = { dispatchEvent: (evt) => dispatchedEvents.push(evt) };
   const context = {
     CONFIG: loadConfig(),
     HOMIE_CUSTOM: loadCustomizations(),
@@ -78,24 +104,32 @@ function loadThermostatOverlay() {
     haptic: () => {},
     _closeLauncher: () => {},
     _buildThermTabs: () => {},
-    _renderThermRoom: () => {},
-    window: {},
-    // closeThermostat clears its debounce timers on close (2026-08-11, alongside the
-    // humidity dial); the real runtime always has these, this minimal sandbox needs them
-    // passed through explicitly like every other global it stubs.
-    setTimeout,
-    clearTimeout,
+    window: withParentFrame
+      ? { parent: { document: { querySelector: (sel) => sel === "home-assistant" ? mockHomeAssistantEl : null } } }
+      : {}, // no .parent at all -- window.parent === window is the top-level-page case
+    CustomEvent: FakeCustomEvent,
   };
   vm.createContext(context);
   vm.runInContext(
     `${thermostatSource}\n` +
       `let _ov3FloorsList = []; let _ov3FloorsActiveIndex = 0;\n` +
       `${openerSource}\n` +
+      `${selectRoomSource}\n` +
       `globalThis.__thermostat = { openThermostat, closeThermostat, entities: () => _thermEntities };\n` +
-      `globalThis.__floors = { open: _openFloorsThermostat, setState: (list, idx) => { _ov3FloorsList = list; _ov3FloorsActiveIndex = idx; } };`,
+      `globalThis.__floors = { open: _openFloorsThermostat, setState: (list, idx) => { _ov3FloorsList = list; _ov3FloorsActiveIndex = idx; } };\n` +
+      `globalThis.__selectRoom = thermSelectRoom;\n` +
+      `globalThis.__openNative = openThermostatNative;`,
     context,
   );
-  return { context, overlayClasses, thermostat: context.__thermostat, floors: context.__floors };
+  return {
+    context,
+    overlayClasses,
+    dispatchedEvents,
+    thermostat: context.__thermostat,
+    floors: context.__floors,
+    selectRoom: context.__selectRoom,
+    openThermostatNative: context.__openNative,
+  };
 }
 
 test("Screen A has the agreed balanced status grid", () => {
@@ -504,7 +538,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260811.7");
+  assert.equal(version, "20260812.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -862,29 +896,6 @@ test("thermostat view normalizes Fahrenheit display and range setpoints", () => 
       nativeUnit: "°F",
     },
   );
-  assert.deepEqual(
-    custom.thermostatSetTemperaturePayload({
-      state: "heat_cool",
-      attributes: {
-        temperature_unit: "°C",
-        target_temp_low: 18,
-        target_temp_high: 22,
-      },
-    }, 0.5),
-    {
-      target_temp_high: 22.3,
-      target_temp_low: 18.3,
-    },
-  );
-  assert.deepEqual(
-    custom.thermostatSetTemperaturePayload({
-      attributes: {
-        temperature_unit: "°F",
-        temperature: 72,
-      },
-    }, -1),
-    { temperature: 71 },
-  );
 });
 
 test("thermostat range setpoint follows the active hvac_action bound, not a midpoint average", () => {
@@ -912,17 +923,6 @@ test("thermostat range setpoint follows the active hvac_action bound, not a midp
       nativeUnit: "°F",
     },
   );
-  // Home Assistant's climate.set_temperature schema hard-400s a call that supplies only one
-  // of target_temp_high/target_temp_low; both keys must always be present, even though only
-  // the active one's value changes. Confirmed against the real HD21K77727 entity: a
-  // target_temp_high-only call returns 200 with an empty body and never touches the state.
-  assert.deepEqual(
-    custom.thermostatSetTemperaturePayload({
-      state: "heat_cool",
-      attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: "cooling" },
-    }, 0.5),
-    { target_temp_high: 78.5, target_temp_low: 62 },
-  );
 
   // Same band, actively heating: the low bound is the one in play.
   assert.deepEqual(
@@ -936,13 +936,6 @@ test("thermostat range setpoint follows the active hvac_action bound, not a midp
       },
     }).targetTemperature,
     "62 °F",
-  );
-  assert.deepEqual(
-    custom.thermostatSetTemperaturePayload({
-      state: "heat_cool",
-      attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: "heating" },
-    }, -0.5),
-    { target_temp_high: 78, target_temp_low: 61.5 },
   );
 
   // Idle or unreported hvac_action: no single bound is "active", so show whichever setpoint
@@ -981,187 +974,6 @@ test("thermostat range setpoint follows the active hvac_action bound, not a midp
     }).targetTemperature,
     "78 °F",
   );
-});
-
-test("range-mode set_temperature payloads always carry both bounds, regardless of hvac_action", () => {
-  const custom = loadCustomizations();
-
-  // Home Assistant rejects a set_temperature call carrying only one of
-  // target_temp_high/target_temp_low with a bare 400, for any hvac_action. This must never
-  // regress to a single-key payload again.
-  for (const hvacAction of ["cooling", "heating", "idle", "", "fan"]) {
-    const payload = custom.thermostatSetTemperaturePayload(
-      { state: "heat_cool", attributes: { target_temp_high: 78, target_temp_low: 62, hvac_action: hvacAction } },
-      0.5,
-    );
-    assert.deepEqual(Object.keys(payload).sort(), ["target_temp_high", "target_temp_low"]);
-  }
-});
-
-test("thermostat step size follows the entity's declared target_temp_step", () => {
-  const custom = loadCustomizations();
-
-  // Real fixture: both CasaSolar zones (lennoxs30) declare a whole-degree step. A
-  // set_temperature call that doesn't land on a step multiple is silently dropped by that
-  // integration -- no error, no state change -- so this must never fall back to 0.5 when a
-  // real step is declared.
-  assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 1.0 } }), 1);
-  assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 0.5 } }), 0.5);
-  assert.equal(custom.thermostatStepSize({ attributes: {} }), 0.5);
-  assert.equal(custom.thermostatStepSize(null), 0.5);
-  assert.equal(custom.thermostatStepSize({ attributes: { target_temp_step: 0 } }), 0.5);
-});
-
-// Real fixture: both CasaSolar zones report supported_features 158 =
-// TURN_OFF(128) + PRESET_MODE(16) + FAN_MODE(8) + TARGET_HUMIDITY(4) +
-// TARGET_TEMPERATURE_RANGE(2), and hvac_modes ["off","cool","heat","heat_cool"] --
-// no fan_only, no dry, no single-setpoint mode.
-const LENNOX_ZONE_FIXTURE = {
-  state: "heat_cool",
-  attributes: {
-    supported_features: 158,
-    hvac_modes: ["off", "cool", "heat", "heat_cool"],
-    current_temperature: 74,
-    target_temp_high: 74,
-    target_temp_low: 62,
-    current_humidity: 53,
-    humidity: 45,
-    min_humidity: 40,
-    max_humidity: 60,
-    fan_mode: "auto",
-    fan_modes: ["auto", "on", "circulate"],
-    preset_mode: "summer",
-    preset_modes: [
-      "schedule IQ", "summer", "winter", "spring/fall", "save energy", "away",
-      "cancel hold", "cancel away mode", "schedule hold", "none",
-    ],
-  },
-};
-
-test("the dial SVG doesn't eat clicks meant for controls below it", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
-
-  // .therm-dial-svg is a 360x360 element rotated 45deg, so its painted/hit-test area is a
-  // ~509px diagonal bounding box -- well outside its own layout box. Found live: the new
-  // dial-mode toggle row sits right below the dial and landed inside that overflow, so
-  // Playwright's click on the humidity toggle silently hit the (decorative, non-interactive)
-  // svg instead. pointer-events: none is the fix; regressing it would resurrect a real,
-  // click-swallowing bug, not just a cosmetic one.
-  assert.match(cssDeclarations(source, ".therm-dial-svg"), /pointer-events:\s*none/);
-});
-
-test("the dial's action badge shows hvac_action (Cooling/Heating/Idle), not a repeat of hvac_mode", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
-
-  // pde live-caught this against the deployed .5 release: for heat_cool (both real Lennox
-  // zones, almost always), the badge collapsed to a constant "Auto" -- exactly what the
-  // Mode button row below it already shows -- and never said whether the unit was actually
-  // idle, heating, or cooling. Matching HA's native more-info dialog, and the codebase's
-  // own climateIsActive() precedent, means keying the badge off hvac_action instead.
-  assert.match(source, /function _updateThermModeBadge\(hvacAction, mode, isOn\)/);
-  assert.match(source, /_updateThermModeBadge\(attrs\.hvac_action, state, isOn\)/);
-
-  const actionTableStart = source.indexOf("const THERM_ACTION_META");
-  const actionTable = source.slice(actionTableStart, source.indexOf("const THERM_MODE_BADGE_FALLBACK", actionTableStart));
-  assert.match(actionTable, /cooling:\s*\{\s*label:\s*"Cooling"/);
-  assert.match(actionTable, /heating:\s*\{\s*label:\s*"Heating"/);
-  assert.match(actionTable, /idle:\s*\{\s*label:\s*"Idle"/);
-
-  // Falls back to a mode-keyed label -- the badge's pre-2026-08-11 behavior -- for an
-  // entity that reports no hvac_action at all, rather than showing nothing.
-  assert.match(source, /THERM_ACTION_META\[hvacAction\] \|\| THERM_MODE_BADGE_FALLBACK\[mode\]/);
-});
-
-test("thermostat hvac-mode options come from the entity's own hvac_modes, not a static list", () => {
-  const custom = loadCustomizations();
-
-  // The overlay used to offer a fixed off/cool/heat/fan_only/dry row: neither real Lennox zone
-  // supports fan_only or dry, and heat_cool -- the mode they're actually in almost always -- had
-  // no button at all. Options must instead track whatever the entity itself declares.
-  assert.deepEqual(custom.thermostatHvacModeOptions(LENNOX_ZONE_FIXTURE), [
-    { mode: "off", label: "Off" },
-    { mode: "cool", label: "Cool" },
-    { mode: "heat", label: "Heat" },
-    { mode: "heat_cool", label: "Auto" },
-  ]);
-  assert.deepEqual(
-    custom.thermostatHvacModeOptions({ attributes: { hvac_modes: ["off", "fan_only", "dry"] } }),
-    [
-      { mode: "off", label: "Off" },
-      { mode: "fan_only", label: "Fan" },
-      { mode: "dry", label: "Dry" },
-    ],
-  );
-  assert.deepEqual(custom.thermostatHvacModeOptions({ attributes: {} }), []);
-  assert.deepEqual(custom.thermostatHvacModeOptions(null), []);
-});
-
-test("thermostat feature bits gate humidity/preset/fan support independently", () => {
-  const custom = loadCustomizations();
-
-  assert.equal(custom.thermostatSupportsFeature(LENNOX_ZONE_FIXTURE, 4), true);  // TARGET_HUMIDITY
-  assert.equal(custom.thermostatSupportsFeature(LENNOX_ZONE_FIXTURE, 8), true);  // FAN_MODE
-  assert.equal(custom.thermostatSupportsFeature(LENNOX_ZONE_FIXTURE, 16), true); // PRESET_MODE
-  assert.equal(custom.thermostatSupportsFeature({ attributes: { supported_features: 1 } }, 4), false);
-  assert.equal(custom.thermostatSupportsFeature({ attributes: {} }, 4), false);
-  assert.equal(custom.thermostatSupportsFeature(null, 4), false);
-});
-
-test("thermostat humidity view reads current/target and the entity's own min/max bounds", () => {
-  const custom = loadCustomizations();
-
-  assert.deepEqual(custom.thermostatHumidityView(LENNOX_ZONE_FIXTURE), {
-    currentHumidity: 53,
-    targetHumidity: 45,
-    minHumidity: 40,
-    maxHumidity: 60,
-  });
-  // No TARGET_HUMIDITY bit at all -- nothing to show or control.
-  assert.equal(
-    custom.thermostatHumidityView({ attributes: { supported_features: 0, current_humidity: 50 } }),
-    null,
-  );
-  // Missing min/max_humidity attributes fall back to the widest plausible range rather than null.
-  assert.deepEqual(
-    custom.thermostatHumidityView({ attributes: { supported_features: 4 } }),
-    { currentHumidity: null, targetHumidity: null, minHumidity: 0, maxHumidity: 100 },
-  );
-});
-
-test("thermostatClampHumidity keeps an adjusted target inside the entity's declared bounds", () => {
-  const custom = loadCustomizations();
-
-  assert.equal(custom.thermostatClampHumidity(LENNOX_ZONE_FIXTURE, 65), 60);
-  assert.equal(custom.thermostatClampHumidity(LENNOX_ZONE_FIXTURE, 30), 40);
-  assert.equal(custom.thermostatClampHumidity(LENNOX_ZONE_FIXTURE, 50), 50);
-  // Unsupported entity: nothing to clamp against, value passes through unchanged.
-  assert.equal(custom.thermostatClampHumidity({ attributes: { supported_features: 0 } }, 65), 65);
-});
-
-test("thermostat preset options pass the entity's raw preset_modes through verbatim", () => {
-  const custom = loadCustomizations();
-
-  // Deliberately not curated: "cancel hold" / "cancel away mode" / "none" are odd on a
-  // touchscreen picker, but replicating Home Assistant's own Preset chip exactly was the
-  // explicit call here, not judging which Lennox schedule states are worth showing.
-  assert.deepEqual(custom.thermostatPresetOptions(LENNOX_ZONE_FIXTURE), {
-    options: [
-      "schedule IQ", "summer", "winter", "spring/fall", "save energy", "away",
-      "cancel hold", "cancel away mode", "schedule hold", "none",
-    ],
-    current: "summer",
-  });
-  assert.equal(custom.thermostatPresetOptions({ attributes: { supported_features: 0 } }), null);
-});
-
-test("thermostat fan-mode options pass the entity's fan_modes through, or null if unsupported", () => {
-  const custom = loadCustomizations();
-
-  assert.deepEqual(custom.thermostatFanModeOptions(LENNOX_ZONE_FIXTURE), {
-    options: ["auto", "on", "circulate"],
-    current: "auto",
-  });
-  assert.equal(custom.thermostatFanModeOptions({ attributes: { supported_features: 0 } }), null);
 });
 
 test("floorThermostatEntity resolves the visible floor's climate entity", () => {
@@ -1219,28 +1031,75 @@ test("Overview C places Garden in the center and Floors in the right column", ()
   assert.match(elements.get("ov3-floors-card").parent.className, /\bov3-col3\b/);
 });
 
-test("Overview C floors button opens only Main House, while Overview A remains unfiltered after close", () => {
-  const { overlayClasses, thermostat, floors } = loadThermostatOverlay();
+test("Overview C floors button opens the real dialog directly; Overview A's chip shows a picker for both", () => {
+  const { overlayClasses, dispatchedEvents, thermostat, floors } = loadThermostatOverlay();
   const floorsList = [
     { label: "Main House", entity: "climate.casasolar_south_zone_1" },
     { label: "Office Wing", entity: "climate.casasolar_north_zone_1" },
   ];
 
+  // A floors-card face is already filtered to exactly one entity, so it skips Homie's own
+  // picker overlay entirely and dispatches straight to HA's real native dialog.
   floors.setState(floorsList, 0);
   floors.open();
-  assert.equal(overlayClasses.has("open"), true);
+  assert.equal(overlayClasses.has("open"), false);
   assert.deepEqual(
-    Array.from(thermostat.entities(), (entry) => entry.entity),
+    dispatchedEvents.map((evt) => evt.detail.entityId),
     ["climate.casasolar_south_zone_1"],
   );
 
-  thermostat.closeThermostat();
+  // Overview A/B's unfiltered Climate chip still has two entities to choose between, and the
+  // real dialog is single-entity, so the small room picker shows instead -- nothing dispatched
+  // until a room is actually picked (see the picker-selection test below).
   thermostat.openThermostat();
   assert.equal(overlayClasses.has("open"), true);
   assert.deepEqual(
     Array.from(thermostat.entities(), (entry) => entry.entity),
     ["climate.casasolar_south_zone_1", "climate.casasolar_north_zone_1"],
   );
+  assert.equal(dispatchedEvents.length, 1);
+});
+
+test("picking a room from the unfiltered chip's picker closes it and opens that room's real dialog", () => {
+  const { overlayClasses, dispatchedEvents, thermostat, selectRoom } = loadThermostatOverlay();
+  thermostat.openThermostat(); // unfiltered -> both entities, picker shows
+  assert.equal(overlayClasses.has("open"), true);
+
+  selectRoom(1); // Office Wing
+  assert.equal(overlayClasses.has("open"), false);
+  assert.deepEqual(
+    dispatchedEvents.map((evt) => evt.detail.entityId),
+    ["climate.casasolar_north_zone_1"],
+  );
+});
+
+test("openThermostatNative dispatches the real hass-more-info event HA's own cards use", () => {
+  const { dispatchedEvents, openThermostatNative } = loadThermostatOverlay();
+
+  openThermostatNative("climate.casasolar_north_zone_1");
+  assert.equal(dispatchedEvents.length, 1);
+  assert.equal(dispatchedEvents[0].type, "hass-more-info");
+  // detail is a plain object literal built inside the vm sandbox, so it carries that
+  // context's own Object.prototype rather than this file's -- deepEqual against a literal
+  // here would fail on cross-realm prototype identity despite matching structure, so compare
+  // the field directly instead.
+  assert.equal(dispatchedEvents[0].detail.entityId, "climate.casasolar_north_zone_1");
+  assert.equal(dispatchedEvents[0].bubbles, true);
+  assert.equal(dispatchedEvents[0].composed, true);
+
+  // No entity to open -- nothing dispatched, no throw.
+  openThermostatNative(null);
+  assert.equal(dispatchedEvents.length, 1);
+});
+
+test("openThermostatNative fails silently when it can't reach the parent frame", () => {
+  // window.parent absent -- e.g. a future HA change to iframe sandboxing, or this page
+  // loaded directly with no parent frame at all. Must not throw inside what's ultimately a
+  // click handler, and must not dispatch anything.
+  const { dispatchedEvents, openThermostatNative } = loadThermostatOverlay({ withParentFrame: false });
+
+  assert.doesNotThrow(() => openThermostatNative("climate.casasolar_north_zone_1"));
+  assert.equal(dispatchedEvents.length, 0);
 });
 
 test("an invalid thermostat filter closes an already-open overlay", () => {
