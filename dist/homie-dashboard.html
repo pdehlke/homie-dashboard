@@ -8681,7 +8681,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260812.6";
+      const HOMIE_ASSET_VERSION = "20260812.7";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -17090,6 +17090,18 @@ function _buildThermEntities() {
 }
 
 /**
+ * NATIVE_DIALOG_HELPER — an input_boolean toggled around the real dialog's open/closed
+ * lifetime so homie-dash's own kiosk_mode config can hide Home Assistant's header/sidebar
+ * chrome only while that dialog is actually on screen, for any logged-in account, not just
+ * the tablet's permanently-chromeless "Homie Dashboard" user. See
+ * docs/homie-dashboard/homie-climate-native-dialog.md in the pdehlke/homeassistant repo for
+ * why this exists: on a normal admin desktop session, HA's real dialog opens over the whole
+ * parent app (sidebar and top bar included, dimmed but visible underneath it), which reads as
+ * having left Homie entirely rather than the contained-overlay feel every other account sees.
+ */
+const NATIVE_DIALOG_HELPER = "input_boolean.homie_native_dialog_open";
+
+/**
  * openThermostatNative — opens Home Assistant's own native more-info dialog for a
  * climate entity, instead of a Homie-drawn reimplementation. Homie's page runs inside
  * a Lovelace iframe, same-origin with the parent HA frontend (both hass.ehlke.net since
@@ -17101,14 +17113,33 @@ function _buildThermEntities() {
  * logged-in HA session. Replaces the hand-rolled dial/control overlay that silently
  * broke its own +/- twice (2026-08-07 and 2026-08-12); see
  * docs/homie-dashboard/ in the pdehlke/homeassistant repo for the full history.
+ *
+ * Also turns NATIVE_DIALOG_HELPER on before dispatching, and registers a listener for HA's
+ * own `dialog-closed` event (fired by ha-more-info-dialog itself, bubbled and composed same
+ * as hass-more-info) to turn it back off once the real dialog actually closes. Filtered on
+ * `detail.dialog === "ha-more-info-dialog"` specifically: a more-info dialog can itself open
+ * a further nested dialog (an admin opening entity settings, say), and that closing first
+ * must not be mistaken for the thermostat dialog closing while it's still open underneath.
+ * No timeout or other fallback if the real dialog never actually opens or its close event
+ * never fires for some other reason -- same fail-silently-no-fallback approach already used
+ * for the cross-frame dispatch below, and for the same reason: there's nothing else this code
+ * could do instead that wouldn't risk being wrong. If it ever does stick, the failure is a
+ * visibly missing sidebar, not a silent one, and clears itself the next time a dialog opens
+ * and closes normally.
  */
-function openThermostatNative(entityId) {
+async function openThermostatNative(entityId) {
   if (!entityId) return;
   haptic("light");
   try {
     const parentDoc = window.parent && window.parent !== window ? window.parent.document : null;
     const target = parentDoc ? parentDoc.querySelector("home-assistant") : null;
     if (!target) return;
+    await haService("input_boolean", "turn_on", NATIVE_DIALOG_HELPER);
+    parentDoc.addEventListener("dialog-closed", function onNativeDialogClosed(evt) {
+      if (evt.detail?.dialog !== "ha-more-info-dialog") return;
+      parentDoc.removeEventListener("dialog-closed", onNativeDialogClosed);
+      haService("input_boolean", "turn_off", NATIVE_DIALOG_HELPER);
+    });
     target.dispatchEvent(new CustomEvent("hass-more-info", {
       detail: { entityId },
       bubbles: true,

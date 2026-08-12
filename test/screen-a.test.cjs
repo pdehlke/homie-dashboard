@@ -70,6 +70,15 @@ class FakeCustomEvent {
   }
 }
 
+// openThermostatNative is async (it awaits an input_boolean.turn_on before dispatching, see
+// below), but its callers (openThermostat, thermSelectRoom, the floors-card opener) fire it
+// without awaiting, same as any other click handler on this dashboard. A test that calls one
+// of those synchronously and asserts right after would run before that pending promise's
+// continuation (the dispatch itself) has had a turn -- setImmediate defers past the whole
+// microtask queue, not just one hop of it, so it's used here rather than a bare
+// `await Promise.resolve()` whose hop count would be an implementation detail to keep in sync.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 // withParentFrame: false simulates Homie having no reachable parent HA frame at all (e.g. a
 // future change to iframe sandboxing, or the page loaded directly with no parent) -- used by
 // the "can't reach the parent frame" test below, sharing the real sliced source rather than
@@ -90,9 +99,20 @@ function loadThermostatOverlay({ withParentFrame = true } = {}) {
   const selectRoomSource = source.slice(selectRoomStart, source.indexOf("}", selectRoomStart) + 1);
   const overlayClasses = new Set();
   const dispatchedEvents = [];
+  const calls = [];
+  const order = [];
+  // dialog-closed listeners registered on the mock parent document, keyed by function
+  // identity so removeEventListener(handler) actually removes the matching one, same as
+  // a real EventTarget.
+  const dialogClosedListeners = new Set();
   // Stands in for the real parent HA frame's <home-assistant> element, which
   // openThermostatNative reaches via window.parent.document.querySelector(...).
-  const mockHomeAssistantEl = { dispatchEvent: (evt) => dispatchedEvents.push(evt) };
+  const mockHomeAssistantEl = { dispatchEvent: (evt) => { order.push("dispatch"); dispatchedEvents.push(evt); } };
+  const mockParentDocument = {
+    querySelector: (sel) => sel === "home-assistant" ? mockHomeAssistantEl : null,
+    addEventListener: (type, handler) => { if (type === "dialog-closed") dialogClosedListeners.add(handler); },
+    removeEventListener: (type, handler) => { if (type === "dialog-closed") dialogClosedListeners.delete(handler); },
+  };
   const context = {
     CONFIG: loadConfig(),
     HOMIE_CUSTOM: loadCustomizations(),
@@ -104,8 +124,12 @@ function loadThermostatOverlay({ withParentFrame = true } = {}) {
     haptic: () => {},
     _closeLauncher: () => {},
     _buildThermTabs: () => {},
+    haService: async (domain, service, data) => {
+      calls.push({ domain, service, data });
+      if (domain === "input_boolean") order.push(service); // "turn_on" / "turn_off"
+    },
     window: withParentFrame
-      ? { parent: { document: { querySelector: (sel) => sel === "home-assistant" ? mockHomeAssistantEl : null } } }
+      ? { parent: { document: mockParentDocument } }
       : {}, // no .parent at all -- window.parent === window is the top-level-page case
     CustomEvent: FakeCustomEvent,
   };
@@ -118,13 +142,22 @@ function loadThermostatOverlay({ withParentFrame = true } = {}) {
       `globalThis.__thermostat = { openThermostat, closeThermostat, entities: () => _thermEntities };\n` +
       `globalThis.__floors = { open: _openFloorsThermostat, setState: (list, idx) => { _ov3FloorsList = list; _ov3FloorsActiveIndex = idx; } };\n` +
       `globalThis.__selectRoom = thermSelectRoom;\n` +
-      `globalThis.__openNative = openThermostatNative;`,
+      `globalThis.__openNative = openThermostatNative;\n` +
+      `globalThis.__nativeDialogHelper = NATIVE_DIALOG_HELPER;`,
     context,
   );
   return {
     context,
     overlayClasses,
     dispatchedEvents,
+    calls,
+    order,
+    nativeDialogHelper: context.__nativeDialogHelper,
+    // Simulates HA's own ha-more-info-dialog (or any other dialog) firing its bubbled,
+    // composed `dialog-closed` event on the parent document when it closes.
+    fireDialogClosed: (dialog) => {
+      for (const handler of Array.from(dialogClosedListeners)) handler({ detail: { dialog } });
+    },
     thermostat: context.__thermostat,
     floors: context.__floors,
     selectRoom: context.__selectRoom,
@@ -595,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260812.6");
+  assert.equal(version, "20260812.7");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1487,7 +1520,7 @@ test("Overview C places Garden in the center and Floors in the right column", ()
   assert.match(elements.get("ov3-floors-card").parent.className, /\bov3-col3\b/);
 });
 
-test("Overview C floors button opens the real dialog directly; Overview A's chip shows a picker for both", () => {
+test("Overview C floors button opens the real dialog directly; Overview A's chip shows a picker for both", async () => {
   const { overlayClasses, dispatchedEvents, thermostat, floors } = loadThermostatOverlay();
   const floorsList = [
     { label: "Main House", entity: "climate.casasolar_south_zone_1" },
@@ -1498,6 +1531,7 @@ test("Overview C floors button opens the real dialog directly; Overview A's chip
   // picker overlay entirely and dispatches straight to HA's real native dialog.
   floors.setState(floorsList, 0);
   floors.open();
+  await flush();
   assert.equal(overlayClasses.has("open"), false);
   assert.deepEqual(
     dispatchedEvents.map((evt) => evt.detail.entityId),
@@ -1516,12 +1550,13 @@ test("Overview C floors button opens the real dialog directly; Overview A's chip
   assert.equal(dispatchedEvents.length, 1);
 });
 
-test("picking a room from the unfiltered chip's picker closes it and opens that room's real dialog", () => {
+test("picking a room from the unfiltered chip's picker closes it and opens that room's real dialog", async () => {
   const { overlayClasses, dispatchedEvents, thermostat, selectRoom } = loadThermostatOverlay();
   thermostat.openThermostat(); // unfiltered -> both entities, picker shows
   assert.equal(overlayClasses.has("open"), true);
 
   selectRoom(1); // Office Wing
+  await flush();
   assert.equal(overlayClasses.has("open"), false);
   assert.deepEqual(
     dispatchedEvents.map((evt) => evt.detail.entityId),
@@ -1529,10 +1564,10 @@ test("picking a room from the unfiltered chip's picker closes it and opens that 
   );
 });
 
-test("openThermostatNative dispatches the real hass-more-info event HA's own cards use", () => {
+test("openThermostatNative dispatches the real hass-more-info event HA's own cards use", async () => {
   const { dispatchedEvents, openThermostatNative } = loadThermostatOverlay();
 
-  openThermostatNative("climate.casasolar_north_zone_1");
+  await openThermostatNative("climate.casasolar_north_zone_1");
   assert.equal(dispatchedEvents.length, 1);
   assert.equal(dispatchedEvents[0].type, "hass-more-info");
   // detail is a plain object literal built inside the vm sandbox, so it carries that
@@ -1544,18 +1579,60 @@ test("openThermostatNative dispatches the real hass-more-info event HA's own car
   assert.equal(dispatchedEvents[0].composed, true);
 
   // No entity to open -- nothing dispatched, no throw.
-  openThermostatNative(null);
+  await openThermostatNative(null);
   assert.equal(dispatchedEvents.length, 1);
 });
 
-test("openThermostatNative fails silently when it can't reach the parent frame", () => {
+test("openThermostatNative fails silently when it can't reach the parent frame", async () => {
   // window.parent absent -- e.g. a future HA change to iframe sandboxing, or this page
   // loaded directly with no parent frame at all. Must not throw inside what's ultimately a
   // click handler, and must not dispatch anything.
-  const { dispatchedEvents, openThermostatNative } = loadThermostatOverlay({ withParentFrame: false });
+  const { dispatchedEvents, calls, openThermostatNative } = loadThermostatOverlay({ withParentFrame: false });
 
-  assert.doesNotThrow(() => openThermostatNative("climate.casasolar_north_zone_1"));
+  await assert.doesNotReject(() => openThermostatNative("climate.casasolar_north_zone_1"));
   assert.equal(dispatchedEvents.length, 0);
+  // No dialog is ever going to open, so the chrome-hiding helper must not get turned on either
+  // -- nothing would ever turn it back off.
+  assert.equal(calls.length, 0);
+});
+
+test("openThermostatNative turns on the chrome-hiding helper before dispatching, and off when HA's own dialog reports closed", async () => {
+  const { calls, order, nativeDialogHelper, fireDialogClosed, openThermostatNative } = loadThermostatOverlay();
+
+  await openThermostatNative("climate.casasolar_north_zone_1");
+  assert.deepEqual(calls, [
+    { domain: "input_boolean", service: "turn_on", data: nativeDialogHelper },
+  ]);
+  // The helper must be turned on *before* the dialog is asked to open, not after -- otherwise
+  // kiosk_mode's own template (which reacts to this helper's state) would have nothing to react
+  // to yet at the moment the dialog appears.
+  assert.deepEqual(order, ["turn_on", "dispatch"]);
+
+  // HA's real ha-more-info-dialog fires `dialog-closed` (bubbled, composed) when it closes,
+  // whether that's the X button, Escape, or the scrim -- this is how the helper gets flipped
+  // back off without Homie needing its own close affordance for a dialog it doesn't render.
+  fireDialogClosed("ha-more-info-dialog");
+  await flush();
+  assert.deepEqual(calls, [
+    { domain: "input_boolean", service: "turn_on", data: nativeDialogHelper },
+    { domain: "input_boolean", service: "turn_off", data: nativeDialogHelper },
+  ]);
+});
+
+test("a different dialog closing while the thermostat dialog is still open does not restore chrome", async () => {
+  // e.g. an admin opens entity settings from inside the open thermostat dialog, then closes
+  // just that nested dialog -- ha-more-info-dialog is still open underneath. dialog-closed's
+  // own payload carries only the closing dialog's tag name, not an entity id, so the listener
+  // has to filter on that name rather than treating every dialog-closed as "the" dialog closing.
+  const { calls, fireDialogClosed, openThermostatNative } = loadThermostatOverlay();
+
+  await openThermostatNative("climate.casasolar_north_zone_1");
+  fireDialogClosed("dialog-entity-registry-detail");
+  assert.equal(calls.filter((c) => c.service === "turn_off").length, 0);
+
+  // The real dialog closing afterward still works normally.
+  fireDialogClosed("ha-more-info-dialog");
+  assert.equal(calls.filter((c) => c.service === "turn_off").length, 1);
 });
 
 test("an invalid thermostat filter closes an already-open overlay", () => {
