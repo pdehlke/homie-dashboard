@@ -1219,6 +1219,13 @@
     overflow: hidden;
   }
   .popup-scene-icon:active { transform: scale(0.9); opacity: 0.8; }
+  /* On/off ring, same visual language as .chip.on's glow border below —
+   * a box-shadow rather than a border so it doesn't shift the 52px circle's
+   * layout or fight the bubble's own background (sc.color, inline). */
+  .popup-scene-icon.on {
+    box-shadow: 0 0 0 2px var(--ac-6), 0 0 10px 2px var(--ac-4);
+  }
+  .popup-scene-bubble:has(.popup-scene-icon.on) .popup-scene-label { color: var(--accent-hi); }
   .popup-scene-icon.fired::after {
     content: "";
     position: absolute;
@@ -8674,7 +8681,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260812.1";
+      const HOMIE_ASSET_VERSION = "20260812.4";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -10953,6 +10960,41 @@ function climateIsActive(entity) {
 }
 
 /**
+ * sceneAffectedEntities — the real entity_id list one or more scenes
+ * control, read from each scene entity's own attributes rather than
+ * duplicated in config, so it can't drift from what the scenes actually do
+ * in Home Assistant. Takes an array so a bubble can group multiple scenes
+ * into a single toggle (e.g. "Primary Suite Evening" over Bedroom +
+ * Bathroom); a single-scene bubble is just the one-element case, not a
+ * separate shape. De-duplicated: two scenes controlling the same entity
+ * (Bedroom and Bathroom both touch light.hallway) contribute it once.
+ */
+function sceneAffectedEntities(entities) {
+  const all = (entities || []).flatMap(entity => {
+    const d = haGetCached(entity);
+    return (d && d.attributes && d.attributes.entity_id) || [];
+  });
+  return [...new Set(all)];
+}
+
+/**
+ * sceneIsOn — a scene bubble reads "on" when any entity any of its scenes
+ * control is currently on, the same any-on-counts convention every other
+ * chip already uses (refreshControls()'s generic branch, climateIsActive()
+ * above). Scenes have no HA state of their own — just a last-activated
+ * timestamp, not an on/off signal — so this is the only meaningful thing to
+ * show. Shared by the popup bubble, the bottom chip glow/count, and the
+ * Overview C sidebar glow so all three agree on what "on" means — same
+ * discipline climateIsActive() follows.
+ */
+function sceneIsOn(entities) {
+  return sceneAffectedEntities(entities).some(e => {
+    const d = haGetCached(e);
+    return d && entityIsOn(d.state, e);
+  });
+}
+
+/**
  * irrigationDisabledZones — the Irrigation control's subEntities currently
  * `unavailable`, HA's signal that a Rachio zone or valve has been disabled
  * (see rachio-zone-disabled-alert.md in the docs repo; a disabled zone's
@@ -11012,7 +11054,26 @@ function refreshControls() {
       ? c.subGroups.flatMap(g => flattenSubs(g.subEntities))
       : flattenSubs(c.subEntities);
 
-    if (allSubs.length > 0) {
+    if (c.isSceneChip) {
+      // Scene bubbles aren't subEntities (they're subGroups[].scenes[]), so
+      // allSubs above is always empty for this chip — count and glow are
+      // computed here instead, from the same sceneIsOn() every other scene
+      // entry point (the popup bubble, the Overview C sidebar glow) uses.
+      const allScenes = (c.subGroups || []).flatMap(g => g.scenes || []);
+      const activeCount = allScenes.filter(sc => sceneIsOn(sc.entities)).length;
+      isOn = activeCount > 0;
+      if (c.showCount) {
+        const countEl = document.getElementById(`chip-count-${i}`);
+        if (countEl) {
+          if (activeCount > 0) {
+            countEl.textContent = `${activeCount} on`;
+            countEl.style.display = "";
+          } else {
+            countEl.style.display = "none";
+          }
+        }
+      }
+    } else if (allSubs.length > 0) {
       const isClimateChip = allSubs[0].entity.startsWith("climate.");
       let activeCount;
       if (isClimateChip) {
@@ -11775,7 +11836,7 @@ async function openPopup(i) {
   document.getElementById("popup-title").textContent = c.label;
   const list = document.getElementById("popup-list");
 
-  // ── Scene chip: render grouped scene bubbles, no entity state needed ────────
+  // ── Scene chip: render grouped scene bubbles, each showing live on/off ──────
   if (c.isSceneChip) {
     let sceneHtml = "";
     (c.subGroups || []).forEach(group => {
@@ -11783,9 +11844,14 @@ async function openPopup(i) {
       sceneHtml += `<div class="popup-scenes-grid">`;
       (group.scenes || []).forEach((sc, idx) => {
         const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
+        const on = sceneIsOn(sc.entities);
+        // A JS array literal (single-quoted strings — entity_ids never
+        // contain a quote), not JSON.stringify: JSON's double quotes would
+        // collide with the onclick attribute's own double-quote delimiter.
+        const entitiesJs = `[${sc.entities.map(e => `'${escapeHtml(e)}'`).join(",")}]`;
         sceneHtml += `
-          <div class="popup-scene-bubble" onclick="triggerPopupScene('${escapeHtml(sc.entity)}','${escapeHtml(bubbleId)}')">
-            <div class="popup-scene-icon" id="${bubbleId}" style="background:${sc.color}">${sc.icon}</div>
+          <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}')">
+            <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:${sc.color}">${sc.icon}</div>
             <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
           </div>`;
       });
@@ -13348,12 +13414,27 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count) {
 
 
 /**
- * triggerPopupScene — fires a scene automation from the overview Scenes popup.
- * Plays a flash animation on the bubble for tactile feedback.
- * @param {string} entity   — the automation entity_id to trigger
- * @param {string} bubbleId — the DOM id of the bubble element for animation
+ * togglePopupScene — explicit on/off for a scene bubble in the overview
+ * Scenes popup. Plays a flash animation for tactile feedback regardless of
+ * direction, same as every other toggle on the dashboard.
+ *
+ * HA scenes have no scene.turn_off action (there's no such thing as "the
+ * opposite of a snapshot"), so off is its own explicit action here rather
+ * than something derived from the scene: every entity any of the bubble's
+ * scenes control (per sceneAffectedEntities, de-duplicated across scenes)
+ * gets turned off in one call. On activates every scene's snapshot in one
+ * scene.turn_on call (HA applies a multi-entity target to each entity, same
+ * as any other domain service). Which direction fires is decided by
+ * sceneIsOn() at the moment of the tap, the same shared on-state check the
+ * bubble's rendered class and the chip/sidebar glows all use.
+ *
+ * @param {string[]} entities — one or more scene entity_ids this bubble
+ *                              represents (e.g. ["scene.bedroom_evening"], or
+ *                              several for a bubble that groups multiple
+ *                              scenes into a single toggle)
+ * @param {string}   bubbleId — the DOM id of the bubble element for animation
  */
-async function triggerPopupScene(entity, bubbleId) {
+async function togglePopupScene(entities, bubbleId) {
   haptic("heavy");
   const bubble = document.getElementById(bubbleId);
   if (bubble) {
@@ -13362,7 +13443,17 @@ async function triggerPopupScene(entity, bubbleId) {
     bubble.classList.add("fired");
     setTimeout(() => bubble.classList.remove("fired"), 700);
   }
-  await haService("automation", "trigger", { entity_id: entity });
+  const wasOn = sceneIsOn(entities);
+  if (wasOn) {
+    const targets = sceneAffectedEntities(entities);
+    if (targets.length) await haService("homeassistant", "turn_off", { entity_id: targets });
+  } else {
+    await haService("scene", "turn_on", { entity_id: entities });
+  }
+  // Optimistic instant feedback, same as toggleControl()'s chip flip — the
+  // WS state_changed subscription reconciles this from real state shortly
+  // after, via refreshOpenScenePopup() while this popup stays open.
+  if (bubble) bubble.classList.toggle("on", !wasOn);
 }
 
 /**
@@ -14266,6 +14357,9 @@ function refreshAllUI() {
     // Popup is open — live-refresh any visible AC cards from _acCardState
     // so external changes (remote, HA automations) show up inside the popup too.
     refreshOpenAcCards();
+    // Same idea for a visible Scenes popup: without this, a bubble's "on"
+    // ring would only ever reflect the moment the popup was opened.
+    refreshOpenScenePopup();
   }
   refreshMusic();
   // Keep overview 2 in sync whenever it has been built (regardless of active screen)
@@ -14296,6 +14390,28 @@ function refreshOpenAcCards() {
         attributes: { hvac_mode: mem.isOn ? mem.mode : "off", fan_mode: mem.fanMode, temperature: mem.targetTemp }
       });
     }
+  }
+}
+
+/**
+ * refreshOpenScenePopup — re-hydrates every rendered scene bubble's "on"
+ * ring from live state while a Scenes popup is open. Mirrors
+ * refreshOpenAcCards() just above: DOM presence (the bubble id exists) is
+ * what says "this is currently rendered," not a separately tracked "which
+ * popup is open" index — cheap to run unconditionally on every poll tick
+ * since it's a no-op getElementById miss for every control that isn't the
+ * open Scenes popup.
+ */
+function refreshOpenScenePopup() {
+  for (const c of activeControls) {
+    if (!c.isSceneChip) continue;
+    (c.subGroups || []).forEach(group => {
+      (group.scenes || []).forEach((sc, idx) => {
+        const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
+        const el = document.getElementById(bubbleId);
+        if (el) el.classList.toggle("on", sceneIsOn(sc.entities));
+      });
+    });
   }
 }
 
@@ -17791,6 +17907,11 @@ function _buildOv3SidebarControls() {
       script:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
       input_boolean: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="8" cy="12" r="3" fill="currentColor"/></svg>`,
     };
+    // Scene chips have no top-level entity or subEntities/subGroups[].entity to
+    // derive a domain from (subGroups[].scenes[] isn't the same shape), so the
+    // generic domain lookup above always falls through to "switch" for them.
+    // icons.scene exists for exactly this case; use it directly.
+    if (ctrl.isSceneChip) return icons.scene;
     return icons[domain] || `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M4 12H2M22 12h-2M12 4V2M12 22v-2"/></svg>`;
   }
 
@@ -17828,9 +17949,11 @@ function _refreshOv3SidebarControls() {
     const subs = c.subGroups
       ? c.subGroups.flatMap(g => g.subEntities || [])
       : (c.subEntities || []);
-    const isOn = subs.length
-      ? subs.some(s => entityIsActive(s.entity))
-      : entityIsActive(c.entity);
+    const isOn = c.isSceneChip
+      ? (c.subGroups || []).flatMap(g => g.scenes || []).some(sc => sceneIsOn(sc.entities))
+      : subs.length
+        ? subs.some(s => entityIsActive(s.entity))
+        : entityIsActive(c.entity);
     btn.classList.toggle("on", isOn);
 
     if (c.label === "Irrigation") {

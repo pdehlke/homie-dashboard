@@ -132,6 +132,63 @@ function loadThermostatOverlay({ withParentFrame = true } = {}) {
   };
 }
 
+// loadSceneToggle: sceneAffectedEntities/sceneIsOn/togglePopupScene against a fake
+// stateCache and a fake bubble element, the same slice-real-source approach as
+// loadThermostatOverlay above rather than a hand-copied duplicate that could drift.
+function loadSceneToggle() {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const entityIsOnStart = source.indexOf("function entityIsOn(state, entity)");
+  const entityIsOnSource = source.slice(entityIsOnStart, source.indexOf("}", entityIsOnStart) + 1);
+  const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
+  const helpersEnd = source.indexOf("function irrigationDisabledZones()");
+  const helpersSource = source.slice(helpersStart, helpersEnd);
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId)");
+  const toggleEnd = source.indexOf("\n/**\n * closePopup", toggleStart);
+  const toggleSource = source.slice(toggleStart, toggleEnd);
+  assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
+    "entityIsOn/sceneAffectedEntities/sceneIsOn/togglePopupScene must all be found");
+
+  const stateCache = new Map();
+  const calls = [];
+  const classSets = new Map(); // bubbleId -> Set<string>
+  const bubble = (id) => {
+    if (!classSets.has(id)) classSets.set(id, new Set());
+    const classes = classSets.get(id);
+    return {
+      offsetWidth: 0,
+      classList: {
+        add: (c) => classes.add(c),
+        remove: (c) => classes.delete(c),
+        toggle: (c, force) => { (force ?? !classes.has(c)) ? classes.add(c) : classes.delete(c); },
+        contains: (c) => classes.has(c),
+      },
+    };
+  };
+  const context = {
+    haGetCached: (id) => stateCache.get(id) ?? null,
+    haService: async (domain, service, data) => { calls.push({ domain, service, data }); },
+    haptic: () => {},
+    document: { getElementById: bubble },
+    setTimeout: () => {}, // fired-class removal not exercised by these tests
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${entityIsOnSource}\n${helpersSource}\n${toggleSource}\n` +
+      `globalThis.__toggle = togglePopupScene;\n` +
+      `globalThis.__sceneIsOn = sceneIsOn;\n` +
+      `globalThis.__sceneAffected = sceneAffectedEntities;`,
+    context,
+  );
+  return {
+    toggle: context.__toggle,
+    sceneIsOn: context.__sceneIsOn,
+    sceneAffectedEntities: context.__sceneAffected,
+    setState: (id, state, attributes = {}) => stateCache.set(id, { state, attributes }),
+    calls,
+    classesOf: (id) => classSets.get(id) || new Set(),
+  };
+}
+
 test("Screen A has the agreed balanced status grid", () => {
   const config = loadConfig();
   assert.deepEqual(
@@ -538,7 +595,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260812.1");
+  assert.equal(version, "20260812.4");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -581,6 +638,170 @@ test("Overview C sidebar's Irrigation icon uses material-symbols:sprinkler-round
   // Filled by design (Iconify's "sprinkler-rounded" is the Filled variant),
   // unlike the stroke-outline icons around it in the same map.
   assert.match(fnBody, /fill="currentColor" stroke="none"><path d="M11\.288/);
+});
+
+test("Overview C sidebar's Scenes icon uses the existing icons.scene star, not the domain fallback", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function _sbIcon(ctrl)");
+  const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
+  const fnBody = source.slice(fnStart, fnEnd);
+
+  // A scene chip has no top-level entity and its subGroups[].scenes[] isn't
+  // the subEntities shape the generic domain lookup expects, so without this
+  // override it would silently fall through to the "switch" icon.
+  assert.match(fnBody, /if \(ctrl\.isSceneChip\) return icons\.scene;/);
+  const overrideIndex = fnBody.indexOf("if (ctrl.isSceneChip)");
+  const iconsIndex = fnBody.indexOf("const icons = {");
+  assert.ok(iconsIndex > -1 && overrideIndex > iconsIndex, "override must come after icons is defined, not before (TDZ)");
+});
+
+test("sceneAffectedEntities reads live from the scene entity's own attributes, not config", () => {
+  // Array.from: sceneAffectedEntities runs inside the vm sandbox, so it returns
+  // a different-realm Array; deepEqual against a plain literal needs it
+  // normalized first, same as loadConfig()'s results are elsewhere in this file.
+  const scene = loadSceneToggle();
+  assert.deepEqual(Array.from(scene.sceneAffectedEntities(["scene.bedroom_evening"])), []); // not in cache yet
+  scene.setState("scene.bedroom_evening", "2026-08-12T00:00:00+00:00", {
+    entity_id: ["light.bedroom_perimeter", "light.bedroom_diagonals", "light.hallway"],
+  });
+  assert.deepEqual(Array.from(scene.sceneAffectedEntities(["scene.bedroom_evening"])), [
+    "light.bedroom_perimeter", "light.bedroom_diagonals", "light.hallway",
+  ]);
+});
+
+test("sceneAffectedEntities unions and de-duplicates across multiple scenes (a grouped bubble)", () => {
+  // Primary Suite Evening's real shape: two scenes that both touch light.hallway.
+  const scene = loadSceneToggle();
+  scene.setState("scene.bedroom_evening", "x", {
+    entity_id: ["light.bedroom_perimeter", "light.hallway"],
+  });
+  scene.setState("scene.bathroom_evening", "x", {
+    entity_id: ["light.bath_perimeter", "light.hallway"],
+  });
+  assert.deepEqual(
+    Array.from(scene.sceneAffectedEntities(["scene.bedroom_evening", "scene.bathroom_evening"])),
+    ["light.bedroom_perimeter", "light.hallway", "light.bath_perimeter"],
+  );
+});
+
+test("sceneIsOn is any-on across a scene's affected entities, not all-on", () => {
+  const scene = loadSceneToggle();
+  scene.setState("scene.bedroom_evening", "x", {
+    entity_id: ["light.bedroom_perimeter", "light.bedroom_diagonals"],
+  });
+  scene.setState("light.bedroom_perimeter", "off");
+  scene.setState("light.bedroom_diagonals", "off");
+  assert.equal(scene.sceneIsOn(["scene.bedroom_evening"]), false);
+
+  scene.setState("light.bedroom_perimeter", "on"); // only one of two
+  assert.equal(scene.sceneIsOn(["scene.bedroom_evening"]), true);
+});
+
+test("sceneIsOn over a grouped bubble is on if either underlying scene has anything on", () => {
+  const scene = loadSceneToggle();
+  scene.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter"] });
+  scene.setState("scene.bathroom_evening", "x", { entity_id: ["light.bath_perimeter"] });
+  scene.setState("light.bedroom_perimeter", "off");
+  scene.setState("light.bath_perimeter", "off");
+  assert.equal(scene.sceneIsOn(["scene.bedroom_evening", "scene.bathroom_evening"]), false);
+
+  scene.setState("light.bath_perimeter", "on"); // only the bathroom side is on
+  assert.equal(scene.sceneIsOn(["scene.bedroom_evening", "scene.bathroom_evening"]), true);
+});
+
+test("togglePopupScene activates the scene when off, and turns off every affected entity when on", async () => {
+  // Off -> on: activates the real scene, HA scenes have no turn_off action.
+  const off = loadSceneToggle();
+  off.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter", "light.hallway"] });
+  off.setState("light.bedroom_perimeter", "off");
+  off.setState("light.hallway", "off");
+  await off.toggle(["scene.bedroom_evening"], "psb-Bedroom-0");
+  assert.equal(off.calls.length, 1);
+  assert.equal(off.calls[0].domain, "scene");
+  assert.equal(off.calls[0].service, "turn_on");
+  assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening"]);
+  assert.ok(off.classesOf("psb-Bedroom-0").has("on"), "bubble should show on optimistically after activating");
+
+  // On -> off: turns off every entity the scene controls, not the scene itself
+  // (there's nothing to turn a scene off) or just one of its entities.
+  const on = loadSceneToggle();
+  on.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter", "light.hallway"] });
+  on.setState("light.bedroom_perimeter", "on");
+  on.setState("light.hallway", "off"); // only one on is enough to read "on"
+  await on.toggle(["scene.bedroom_evening"], "psb-Bedroom-0");
+  // data.entity_id is built inside the vm sandbox (a different-realm Array),
+  // so it's checked separately via Array.from rather than one deepEqual over
+  // the whole call, same reason as the sceneAffectedEntities test above.
+  assert.equal(on.calls.length, 1);
+  assert.equal(on.calls[0].domain, "homeassistant");
+  assert.equal(on.calls[0].service, "turn_off");
+  assert.deepEqual(Array.from(on.calls[0].data.entity_id), ["light.bedroom_perimeter", "light.hallway"]);
+  assert.ok(!on.classesOf("psb-Bedroom-0").has("on"), "bubble should show off optimistically after clearing");
+});
+
+test("togglePopupScene on a grouped bubble activates every underlying scene in one call, and clears their de-duplicated union", async () => {
+  // Off -> on: one scene.turn_on call targeting both scenes at once, not two
+  // separate calls — HA applies a multi-entity target to each entity itself.
+  const off = loadSceneToggle();
+  off.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter", "light.hallway"] });
+  off.setState("scene.bathroom_evening", "x", { entity_id: ["light.bath_perimeter", "light.hallway"] });
+  off.setState("light.bedroom_perimeter", "off");
+  off.setState("light.bath_perimeter", "off");
+  off.setState("light.hallway", "off");
+  await off.toggle(["scene.bedroom_evening", "scene.bathroom_evening"], "psb-PrimarySuite-0");
+  assert.equal(off.calls.length, 1);
+  assert.equal(off.calls[0].domain, "scene");
+  assert.equal(off.calls[0].service, "turn_on");
+  assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening", "scene.bathroom_evening"]);
+
+  // On -> off: one homeassistant.turn_off call over the de-duplicated union —
+  // light.hallway (shared by both scenes) appears once, not twice.
+  const on = loadSceneToggle();
+  on.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter", "light.hallway"] });
+  on.setState("scene.bathroom_evening", "x", { entity_id: ["light.bath_perimeter", "light.hallway"] });
+  on.setState("light.bedroom_perimeter", "on");
+  on.setState("light.bath_perimeter", "off");
+  on.setState("light.hallway", "on");
+  await on.toggle(["scene.bedroom_evening", "scene.bathroom_evening"], "psb-PrimarySuite-0");
+  assert.equal(on.calls.length, 1);
+  assert.equal(on.calls[0].domain, "homeassistant");
+  assert.equal(on.calls[0].service, "turn_off");
+  assert.deepEqual(
+    Array.from(on.calls[0].data.entity_id),
+    ["light.bedroom_perimeter", "light.hallway", "light.bath_perimeter"],
+  );
+});
+
+test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Popup bubble render.
+  const openStart = source.indexOf("async function openPopup(i)");
+  const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
+  assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
+  assert.match(source.slice(openStart, openEnd), /const on = sceneIsOn\(sc\.entities\)/);
+
+  // Bottom chip glow/count.
+  const rcStart = source.indexOf("function refreshControls()");
+  const rcEnd = source.indexOf("\nfunction refreshNotifications()", rcStart);
+  assert.ok(rcStart > -1 && rcEnd > rcStart, "refreshControls must be found");
+  assert.match(source.slice(rcStart, rcEnd), /activeCount = allScenes\.filter\(sc => sceneIsOn\(sc\.entities\)\)/);
+
+  // Overview C sidebar glow.
+  const sbStart = source.indexOf("function _refreshOv3SidebarControls()");
+  const sbEnd = source.indexOf("\n/* Build/rebuild the entire purifier card", sbStart);
+  assert.ok(sbStart > -1 && sbEnd > sbStart, "_refreshOv3SidebarControls must be found");
+  assert.match(source.slice(sbStart, sbEnd), /flatMap\(g => g\.scenes \|\| \[\]\)\.some\(sc => sceneIsOn\(sc\.entities\)\)/);
+
+  // Live popup refresh (only surface that doesn't reuse refreshControls' loop).
+  const ropStart = source.indexOf("function refreshOpenScenePopup()");
+  const ropEnd = source.indexOf("\n/**\n * isPopupOpen", ropStart);
+  assert.ok(ropStart > -1 && ropEnd > ropStart, "refreshOpenScenePopup must be found");
+  assert.match(source.slice(ropStart, ropEnd), /sceneIsOn\(sc\.entities\)/);
+
+  // Called from the popup-open branch of refreshAllUI, not just defined.
+  assert.match(source, /refreshOpenAcCards\(\);\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*refreshOpenScenePopup\(\);/);
 });
 
 test("Overview C sidebar pins Settings, Modes, and Security; everything else is the dynamic list", () => {
@@ -710,7 +931,7 @@ test("solar chart history status distinguishes failures from empty history", () 
 
 test("control row and popup mappings match the approved design", () => {
   const config = loadConfig();
-  assert.deepEqual(Array.from(config.controls, (entry) => entry.label), ["Lights", "Climate", "A/V", "TV", "Irrigation"]);
+  assert.deepEqual(Array.from(config.controls, (entry) => entry.label), ["Lights", "Climate", "A/V", "TV", "Irrigation", "Scenes"]);
   assert.equal(config.controls[1].action, "thermostat");
   assert.equal(config.controls[2].action, "media_browser");
   assert.equal(config.controls[3].action, "harmony");
@@ -744,6 +965,32 @@ test("control row and popup mappings match the approved design", () => {
       "switch.back_yard_irrigation",
     ],
   );
+  // Scenes: stock isSceneChip mechanism. Each scene's "entities" is one or
+  // more real scene.* entities — togglePopupScene fires scene.turn_on /
+  // homeassistant.turn_off directly (see
+  // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
+  // repo), no wrapping automation needed. Primary Suite groups both Bedroom
+  // and Bathroom's scenes into a single bubble, the multi-entity case.
+  assert.equal(config.controls[5].isSceneChip, true);
+  assert.equal(config.controls[5].showCount, true);
+  assert.deepEqual(
+    Array.from(config.controls[5].subGroups, (group) => group.label),
+    ["Bedroom", "Bathroom", "Primary Suite"],
+  );
+  assert.deepEqual(
+    Array.from(config.controls[5].subGroups, (group) =>
+      Array.from(group.scenes, (scene) => [Array.from(scene.entities), scene.label])),
+    [
+      [[["scene.bedroom_evening"], "Evening"]],
+      [[["scene.bathroom_evening"], "Evening"]],
+      [[["scene.bedroom_evening", "scene.bathroom_evening"], "Evening"]],
+    ],
+  );
+  for (const group of config.controls[5].subGroups) {
+    for (const scene of group.scenes) {
+      for (const entity of scene.entities) assert.match(entity, /^scene\./);
+    }
+  }
 });
 
 test("TV overlay has a second action row for volume/mute, styled like the activity row", () => {
