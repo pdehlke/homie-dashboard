@@ -174,8 +174,10 @@ const CONFIG = {
   musicHideDelay: 10_000,
 
   calendarEntities: [
-    "calendar.home",
     "calendar.rachio_base_station_ca358975",
+    "calendar.pde_rfc822_net",
+    "calendar.birthdays",
+    "calendar.holidays_in_united_states",
   ],
   mealCalendarEntity: "",
   mealSlots: [],
