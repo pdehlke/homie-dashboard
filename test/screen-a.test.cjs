@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260812.7");
+  assert.equal(version, "20260813.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -949,16 +949,20 @@ test("togglePopupMusic plays and resets volume to 40% when the player was idle",
   const music = loadMusicToggle();
   music.setState("media_player.crestron", "idle", {});
   await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
-  assert.equal(music.calls.length, 2);
-  assert.equal(music.calls[0].domain, "media_player");
-  assert.equal(music.calls[0].service, "volume_set");
-  assert.equal(music.calls[0].data.entity_id, "media_player.crestron");
-  assert.equal(music.calls[0].data.volume_level, 0.4);
-  assert.equal(music.calls[1].domain, "music_assistant");
-  assert.equal(music.calls[1].service, "play_media");
+  assert.equal(music.calls.length, 3);
+  assert.equal(music.calls[0].domain, "remote");
+  assert.equal(music.calls[0].service, "turn_on");
+  assert.equal(music.calls[0].data.entity_id, "remote.harmony_hub");
+  assert.equal(music.calls[0].data.activity, "Airplay");
+  assert.equal(music.calls[1].domain, "media_player");
+  assert.equal(music.calls[1].service, "volume_set");
   assert.equal(music.calls[1].data.entity_id, "media_player.crestron");
-  assert.equal(music.calls[1].data.media_id, "library://radio/38");
-  assert.equal(music.calls[1].data.media_type, "radio");
+  assert.equal(music.calls[1].data.volume_level, 0.4);
+  assert.equal(music.calls[2].domain, "music_assistant");
+  assert.equal(music.calls[2].service, "play_media");
+  assert.equal(music.calls[2].data.entity_id, "media_player.crestron");
+  assert.equal(music.calls[2].data.media_id, "library://radio/38");
+  assert.equal(music.calls[2].data.media_type, "radio");
   assert.ok(music.classesOf("pmb-0-4").has("on"), "bubble should show on optimistically after playing");
 });
 
@@ -966,21 +970,28 @@ test("togglePopupMusic hot-switches straight to a new station without touching v
   const music = loadMusicToggle();
   music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/1" });
   await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
-  assert.equal(music.calls.length, 1); // no volume_set call this time
-  assert.equal(music.calls[0].domain, "music_assistant");
-  assert.equal(music.calls[0].service, "play_media");
-  assert.equal(music.calls[0].data.media_id, "library://radio/38");
+  assert.equal(music.calls.length, 2); // no volume_set call this time
+  assert.equal(music.calls[0].domain, "remote");
+  assert.equal(music.calls[0].service, "turn_on");
+  assert.equal(music.calls[0].data.entity_id, "remote.harmony_hub");
+  assert.equal(music.calls[0].data.activity, "Airplay");
+  assert.equal(music.calls[1].domain, "music_assistant");
+  assert.equal(music.calls[1].service, "play_media");
+  assert.equal(music.calls[1].data.media_id, "library://radio/38");
 });
 
-test("togglePopupMusic stops playback, rather than pausing it, when tapping the currently-active station's own bubble", () => {
+test("togglePopupMusic stops playback and turns off Harmony when tapping the currently-active station's own bubble", () => {
   return (async () => {
     const music = loadMusicToggle();
     music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/38" });
     await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
-    assert.equal(music.calls.length, 1);
+    assert.equal(music.calls.length, 2);
     assert.equal(music.calls[0].domain, "media_player");
     assert.equal(music.calls[0].service, "media_stop");
     assert.equal(music.calls[0].data.entity_id, "media_player.crestron");
+    assert.equal(music.calls[1].domain, "remote");
+    assert.equal(music.calls[1].service, "turn_off");
+    assert.equal(music.calls[1].data.entity_id, "remote.harmony_hub");
     assert.ok(!music.classesOf("pmb-0-4").has("on"), "bubble should show off optimistically after stopping");
   })();
 });
