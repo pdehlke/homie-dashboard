@@ -1226,6 +1226,19 @@
     box-shadow: 0 0 0 2px var(--ac-6), 0 0 10px 2px var(--ac-4);
   }
   .popup-scene-bubble:has(.popup-scene-icon.on) .popup-scene-label { color: var(--accent-hi); }
+  /* Unreachable target player (state === "unavailable", e.g. mid-reconnect
+   * after an HA restart — see the 2026-08-15 checkpoint in
+   * docs/homie-dashboard/homie-dashboard-install-plan.md). Same muted-red
+   * "can't use this right now" language as .popup-item.disabled and
+   * .ov3-garden-irr-btn.disabled elsewhere in this file, hardcoded rather
+   * than a theme var for the same reason those are: it needs a color no
+   * theme can wash out. Never combined with .on — every render path that
+   * sets .disabled also withholds .on for that bubble. */
+  .popup-scene-icon.disabled {
+    opacity: 0.4;
+    box-shadow: 0 0 0 2px rgba(255,82,82,0.55);
+  }
+  .popup-scene-bubble:has(.popup-scene-icon.disabled) { cursor: default; }
   .popup-scene-icon.fired::after {
     content: "";
     position: absolute;
@@ -8681,7 +8694,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260813.1";
+      const HOMIE_ASSET_VERSION = "20260815.1";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -11901,15 +11914,18 @@ async function openPopup(i) {
   // ── Music chip: render station bubbles, each showing live on/off ────────
   if (c.isMusicChip) {
     let musicHtml = "";
+    // Computed once per chip, not per station: every bubble shares the same
+    // target player, so they're all reachable or all unreachable together.
+    const disabled = haGetCached(c.entity)?.state === "unavailable";
     (c.subGroups || []).forEach((group, gIdx) => {
       if (group.label) musicHtml += `<div class="popup-group-label">${escapeHtml(group.label)}</div>`;
       musicHtml += `<div class="popup-scenes-grid">`;
       (group.stations || []).forEach((st, idx) => {
         const bubbleId = `pmb-${gIdx}-${idx}`;
-        const on = musicStationIsOn(c.entity, st.uri);
+        const on = !disabled && musicStationIsOn(c.entity, st.uri);
         musicHtml += `
           <div class="popup-scene-bubble" onclick="togglePopupMusic('${escapeHtml(c.entity)}','${escapeHtml(st.uri)}','${escapeHtml(bubbleId)}')">
-            <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:var(--accent)">${st.icon}</div>
+            <div class="popup-scene-icon${on ? " on" : ""}${disabled ? " disabled" : ""}" id="${bubbleId}" style="background:var(--accent)">${st.icon}</div>
             <div class="popup-scene-label">${escapeHtml(st.label)}</div>
           </div>`;
       });
@@ -13536,6 +13552,20 @@ async function togglePopupScene(entities, bubbleId) {
  * @param {string} bubbleId — DOM id of the bubble element for animation
  */
 async function togglePopupMusic(entity, uri, bubbleId) {
+  // Bail before doing anything at all when the target player is unreachable
+  // (HA hasn't restored a state for it yet, or it's outright `unavailable`,
+  // e.g. mid-reconnect after an HA restart). Every service call below would
+  // be a silent no-op — haService() swallows fetch errors by design — so
+  // without this guard the code below still runs the optimistic "on" toggle
+  // at the end, flashing success for an action that had no chance of
+  // working. See the 2026-08-15 checkpoint in
+  // docs/homie-dashboard/homie-dashboard-install-plan.md for the incident
+  // this traces back to.
+  const liveState = haGetCached(entity)?.state;
+  if (!liveState || liveState === "unavailable") {
+    haptic("light");
+    return;
+  }
   haptic("heavy");
   const bubble = document.getElementById(bubbleId);
   if (bubble) {
@@ -14539,11 +14569,14 @@ function refreshOpenScenePopup() {
 function refreshOpenMusicPopup() {
   for (const c of activeControls) {
     if (!c.isMusicChip) continue;
+    const disabled = haGetCached(c.entity)?.state === "unavailable";
     (c.subGroups || []).forEach((group, gIdx) => {
       (group.stations || []).forEach((st, idx) => {
         const bubbleId = `pmb-${gIdx}-${idx}`;
         const el = document.getElementById(bubbleId);
-        if (el) el.classList.toggle("on", musicStationIsOn(c.entity, st.uri));
+        if (!el) return;
+        el.classList.toggle("disabled", disabled);
+        el.classList.toggle("on", !disabled && musicStationIsOn(c.entity, st.uri));
       });
     });
   }

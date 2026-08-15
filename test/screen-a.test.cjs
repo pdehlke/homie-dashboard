@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260813.1");
+  assert.equal(version, "20260815.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -996,6 +996,50 @@ test("togglePopupMusic stops playback and turns off Harmony when tapping the cur
   })();
 });
 
+test("togglePopupMusic does nothing and claims nothing when the target player is unavailable", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "unavailable", {});
+  await music.toggle("media_player.crestron", "library://radio/1", "pmb-0-0");
+  assert.equal(music.calls.length, 0, "no service call can do anything useful against an unreachable player");
+  assert.ok(!music.classesOf("pmb-0-0").has("on"), "must not flash on for an action that had no chance of working");
+});
+
+test("togglePopupMusic treats a never-cached target the same as unavailable (no calls, no optimistic on)", async () => {
+  const music = loadMusicToggle();
+  // No music.setState() call at all — haGetCached() returns null, same as
+  // an entity HA hasn't sent a state for yet.
+  await music.toggle("media_player.crestron", "library://radio/1", "pmb-0-0");
+  assert.equal(music.calls.length, 0);
+  assert.ok(!music.classesOf("pmb-0-0").has("on"));
+});
+
+test("refreshOpenMusicPopup marks a station's bubble disabled, and never on, while its player is unavailable", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const ropStart = source.indexOf("function refreshOpenMusicPopup()");
+  const ropEnd = source.indexOf("\n/**\n * isPopupOpen", ropStart);
+  assert.ok(ropStart > -1 && ropEnd > ropStart, "refreshOpenMusicPopup must be found");
+  const body = source.slice(ropStart, ropEnd);
+  assert.match(body, /state\s*===\s*["']unavailable["']/, "must actually check for unavailable, not just re-derive on/off");
+  assert.match(body, /classList\.toggle\(["']disabled["']/, "must surface it as a class, same idiom as _refreshOv3Garden's isDisabled");
+});
+
+test("the Music chip's initial bubble render also marks a station disabled at build time, not just on the next refresh tick", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const openStart = source.indexOf("async function openPopup(i)");
+  const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
+  assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
+  const musicBlockStart = source.indexOf("if (c.isMusicChip)", openStart);
+  assert.ok(musicBlockStart > -1 && musicBlockStart < openEnd, "Music chip render branch must be found inside openPopup");
+  const musicBlock = source.slice(musicBlockStart, openEnd);
+  assert.match(musicBlock, /state\s*===\s*["']unavailable["']/, "initial render must know about unavailable, not just musicStationIsOn's on/off");
+  assert.match(musicBlock, /disabled/, "must actually emit the disabled class into the built HTML");
+});
+
+test("disabled Music bubble styling reuses the app's existing muted-red 'can't use this' language, not a new color", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  assert.match(cssDeclarations(source, ".popup-scene-icon.disabled"), /255,\s*82,\s*82/, "same red as .popup-item.disabled / .ov3-garden-irr-btn.disabled");
+});
+
 test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
 
@@ -1003,7 +1047,7 @@ test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bub
   const openStart = source.indexOf("async function openPopup(i)");
   const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
   assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
-  assert.match(source.slice(openStart, openEnd), /const on = musicStationIsOn\(c\.entity, st\.uri\)/);
+  assert.match(source.slice(openStart, openEnd), /const on = !disabled && musicStationIsOn\(c\.entity, st\.uri\)/);
 
   // Bottom chip glow (no count badge, see the config comment).
   const rcStart = source.indexOf("function refreshControls()");
