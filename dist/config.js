@@ -32,7 +32,7 @@ const CONFIG = {
   uiDefaults: {
     startupMode: "overview1",
     clockFormat: "12h",
-    theme: "gold",
+    theme: "blue",
     backgroundMode: "vivid",
   },
 

@@ -8694,7 +8694,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260815.1";
+      const HOMIE_ASSET_VERSION = "20260816.1";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -16391,7 +16391,7 @@ const THEMES = {
   crimson:    { name: "Crimson Red",      accent: '#e63946', hi: '#a32a33', glow: 'rgba(230,57,70,0.2)'   },
 };
 
-let _activeTheme = localStorage.getItem('homie-theme') || CONFIG.uiDefaults?.theme || 'gold';
+let _activeTheme = localStorage.getItem('homie-theme') || CONFIG.uiDefaults?.theme || 'blue';
 // _baseTheme is the user's manually chosen default — never overwritten by
 // time-of-day theme switches, so 'Default' slots always restore correctly.
 let _baseTheme  = localStorage.getItem('homie-base-theme') || _activeTheme;
@@ -16638,7 +16638,7 @@ function _applyTimeOfDayTheme() {
   // Slot is "Default" (null/empty) — actively restore the user's base theme so a
   // previous TOD slot doesn't bleed into this one (e.g. Morning=RoseGold, Afternoon=Default
   // should restore Emerald Green at noon, not stay on RoseGold).
-  const base = _baseTheme || 'gold';
+  const base = _baseTheme || 'blue';
   if (_activeTheme !== base) applyTheme(base, true /*_fromTod*/);
 }
 
@@ -19426,7 +19426,7 @@ function updateGreeting() {
 
 function applyBgMode() {
   // Re-run the background gradient with the current theme + new bgMode
-  const t = THEMES[_activeTheme] || THEMES['gold'];
+  const t = THEMES[_activeTheme] || THEMES['blue'];
   const [ar,ag,ab] = hexToRgb(t.accent);
   const [hr,hg,hb] = hexToRgb(t.hi);
   applyThemeBg(ar, ag, ab, hr, hg, hb);
@@ -19512,7 +19512,7 @@ function applyTodTheme(slot, themeId) {
   // Immediately apply if this slot matches the current hour
   if (_timeOfDaySlot(new Date().getHours()) === slot) {
     if (themeId && THEMES[themeId]) applyTheme(themeId, true /*_fromTod*/);
-    else applyTheme(_baseTheme || 'gold', true /*_fromTod*/); // restore user's default
+    else applyTheme(_baseTheme || 'blue', true /*_fromTod*/); // restore user's default
   }
   haptic('light');
 }

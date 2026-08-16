@@ -18,7 +18,7 @@ The accepted Screen A configuration provides:
 - Lights, Climate, A/V, and Irrigation controls
 - Main House and Office Wing thermostat zones
 - Five irrigation zones, retaining Back Yard while its controller is offline
-- Classic Gold, Screen A, vivid gradient, and 12-hour browser defaults
+- Steel Blue, Screen A, vivid gradient, and 12-hour browser defaults
 - Weather from Home Assistant's `weather.openweathermap` entity in Fahrenheit. Overview C depends
   on OpenWeatherMap's daily response to display five actual future days; Met.no's
   `weather.forecast_home` currently supplies only two future days and is intentionally not used for

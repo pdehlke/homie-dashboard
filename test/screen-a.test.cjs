@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260815.1");
+  assert.equal(version, "20260816.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1363,11 +1363,11 @@ test("refreshTVControlUI disables volume/mute at PowerOff and re-enables once an
   assert.deepEqual(Object.values(tracked).map((b) => b.disabled), [true, true, true]);
 });
 
-test("shared UI defaults select Screen A, Classic Gold, and 12-hour time", () => {
+test("shared UI defaults select Screen A, Steel Blue, and 12-hour time", () => {
   const config = loadConfig();
   assert.deepEqual(
     JSON.parse(JSON.stringify(config.uiDefaults)),
-    { startupMode: "overview1", clockFormat: "12h", theme: "gold", backgroundMode: "vivid" },
+    { startupMode: "overview1", clockFormat: "12h", theme: "blue", backgroundMode: "vivid" },
   );
   assert.equal(config.brandName, "HOME");
   assert.deepEqual(Array.from(config.backgroundImages || []), []);
@@ -1775,7 +1775,7 @@ test("custom defaults migrate each browser once without clobbering later choices
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value),
   };
-  const defaults = { startupMode: "overview1", clockFormat: "12h", theme: "gold", backgroundMode: "vivid" };
+  const defaults = { startupMode: "overview1", clockFormat: "12h", theme: "blue", backgroundMode: "vivid" };
 
   assert.equal(custom.installDefaults(storage, defaults, "screen-a-v1"), true);
   assert.deepEqual(JSON.parse(values.get("homie_dashboard_settings")), {
@@ -1783,7 +1783,7 @@ test("custom defaults migrate each browser once without clobbering later choices
     startupMode: "overview1",
     bgMode: "vivid",
   });
-  assert.equal(values.get("homie-theme"), "gold");
+  assert.equal(values.get("homie-theme"), "blue");
 
   values.set("homie-theme", "emerald");
   assert.equal(custom.installDefaults(storage, defaults, "screen-a-v1"), false);
