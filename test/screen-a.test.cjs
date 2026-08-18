@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260816.1");
+  assert.equal(version, "20260817.2");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1203,12 +1203,15 @@ test("control row and popup mappings match the approved design", () => {
   const config = loadConfig();
   assert.deepEqual(
     Array.from(config.controls, (entry) => entry.label),
-    ["Lights", "Climate", "A/V", "Music", "TV", "Irrigation", "Scenes"],
+    ["Lights", "Climate", "A/V", "Music", "TV", "Irrigation", "Scenes", "NAS"],
   );
   assert.equal(config.controls[1].action, "thermostat");
   assert.equal(config.controls[2].action, "media_browser");
   assert.equal(config.controls[4].action, "harmony");
   assert.equal(config.controls[5].confirmStart, true);
+  assert.equal(config.controls[7].action, "nas");
+  assert.equal(config.controls[7].isNasChip, true);
+  assert.equal(config.controls[7].entity, "sensor.nas_health");
   assert.deepEqual(
     Array.from(config.controls[1].subEntities, (entry) => [entry.label, entry.entity]),
     [
@@ -2077,4 +2080,240 @@ test("Garden card's irrigation grid has a static 'Irrigation' heading, not tied 
   const headingDecl = cssDeclarations(source, ".ov3-garden-irr-heading");
   assert.match(headingDecl, /text-transform:\s*uppercase/);
   assert.match(headingDecl, /text-align:\s*center/);
+});
+
+// loadNasHelpers: isAdminViewer/nasHealthState/nasChipNeedsAttention/nasHeroTintClass/
+// nasDsmLinkVisible/nasFormatTemp/nasFormatPercent/nasFormatTB/nasSafetyText/
+// nasUptimeText/nasOpenMoreInfo against a fake stateCache and a fake parent frame, the
+// same slice-real-source approach as loadThermostatOverlay above. The mock
+// <home-assistant> element carries both a `hass` property (for isAdminViewer) and a
+// dispatchEvent method (for nasOpenMoreInfo) so one loader serves every NAS helper.
+function loadNasHelpers({ withParentFrame = true, hass = { user: { is_admin: true } } } = {}) {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("function isAdminViewer() {");
+  const end = source.indexOf("/**\n * refreshControls", start);
+  assert.ok(start > -1 && end > start, "NAS helper functions must be found");
+  const helpersSource = source.slice(start, end);
+
+  const stateCache = new Map();
+  const dispatchedEvents = [];
+  const mockHomeAssistantEl = {
+    hass: hass === null ? undefined : hass,
+    dispatchEvent: (evt) => dispatchedEvents.push(evt),
+  };
+  const mockParentDocument = {
+    querySelector: (sel) => (sel === "home-assistant" ? mockHomeAssistantEl : null),
+  };
+  const context = {
+    haGetCached: (id) => stateCache.get(id) ?? null,
+    haptic: () => {},
+    window: withParentFrame ? { parent: { document: mockParentDocument } } : {},
+    CustomEvent: FakeCustomEvent,
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${helpersSource}\n` +
+      `globalThis.__isAdminViewer = isAdminViewer;\n` +
+      `globalThis.__healthState = nasHealthState;\n` +
+      `globalThis.__needsAttention = nasChipNeedsAttention;\n` +
+      `globalThis.__heroTintClass = nasHeroTintClass;\n` +
+      `globalThis.__dsmLinkVisible = nasDsmLinkVisible;\n` +
+      `globalThis.__formatTemp = nasFormatTemp;\n` +
+      `globalThis.__formatPercent = nasFormatPercent;\n` +
+      `globalThis.__formatTB = nasFormatTB;\n` +
+      `globalThis.__safetyText = nasSafetyText;\n` +
+      `globalThis.__uptimeText = nasUptimeText;\n` +
+      `globalThis.__openMoreInfo = nasOpenMoreInfo;`,
+    context,
+  );
+  return {
+    isAdminViewer: context.__isAdminViewer,
+    healthState: context.__healthState,
+    needsAttention: context.__needsAttention,
+    heroTintClass: context.__heroTintClass,
+    dsmLinkVisible: context.__dsmLinkVisible,
+    formatTemp: context.__formatTemp,
+    formatPercent: context.__formatPercent,
+    formatTB: context.__formatTB,
+    safetyText: context.__safetyText,
+    uptimeText: context.__uptimeText,
+    openMoreInfo: context.__openMoreInfo,
+    setState: (id, state, attributes = {}) => stateCache.set(id, { state, attributes }),
+    dispatchedEvents,
+  };
+}
+
+test("isAdminViewer reads the real parent frame's hass.user.is_admin, and fails closed on any uncertainty", () => {
+  assert.equal(loadNasHelpers({ hass: { user: { is_admin: true } } }).isAdminViewer(), true);
+  assert.equal(loadNasHelpers({ hass: { user: { is_admin: false } } }).isAdminViewer(), false);
+  assert.equal(loadNasHelpers({ hass: { user: {} } }).isAdminViewer(), false); // is_admin missing
+  assert.equal(loadNasHelpers({ hass: {} }).isAdminViewer(), false); // .user missing
+  // null, not undefined -- passing `hass: undefined` would hit the destructuring default
+  // above instead of actually testing an absent .hass.
+  assert.equal(loadNasHelpers({ hass: null }).isAdminViewer(), false); // .hass missing entirely
+  assert.equal(loadNasHelpers({ withParentFrame: false }).isAdminViewer(), false); // no parent frame at all
+  // is_admin present but not strictly boolean true -- must not pass a loose truthy check.
+  assert.equal(loadNasHelpers({ hass: { user: { is_admin: "yes" } } }).isAdminViewer(), false);
+});
+
+test("nasHealthState normalises to the four-state contract, null for anything else", () => {
+  const nas = loadNasHelpers();
+  assert.equal(nas.healthState(), null); // no cached state at all
+  for (const state of ["Healthy", "Attention", "Critical", "Unknown"]) {
+    nas.setState("sensor.nas_health", state);
+    assert.equal(nas.healthState(), state);
+  }
+  nas.setState("sensor.nas_health", "unavailable");
+  assert.equal(nas.healthState(), null);
+});
+
+test("nasChipNeedsAttention is on only for Attention/Critical, never Healthy or Unknown", () => {
+  const nas = loadNasHelpers();
+  for (const [state, expected] of [["Healthy", false], ["Attention", true], ["Critical", true], ["Unknown", false]]) {
+    nas.setState("sensor.nas_health", state);
+    assert.equal(nas.needsAttention(), expected, state);
+  }
+});
+
+test("nasHeroTintClass covers all four states, falling back to Unknown for anything unrecognised", () => {
+  const nas = loadNasHelpers();
+  assert.equal(nas.heroTintClass("Healthy"), "nas-hero--healthy");
+  assert.equal(nas.heroTintClass("Attention"), "nas-hero--attention");
+  assert.equal(nas.heroTintClass("Critical"), "nas-hero--critical");
+  assert.equal(nas.heroTintClass("Unknown"), "nas-hero--unknown");
+  assert.equal(nas.heroTintClass(null), "nas-hero--unknown");
+  assert.equal(nas.heroTintClass("garbage"), "nas-hero--unknown");
+});
+
+test("nasDsmLinkVisible matches the native dashboard's three-state rule, wider than the chip glow's two-state rule", () => {
+  const nas = loadNasHelpers();
+  assert.equal(nas.dsmLinkVisible("Healthy"), false);
+  assert.equal(nas.dsmLinkVisible("Attention"), true);
+  assert.equal(nas.dsmLinkVisible("Critical"), true);
+  assert.equal(nas.dsmLinkVisible("Unknown"), true);
+});
+
+test("NAS formatters render live values and all fall back to '—' when unavailable", () => {
+  const nas = loadNasHelpers();
+
+  assert.equal(nas.formatTemp("sensor.x"), "—");
+  nas.setState("sensor.x", "98.6", { unit_of_measurement: "°F" });
+  assert.equal(nas.formatTemp("sensor.x"), "99°F");
+
+  assert.equal(nas.formatPercent("sensor.y"), "—");
+  nas.setState("sensor.y", "30.3", { unit_of_measurement: "%" });
+  assert.equal(nas.formatPercent("sensor.y"), "30.3%");
+
+  assert.equal(nas.formatTB("sensor.z"), "—");
+  nas.setState("sensor.z", "1.159775350784", { unit_of_measurement: "TB" });
+  assert.equal(nas.formatTB("sensor.z"), "1.16 TB");
+
+  assert.equal(nas.safetyText("binary_sensor.w"), "—");
+  nas.setState("binary_sensor.w", "off");
+  assert.equal(nas.safetyText("binary_sensor.w"), "OK");
+  nas.setState("binary_sensor.w", "on");
+  assert.equal(nas.safetyText("binary_sensor.w"), "Alert");
+
+  assert.equal(nas.uptimeText("sensor.u"), "—");
+  nas.setState("sensor.u", new Date(Date.now() - 2 * 86400 * 1000).toISOString());
+  assert.equal(nas.uptimeText("sensor.u"), "Up 2d");
+});
+
+test("nasOpenMoreInfo dispatches the real hass-more-info event for a NAS sensor row, and fails silently with no parent frame", () => {
+  const nas = loadNasHelpers();
+  nas.openMoreInfo("sensor.nas01_uptime");
+  assert.equal(nas.dispatchedEvents.length, 1);
+  assert.equal(nas.dispatchedEvents[0].type, "hass-more-info");
+  assert.equal(nas.dispatchedEvents[0].detail.entityId, "sensor.nas01_uptime");
+  assert.equal(nas.dispatchedEvents[0].bubbles, true);
+  assert.equal(nas.dispatchedEvents[0].composed, true);
+
+  const noParent = loadNasHelpers({ withParentFrame: false });
+  assert.doesNotThrow(() => noParent.openMoreInfo("sensor.nas01_uptime"));
+  assert.equal(noParent.dispatchedEvents.length, 0);
+});
+
+test("controlOnClick routes a NAS-action chip to openNasOverlay(), not the generic popup", () => {
+  const custom = loadCustomizations();
+  assert.equal(custom.controlOnClick({ action: "nas" }, 7), "openNasOverlay()");
+});
+
+test("Overview C sidebar's NAS icon uses the explicit action-based override, not the generic domain fallback", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const fnStart = source.indexOf("function _sbIcon(ctrl)");
+  const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
+  assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
+  assert.match(source.slice(fnStart, fnEnd), /if \(ctrl\.action === "nas"\)/);
+});
+
+test("NAS chip visibility is gated by isAdminViewer() in every render path, re-checked by both refresh paths, and its glow by nasChipNeedsAttention()", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  // Initial paint (all three chip lists), so the chip never even flashes visible for a
+  // non-admin viewer before the first refresh cycle could hide it.
+  assert.equal(
+    (source.match(/c\.isNasChip && !isAdminViewer\(\)/g) || []).length,
+    3,
+    "buildControls(), _buildOv2Controls(), and _buildOv3SidebarControls() must each check this at render time",
+  );
+  // Re-checked every refresh cycle, not just at initial render -- self-corrects if the
+  // parent frame hadn't finished hydrating its own hass object yet at first paint.
+  assert.match(source, /el\.classList\.toggle\("chip-hidden", !isAdminViewer\(\)\)/);
+  assert.match(source, /btn\.classList\.toggle\("chip-hidden", !isAdminViewer\(\)\)/);
+  // Glow condition, both refresh paths.
+  assert.match(source, /isOn = nasChipNeedsAttention\(\);/); // refreshControls()
+  assert.match(source, /\? nasChipNeedsAttention\(\)/); // _refreshOv3SidebarControls()
+});
+
+test("Escape key closes the NAS overlay, same as every other popup", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  assert.match(source, /if \(document\.getElementById\("nas-overlay"\)\?\.classList\.contains\("open"\)\)\s+closeNasOverlay\(\);/);
+});
+
+test("openNasOverlay refreshes the overlay before opening it; closeNasOverlay only closes on a genuine backdrop tap", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const openStart = source.indexOf("function openNasOverlay()");
+  const openBody = source.slice(openStart, source.indexOf("\n}", openStart) + 2);
+  assert.match(openBody, /refreshNasOverlay\(\);/);
+  assert.match(openBody, /getElementById\("nas-overlay"\)\.classList\.add\("open"\)/);
+
+  const closeStart = source.indexOf("function closeNasOverlay(e)");
+  const closeBody = source.slice(closeStart, source.indexOf("\n}", closeStart) + 2);
+  assert.match(closeBody, /e\.target !== document\.getElementById\("nas-overlay"\)/);
+});
+
+test("NAS overlay's DSM link opens the exact configured DSM URL in a new browsing context, for the native dashboard's three-state rule", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  assert.match(
+    source,
+    /id="nas-dsm-btn" onclick="window\.open\('https:\/\/192\.168\.4\.106:5001', '_blank'\)"/,
+  );
+});
+
+test("NAS overlay's hero, DSM-update tile, and fan-mode tile stay inert -- no onclick, no more-info dispatch", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const heroStart = source.indexOf('<div class="nas-hero" id="nas-hero">');
+  const heroEnd = source.indexOf("</div>", source.indexOf('id="nas-hero-label"', heroStart));
+  assert.ok(heroStart > -1 && heroEnd > heroStart, "NAS hero markup must be found");
+  assert.doesNotMatch(source.slice(heroStart, heroEnd), /onclick=/);
+
+  const refreshStart = source.indexOf("function refreshNasOverlay()");
+  const refreshEnd = source.indexOf("\n/**\n * openNasOverlay", refreshStart);
+  assert.ok(refreshStart > -1 && refreshEnd > refreshStart, "refreshNasOverlay must be found");
+  const refreshBody = source.slice(refreshStart, refreshEnd);
+  assert.match(refreshBody, /tile\("DSM Update", .*?, null\)/);
+  assert.match(refreshBody, /tile\("Fan Mode", .*?, null\)/);
+});
+
+test("NAS chip's needs-attention glow is hardcoded against theming, distinct from every other chip's accent-based .on state", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const decl = cssDeclarations(source, ".chip.chip-nas.on");
+  assert.match(decl, /#ff5252/i);
+  assert.doesNotMatch(decl, /var\(--accent/i);
+});
+
+test("NAS overlay scrolls internally rather than overflowing a vertically centered popup -- found live: every row renders expanded at once, unlike the accordion-style popups", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const decl = cssDeclarations(source, ".popup--nas");
+  assert.match(decl, /overflow-y:\s*auto/);
+  assert.match(decl, /max-height:\s*\d+(\.\d+)?vh/);
 });

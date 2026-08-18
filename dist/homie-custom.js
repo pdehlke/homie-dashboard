@@ -17,6 +17,9 @@
     if (control && control.action === "harmony") {
       return "openTVControl()";
     }
+    if (control && control.action === "nas") {
+      return "openNasOverlay()";
+    }
     if (control && (control.subEntities || control.subGroups)) {
       return `openPopup(${index})`;
     }

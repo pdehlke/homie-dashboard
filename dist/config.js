@@ -420,6 +420,25 @@ const CONFIG = {
         },
       ],
     },
+    {
+      // Read-only Synology NAS health/capacity chip, admin-only (visibility
+      // gated by isAdminViewer() at render time — the dedicated non-admin
+      // `Homie Dashboard` kiosk account never sees this). isNasChip flags the
+      // custom Attention/Critical-only glow logic in refreshControls() /
+      // _refreshOv3SidebarControls() (nasChipNeedsAttention()), parallel to
+      // isSceneChip/isMusicChip; action: "nas" routes taps to the dedicated
+      // openNasOverlay() rather than the generic subEntities/subGroups popup,
+      // parallel to the TV chip's action: "harmony". entity is the shared
+      // sensor.nas_health contract this and the native dashboard-nas
+      // dashboard both read — see docs/homie-dashboard/homie-nas-chip.md and
+      // docs/synology-nas/synology-nas-dashboard.md in the pdehlke/homeassistant
+      // repo for the full design writeup and the native four-state contract
+      // this mirrors.
+      label: "NAS",
+      action: "nas",
+      isNasChip: true,
+      entity: "sensor.nas_health",
+    },
   ],
 
   garden: {

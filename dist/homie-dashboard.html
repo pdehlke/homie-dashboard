@@ -656,6 +656,31 @@
   }
   .chip.on .dot { background: var(--accent); }
 
+  /* NAS chip's "needs attention" glow deliberately does not use --accent/
+   * --accent-hi like every other chip's .on state above. Homie's accent is a
+   * single theme-swappable hue (Settings > Theme), so under some presets
+   * (Emerald, say) the ordinary .chip.on glow would render green — exactly
+   * the one color that reads as reassuring during a real NAS Attention/
+   * Critical state. A fixed literal color removes that failure mode. Reuses
+   * #FF5252, the same "something needs attention" red already established
+   * for disabled irrigation zones elsewhere in this file, rather than
+   * inventing a new one. See docs/homie-dashboard/homie-nas-chip.md in the
+   * pdehlke/homeassistant repo. */
+  .chip.chip-nas.on {
+    background: rgba(255, 82, 82, 0.22);
+    border-color: #ff5252;
+    color: #ff5252;
+  }
+  .chip.chip-nas.on .dot { background: #ff5252; }
+  /* Admin-only visibility (isAdminViewer()): hidden rather than removed from
+   * CONFIG.controls, so every other chip's numeric index (chip-${i}, used
+   * pervasively for tap dispatch) never shifts based on who's viewing. */
+  .chip.chip-hidden,
+  .ov2-ctrl-btn.chip-hidden,
+  .ov3-sb-btn.chip-hidden {
+    display: none;
+  }
+
   /* ─── POPUPS ─── */
   .popup-overlay {
     position: fixed;
@@ -952,6 +977,133 @@
   .tv-feedback.error { color: #f28a92; }
   .tv-feedback.success { color: var(--accent-hi); }
 
+  /* ─── NAS OVERLAY ── read-only Synology NAS health/capacity, admin-only.
+   * See docs/homie-dashboard/homie-nas-chip.md in the pdehlke/homeassistant
+   * repo for the full design writeup. ────────────────────────────────── */
+  .popup--nas {
+    max-width: 480px;
+    width: min(480px, 92vw);
+    /* Unlike the accordion-style popups (Lights, Irrigation), every NAS row
+     * renders expanded at once, so this reliably runs taller than the
+     * viewport -- found live on the actual device, not a hypothetical.
+     * Scrolls internally rather than overflowing top and bottom of a
+     * vertically centered flex popup, same precedent as .popup--media-browser. */
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .nas-hero {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .nas-hero-icon { width: 22px; height: 22px; flex-shrink: 0; }
+  .nas-hero-icon svg { width: 100%; height: 100%; }
+  .nas-hero-label {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 600;
+  }
+  /* Four-state tint, mirroring the native dashboard-nas Overview's own hero
+   * exactly (see synology-nas-dashboard.md) — restrained, not a full-bleed
+   * fill, same "keep the surface dominant" restraint the native hero uses. */
+  .nas-hero--healthy   { background: rgba(50,210,130,0.12); border-color: rgba(50,210,130,0.4); }
+  .nas-hero--healthy   .nas-hero-icon { color: #3fd49a; }
+  .nas-hero--attention { background: rgba(255,193,7,0.14);  border-color: rgba(255,193,7,0.45); }
+  .nas-hero--attention .nas-hero-icon { color: #ffc107; }
+  .nas-hero--critical  { background: rgba(255,82,82,0.16);  border-color: rgba(255,82,82,0.5); }
+  .nas-hero--critical  .nas-hero-icon { color: #ff5252; }
+  .nas-hero--unknown   { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
+  .nas-hero--unknown   .nas-hero-icon { color: rgba(255,255,255,0.6); }
+
+  .nas-tile-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .nas-tile-row--system { grid-template-columns: 1fr 1fr 1fr; }
+  .nas-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    touch-action: manipulation;
+  }
+  .nas-tile:hover { background: rgba(255,255,255,0.09); }
+  .nas-tile--inert { cursor: default; }
+  .nas-tile--inert:hover { background: rgba(255,255,255,0.05); }
+  .nas-tile-label {
+    font-size: 8px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+  }
+  .nas-tile-value {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .nas-section-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    margin: 4px 0 8px;
+  }
+  /* Non-interactive divider row inside a .popup-list (e.g. "Drive 1" /
+   * "Drive 2" between the two drives' checks) — same list, no separate
+   * component, just a modifier that drops the pointer/hover affordance
+   * every other .popup-item implies. */
+  .popup-item.popup-item--section {
+    background: transparent;
+    border: none;
+    padding: 4px 4px 0;
+    cursor: default;
+  }
+  .popup-item.popup-item--section:hover { background: transparent; }
+  .popup-item.popup-item--section .popup-item-label {
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+  }
+  .nas-dsm-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px;
+    background: rgba(255,82,82,0.12);
+    border: 1px solid rgba(255,82,82,0.4);
+    border-radius: 10px;
+    color: #ff8a8a;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    touch-action: manipulation;
+  }
+  .nas-dsm-btn:hover { background: rgba(255,82,82,0.2); }
+  .nas-dsm-btn[hidden] { display: none; }
+
   /* Security button shield icon colour synced to alarm state */
   .topbar-security-btn.armed-home svg { stroke: var(--accent-hi); }
   .topbar-security-btn.armed-away svg { stroke: #3fd49a; }
@@ -1008,6 +1160,15 @@
     letter-spacing: 0.12em;
     color: #fff;
     text-transform: uppercase;
+  }
+  /* Right-hand value in a read-only row (NAS health checks) — same idea as
+   * .popup-item-label but muted, since it's evidence, not the row's name. */
+  .popup-item-value {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    flex-shrink: 0;
   }
   .popup-toggle {
     width: 40px;
@@ -5086,6 +5247,17 @@
   .ov2-ctrl-btn.on .ov2-ctrl-count {
     opacity: 1;
   }
+  /* NAS chip's fixed-color glow override — same reasoning as .chip.chip-nas.on
+   * above (see the ─── POPUPS ─── section boundary near the top of this
+   * stylesheet). */
+  .ov2-ctrl-btn.chip-nas.on {
+    color: #ff5252;
+    background: rgba(255, 82, 82, 0.22);
+  }
+  .ov2-ctrl-btn.chip-nas.on .ov2-ctrl-dot {
+    background: #ff5252;
+    box-shadow: 0 0 6px rgba(255, 82, 82, 0.5);
+  }
   /* Irrigation-only: mirrors .chip-alert-dot (see _refreshOv2). Hardcoded
    * red, not a theme var — see .popup-item.disabled. */
   .ov2-ctrl-alert-dot {
@@ -5358,6 +5530,16 @@
     box-shadow: 0 0 4px var(--accent);
   }
   .ov3-sb-btn.on .ov3-sb-dot { display: block; }
+  /* NAS chip's fixed-color glow override — same reasoning as .chip.chip-nas.on.
+   * Placed after the two real definitions above (not interleaved) so the
+   * test harness's substring-based CSS lookups for plain .ov3-sb-dot keep
+   * matching the base rule, not this compound override. */
+  .ov3-sb-btn.chip-nas.on {
+    background: rgba(255, 82, 82, 0.22);
+    border-color: #ff5252;
+  }
+  .ov3-sb-btn.chip-nas.on svg { stroke: #ff5252; }
+  .ov3-sb-btn.chip-nas.on .ov3-sb-dot { background: #ff5252; box-shadow: 0 0 4px #ff5252; }
 
   /* Irrigation-only alert dot: opposite corner from .ov3-sb-dot so both can
    * show at once (e.g. one zone running while another is disabled).
@@ -8534,6 +8716,39 @@
   </div>
 </div>
 
+<div class="popup-overlay" id="nas-overlay" onclick="closeNasOverlay(event)">
+  <div class="popup popup--nas">
+    <div class="popup-title">NAS</div>
+
+    <div class="nas-hero" id="nas-hero">
+      <span class="nas-hero-icon" id="nas-hero-icon"></span>
+      <span class="nas-hero-label" id="nas-hero-label">—</span>
+    </div>
+
+    <div class="nas-tile-row">
+      <button class="nas-tile" id="nas-tile-volume" onclick="nasOpenMoreInfo('sensor.nas01_volume_1_volume_used')">
+        <span class="nas-tile-label">VOLUME USED</span>
+        <span class="nas-tile-value" id="nas-volume-used">—</span>
+      </button>
+      <button class="nas-tile" id="nas-tile-temp" onclick="nasOpenMoreInfo('sensor.nas01_volume_1_maximum_disk_temp')">
+        <span class="nas-tile-label">MAX DRIVE TEMP</span>
+        <span class="nas-tile-value" id="nas-max-temp">—</span>
+      </button>
+    </div>
+
+    <div class="nas-section-label">HEALTH CHECKS</div>
+    <div class="popup-list" id="nas-checks-list"></div>
+
+    <div class="nas-section-label">SYSTEM</div>
+    <div class="nas-tile-row nas-tile-row--system" id="nas-system-tiles"></div>
+
+    <button class="nas-dsm-btn" id="nas-dsm-btn" onclick="window.open('https://192.168.4.106:5001', '_blank')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      <span>OPEN DSM</span>
+    </button>
+  </div>
+</div>
+
 <div class="popup-overlay" id="pet-overlay" onclick="closePetStats(event)">
   <div class="popup popup--pet">
     <div class="popup-title">Pet Status</div>
@@ -8694,7 +8909,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260816.1";
+      const HOMIE_ASSET_VERSION = "20260817.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -10912,8 +11127,13 @@ function buildSensorRow() {
 function buildControls(controls) {
   const list = controls || CONFIG.controls;
   const hasPopup = c => c.action || c.subEntities || c.subGroups;
+  // NAS chip is admin-only; checked here too (not just in refreshControls())
+  // so it never even flashes visible for a moment on first paint before the
+  // first refresh cycle runs — see isAdminViewer() for the fail-closed
+  // reasoning.
+  const chipClass = c => `chip${c.on ? " on" : ""}${c.isNasChip ? " chip-nas" : ""}${c.isNasChip && !isAdminViewer() ? " chip-hidden" : ""}`;
   const chips = list.map((c, i) => `
-    <button class="chip${c.on ? " on" : ""}" id="chip-${i}" onclick="${HOMIE_CUSTOM.controlOnClick(c, i)}" data-ctrl-index="${i}">
+    <button class="${chipClass(c)}" id="chip-${i}" onclick="${HOMIE_CUSTOM.controlOnClick(c, i)}" data-ctrl-index="${i}">
       <div class="dot"></div>${escapeHtml(c.label)}${c.showCount ? `<span class="chip-count" id="chip-count-${i}" style="display:none"></span>` : ''}<span class="chip-alert-dot" id="chip-alert-${i}" title="A zone is disabled"></span>${hasPopup(c) ? ' ›' : ''}
     </button>
   `).join('');
@@ -11076,6 +11296,176 @@ function lennoxAlertActive() {
   });
 }
 
+/* ─── NAS CHIP / OVERLAY ─── shared helpers, used by refreshControls(),
+ * _refreshOv3SidebarControls(), and the NAS overlay itself. Kept together so
+ * the chip glow, every sidebar's glow, and the overlay's own hero can never
+ * disagree about what "needs attention" means. Full design writeup,
+ * including the grilled decisions and rejected alternatives, in
+ * docs/homie-dashboard/homie-nas-chip.md in the pdehlke/homeassistant repo. */
+
+/**
+ * isAdminViewer — true only when the real Home Assistant user viewing this
+ * page right now (read from the parent frame's own live session, not
+ * Homie's own dedicated non-admin WebSocket account) is an administrator.
+ * Uses the same same-origin cross-frame access already established for the
+ * Climate native dialog (see openThermostatNative below) — Homie's iframe
+ * has been same-origin with the parent HA frontend since the 2026-08-11
+ * hostname migration. Fails closed (false) on any missing property or
+ * cross-frame access error: a chip gated on this must never show to a
+ * viewer this check couldn't positively confirm as an admin.
+ */
+function isAdminViewer() {
+  try {
+    const parentDoc = window.parent && window.parent !== window ? window.parent.document : null;
+    const target = parentDoc ? parentDoc.querySelector("home-assistant") : null;
+    return !!(target && target.hass && target.hass.user && target.hass.user.is_admin === true);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * nasHealthState — the current sensor.nas_health state, normalised to one
+ * of the four contract values (Healthy/Attention/Critical/Unknown) or null
+ * if the entity isn't cached yet. Mirrors the native dashboard-nas
+ * Overview's own four-state contract exactly — see
+ * docs/synology-nas/synology-nas-dashboard.md in the pdehlke/homeassistant
+ * repo. Shared by the chip glow and the overlay hero so they can never
+ * disagree about what state they're reading.
+ */
+function nasHealthState() {
+  const d = haGetCached("sensor.nas_health");
+  const known = ["Healthy", "Attention", "Critical", "Unknown"];
+  return d && known.includes(d.state) ? d.state : null;
+}
+
+/**
+ * nasChipNeedsAttention — the NAS chip's own on/off glow condition: on only
+ * for Attention or Critical, never for Healthy or Unknown. Deliberately
+ * narrower than nasDsmLinkVisible() below (which also includes Unknown,
+ * matching the native dashboard) — see homie-nas-chip.md for why Unknown was
+ * left out of the chip glow specifically.
+ */
+function nasChipNeedsAttention() {
+  const state = nasHealthState();
+  return state === "Attention" || state === "Critical";
+}
+
+/**
+ * nasHeroTintClass — maps a sensor.nas_health state to one of the overlay
+ * hero's four tint classes, mirroring the native dashboard's own four
+ * conditional hero copies exactly. An unrecognised or missing state renders
+ * as Unknown, the same fail-toward-caution direction as isAdminViewer() and
+ * nasChipNeedsAttention().
+ */
+function nasHeroTintClass(state) {
+  if (state === "Healthy") return "nas-hero--healthy";
+  if (state === "Attention") return "nas-hero--attention";
+  if (state === "Critical") return "nas-hero--critical";
+  return "nas-hero--unknown";
+}
+
+/**
+ * nasDsmLinkVisible — true for Attention, Critical, and Unknown, mirroring
+ * the native dashboard-nas Overview's own conditional DSM-link rule exactly
+ * (three states, not the same two nasChipNeedsAttention() above uses).
+ */
+function nasDsmLinkVisible(state) {
+  return state === "Attention" || state === "Critical" || state === "Unknown";
+}
+
+/**
+ * nasFormatTemp — a temperature sensor's cached state formatted as a rounded
+ * whole-number value plus its own reported unit (°F on this instance, but
+ * read from the entity rather than hardcoded). Returns "—" if unavailable.
+ */
+function nasFormatTemp(entity) {
+  const d = haGetCached(entity);
+  const value = d ? Number.parseFloat(d.state) : NaN;
+  if (!Number.isFinite(value)) return "—";
+  const unit = (d.attributes && d.attributes.unit_of_measurement) || "°F";
+  return `${Math.round(value)}${unit}`;
+}
+
+/**
+ * nasFormatPercent — a percentage sensor's cached state formatted to one
+ * decimal place. Returns "—" if unavailable.
+ */
+function nasFormatPercent(entity) {
+  const d = haGetCached(entity);
+  const value = d ? Number.parseFloat(d.state) : NaN;
+  return Number.isFinite(value) ? `${value.toFixed(1)}%` : "—";
+}
+
+/**
+ * nasFormatTB — a data_size sensor's cached state (already in TB on this
+ * instance) formatted to two decimal places. Returns "—" if unavailable.
+ */
+function nasFormatTB(entity) {
+  const d = haGetCached(entity);
+  const value = d ? Number.parseFloat(d.state) : NaN;
+  return Number.isFinite(value) ? `${value.toFixed(2)} TB` : "—";
+}
+
+/**
+ * nasSafetyText — a device_class "safety" binary_sensor's cached state as
+ * short display text: "on" is the problem state for this device class
+ * (bad-sector limit exceeded, remaining life below minimum, Security
+ * Advisor has a finding), "off" is normal. Returns "—" if unavailable.
+ */
+function nasSafetyText(entity) {
+  const d = haGetCached(entity);
+  if (!d) return "—";
+  return d.state === "on" ? "Alert" : "OK";
+}
+
+/**
+ * nasUptimeText — sensor.nas01_uptime's device_class "uptime" cached state
+ * (an ISO timestamp of when the NAS last booted) formatted as an elapsed
+ * duration. A dedicated formatter rather than reusing getRelativeTime()
+ * above: that helper's "Last used Xm/h/d ago" phrasing is written for pet
+ * stats and would read backwards here ("Up 34d ago" makes no sense for an
+ * uptime clock still running). Returns "—" if unavailable.
+ */
+function nasUptimeText(entity) {
+  const d = haGetCached(entity);
+  if (!d) return "—";
+  const then = new Date(d.state);
+  const diffInSeconds = Math.floor((Date.now() - then.getTime()) / 1000);
+  if (!Number.isFinite(diffInSeconds) || diffInSeconds < 0) return "—";
+  const days = Math.floor(diffInSeconds / 86400);
+  if (days >= 1) return `Up ${days}d`;
+  const hours = Math.floor(diffInSeconds / 3600);
+  if (hours >= 1) return `Up ${hours}h`;
+  const minutes = Math.floor(diffInSeconds / 60);
+  return `Up ${minutes}m`;
+}
+
+/**
+ * nasOpenMoreInfo — opens Home Assistant's own native more-info dialog for a
+ * NAS sensor row, the same cross-frame hass-more-info dispatch
+ * openThermostatNative() below uses for the Climate overlay. Kept as its own
+ * copy (not a shared extraction) since NAS rows have no dialog-closed
+ * bookkeeping to do afterward, unlike the Climate case. Fails silently on
+ * any cross-frame access error, same reasoning as isAdminViewer() above.
+ */
+function nasOpenMoreInfo(entityId) {
+  haptic("light");
+  try {
+    const parentDoc = window.parent && window.parent !== window ? window.parent.document : null;
+    const target = parentDoc ? parentDoc.querySelector("home-assistant") : null;
+    if (!target) return;
+    target.dispatchEvent(new CustomEvent("hass-more-info", {
+      detail: { entityId },
+      bubbles: true,
+      composed: true,
+    }));
+  } catch {
+    // Cross-frame access failed — nothing to fall back to, fail silently
+    // rather than throwing in a click handler.
+  }
+}
+
 /**
  * refreshControls — reads each control entity from cache and updates chip
  * on/off state and the active-count badge (e.g. "3 on").
@@ -11121,6 +11511,12 @@ function refreshControls() {
       // itself reuses musicChipIsOn(), the same shared helper the popup
       // bubble ring and the Overview C sidebar dot read.
       isOn = musicChipIsOn(c);
+    } else if (c.isNasChip) {
+      // NAS chip's glow means "needs attention," not "is active" — see
+      // nasChipNeedsAttention() above and homie-nas-chip.md for why this is
+      // a dedicated boolean rather than the generic entityIsOn() fallback
+      // every other single-entity chip (e.g. TV) uses.
+      isOn = nasChipNeedsAttention();
     } else if (allSubs.length > 0) {
       const isClimateChip = allSubs[0].entity.startsWith("climate.");
       let activeCount;
@@ -11163,6 +11559,14 @@ function refreshControls() {
     c.on = isOn;
     const el = document.getElementById(`chip-${i}`);
     if (el) el.classList.toggle("on", isOn);
+
+    if (c.isNasChip && el) {
+      // Re-checked every refresh cycle, not just at initial render, so a
+      // parent frame that hadn't finished hydrating its own `hass` object
+      // yet at first paint self-corrects moments later rather than leaving
+      // an admin permanently stuck without their own chip for the session.
+      el.classList.toggle("chip-hidden", !isAdminViewer());
+    }
 
     if (c.label === "Irrigation") {
       const alertEl = document.getElementById(`chip-alert-${i}`);
@@ -13784,6 +14188,108 @@ function closeTVControlOverlay(e) {
   if (e && e.target !== document.getElementById("tv-control-overlay")) return;
   haptic("light");
   document.getElementById("tv-control-overlay").classList.remove("open");
+}
+
+/**
+ * refreshNasOverlay — populates every dynamic value in the NAS overlay from
+ * the live state cache: the hero, the two capacity/thermal tiles, the
+ * health-checks list, the system tiles, and the DSM link's visibility. No
+ * fetch of its own — reads entirely from the shared WebSocket-fed state
+ * cache every other chip already uses. See homie-nas-chip.md for the exact
+ * entity list, ported directly from the live dashboard-nas Overview view.
+ */
+function refreshNasOverlay() {
+  const state = nasHealthState();
+
+  const hero = document.getElementById("nas-hero");
+  const heroIcon = document.getElementById("nas-hero-icon");
+  const heroLabel = document.getElementById("nas-hero-label");
+  if (hero) hero.className = `nas-hero ${nasHeroTintClass(state)}`;
+  if (heroIcon) {
+    const icons = {
+      Healthy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+      Attention: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      Critical: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+      Unknown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+    };
+    heroIcon.innerHTML = icons[state] || icons.Unknown;
+  }
+  if (heroLabel) heroLabel.textContent = state || "Unknown";
+
+  const volumeEl = document.getElementById("nas-volume-used");
+  if (volumeEl) volumeEl.textContent = nasFormatPercent("sensor.nas01_volume_1_volume_used");
+  const tempEl = document.getElementById("nas-max-temp");
+  if (tempEl) tempEl.textContent = nasFormatTemp("sensor.nas01_volume_1_maximum_disk_temp");
+
+  const checksList = document.getElementById("nas-checks-list");
+  if (checksList) {
+    const rawState = (entity) => {
+      const d = haGetCached(entity);
+      return d ? d.state : "—";
+    };
+    const row = (label, value, entity) => `
+      <button class="popup-item" onclick="nasOpenMoreInfo('${entity}')">
+        <span class="popup-item-label">${escapeHtml(label)}</span>
+        <span class="popup-item-value">${escapeHtml(value)}</span>
+      </button>`;
+    const section = (label) => `
+      <div class="popup-item popup-item--section">
+        <span class="popup-item-label">${escapeHtml(label)}</span>
+      </div>`;
+    checksList.innerHTML = [
+      row("Volume status", rawState("sensor.nas01_volume_1_status"), "sensor.nas01_volume_1_status"),
+      row("Used space", nasFormatTB("sensor.nas01_volume_1_used_space"), "sensor.nas01_volume_1_used_space"),
+      row("Total size", nasFormatTB("sensor.nas01_volume_1_total_size"), "sensor.nas01_volume_1_total_size"),
+      row("Security Advisor", nasSafetyText("binary_sensor.nas01_security_status"), "binary_sensor.nas01_security_status"),
+      section("Drive 1"),
+      row("Status", rawState("sensor.nas01_drive_1_status"), "sensor.nas01_drive_1_status"),
+      row("SMART", rawState("sensor.nas01_drive_1_status_smart"), "sensor.nas01_drive_1_status_smart"),
+      row("Bad-sector limit", nasSafetyText("binary_sensor.nas01_drive_1_exceeded_max_bad_sectors"), "binary_sensor.nas01_drive_1_exceeded_max_bad_sectors"),
+      row("Remaining life", nasSafetyText("binary_sensor.nas01_drive_1_below_min_remaining_life"), "binary_sensor.nas01_drive_1_below_min_remaining_life"),
+      section("Drive 2"),
+      row("Status", rawState("sensor.nas01_drive_2_status"), "sensor.nas01_drive_2_status"),
+      row("SMART", rawState("sensor.nas01_drive_2_status_smart"), "sensor.nas01_drive_2_status_smart"),
+      row("Bad-sector limit", nasSafetyText("binary_sensor.nas01_drive_2_exceeded_max_bad_sectors"), "binary_sensor.nas01_drive_2_exceeded_max_bad_sectors"),
+      row("Remaining life", nasSafetyText("binary_sensor.nas01_drive_2_below_min_remaining_life"), "binary_sensor.nas01_drive_2_below_min_remaining_life"),
+    ].join("");
+  }
+
+  const systemTiles = document.getElementById("nas-system-tiles");
+  if (systemTiles) {
+    const updateAvailable = haGetCached("update.nas01_dsm_update");
+    const fanMode = haGetCached("select.nas01_fan_speed_mode");
+    const tile = (label, value, entity) => entity
+      ? `<button class="nas-tile" onclick="nasOpenMoreInfo('${entity}')"><span class="nas-tile-label">${escapeHtml(label)}</span><span class="nas-tile-value">${escapeHtml(value)}</span></button>`
+      : `<div class="nas-tile nas-tile--inert"><span class="nas-tile-label">${escapeHtml(label)}</span><span class="nas-tile-value">${escapeHtml(value)}</span></div>`;
+    systemTiles.innerHTML = [
+      tile("CPU", nasFormatPercent("sensor.nas01_cpu_utilization_total"), "sensor.nas01_cpu_utilization_total"),
+      tile("Memory", nasFormatPercent("sensor.nas01_memory_usage_real"), "sensor.nas01_memory_usage_real"),
+      tile("DSM Update", updateAvailable && updateAvailable.state === "on" ? "Available" : "Up to date", null),
+      tile("Uptime", nasUptimeText("sensor.nas01_uptime"), "sensor.nas01_uptime"),
+      tile("Fan Mode", fanMode ? fanMode.state : "—", null),
+      tile("NAS Temp", nasFormatTemp("sensor.nas01_temperature"), "sensor.nas01_temperature"),
+    ].join("");
+  }
+
+  const dsmBtn = document.getElementById("nas-dsm-btn");
+  if (dsmBtn) dsmBtn.hidden = !nasDsmLinkVisible(state);
+}
+
+/**
+ * openNasOverlay — entry point for the NAS chip (action: "nas" in
+ * CONFIG.controls). Populates the overlay from the live state cache, then
+ * opens it. No fetch of its own — see refreshNasOverlay() above.
+ */
+function openNasOverlay() {
+  haptic("light");
+  refreshNasOverlay();
+  document.getElementById("nas-overlay").classList.add("open");
+}
+
+function closeNasOverlay(e) {
+  if (e && e.target !== document.getElementById("nas-overlay")) return;
+  haptic("light");
+  document.getElementById("nas-overlay").classList.remove("open");
 }
 
 async function tvControlAction(activity) {
@@ -17095,6 +17601,7 @@ document.addEventListener('keydown', e => {
   if (document.getElementById("alert-overlay")?.classList.contains("open"))       closeAlertOverlay();
   if (document.getElementById("security-overlay")?.classList.contains("open"))    closeSecurity();
   if (document.getElementById("tv-control-overlay")?.classList.contains("open"))  closeTVControlOverlay();
+  if (document.getElementById("nas-overlay")?.classList.contains("open"))         closeNasOverlay();
   if (document.getElementById("thermostat-overlay")?.classList.contains("open"))  closeThermostat();
   if (document.getElementById("weather-fs-overlay")?.classList.contains("open"))  closeWeatherFS();
   if (document.getElementById("solar-fs-overlay")?.classList.contains("open"))    closeSolarFS();
@@ -17814,8 +18321,11 @@ function _buildOv2Controls() {
   const list = document.getElementById("ov2-controls-list");
   if (!list) return;
   const hasPopup = c => c.action || c.subEntities || c.subGroups;
+  // NAS chip is admin-only — see buildControls() for the same check and its
+  // reasoning.
+  const ov2ChipClass = c => `ov2-ctrl-btn${c.on ? " on" : ""}${c.isNasChip ? " chip-nas" : ""}${c.isNasChip && !isAdminViewer() ? " chip-hidden" : ""}`;
   list.innerHTML = activeControls.map((c, i) => `
-    <button class="ov2-ctrl-btn${c.on ? " on" : ""}" id="ov2-ctrl-${i}"
+    <button class="${ov2ChipClass(c)}" id="ov2-ctrl-${i}"
       onclick="${HOMIE_CUSTOM.controlOnClick(c, i)}">
       <div class="ov2-ctrl-dot"></div>
       <span class="ov2-ctrl-label">${escapeHtml(c.label)}</span>
@@ -18077,6 +18587,11 @@ function _buildOv3SidebarControls() {
     if (ctrl.action === "harmony") {
       return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>`;
     }
+    if (ctrl.action === "nas") {
+      // Two stacked drive bays — same visual idea as mdi:nas, drawn in this
+      // sidebar's own hand-rolled icon style rather than a font glyph.
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><circle cx="6" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="6" cy="17" r="1" fill="currentColor" stroke="none"/></svg>`;
+    }
     const subs = ctrl.subGroups
       ? ctrl.subGroups.flatMap(g => g.subEntities || [])
       : (ctrl.subEntities || []);
@@ -18126,7 +18641,10 @@ function _buildOv3SidebarControls() {
     const clickFn = c.action ? HOMIE_CUSTOM.controlOnClick(c, i)
       : hasPopup(c) ? `openPopup(${i})` : `_ov3ToggleChip(${i})`;
     const iconSvg = _sbIcon(c);
-    return `<button class="ov3-sb-btn" id="ov3-sb-ctrl-${i}" onclick="${clickFn}" title="${escapeHtml(c.label)}">${iconSvg}<div class="ov3-sb-dot"></div><div class="ov3-sb-alert-dot" id="ov3-sb-alert-${i}"></div></button>`;
+    // NAS chip is admin-only — see buildControls() for the same check and
+    // its reasoning.
+    const btnClass = `ov3-sb-btn${c.isNasChip ? " chip-nas" : ""}${c.isNasChip && !isAdminViewer() ? " chip-hidden" : ""}`;
+    return `<button class="${btnClass}" id="ov3-sb-ctrl-${i}" onclick="${clickFn}" title="${escapeHtml(c.label)}">${iconSvg}<div class="ov3-sb-dot"></div><div class="ov3-sb-alert-dot" id="ov3-sb-alert-${i}"></div></button>`;
   }).join('');
 }
 
@@ -18158,10 +18676,18 @@ function _refreshOv3SidebarControls() {
       ? (c.subGroups || []).flatMap(g => g.scenes || []).some(sc => sceneIsOn(sc.entities))
       : c.isMusicChip
         ? musicChipIsOn(c)
-        : subs.length
-          ? subs.some(s => entityIsActive(s.entity))
-          : entityIsActive(c.entity);
+        : c.isNasChip
+          ? nasChipNeedsAttention()
+          : subs.length
+            ? subs.some(s => entityIsActive(s.entity))
+            : entityIsActive(c.entity);
     btn.classList.toggle("on", isOn);
+
+    if (c.isNasChip) {
+      // Re-checked every refresh cycle — see the matching comment in
+      // refreshControls().
+      btn.classList.toggle("chip-hidden", !isAdminViewer());
+    }
 
     if (c.label === "Irrigation") {
       const alertDot = document.getElementById(`ov3-sb-alert-${i}`);
