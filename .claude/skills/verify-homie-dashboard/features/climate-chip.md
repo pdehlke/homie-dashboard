@@ -47,7 +47,7 @@ Preconditions:
   python3 ../scripts/make-auth-state.py HOMIE_TOKEN /tmp/homie-auth-state.json
   playwright-cli open
   playwright-cli state-load /tmp/homie-auth-state.json
-  playwright-cli goto "http://hass.ehlke.net/homie-dash/0"
+  playwright-cli goto "https://hass.ehlke.net/homie-dash/0"
   playwright-cli snapshot
   playwright-cli click <ref-for-Climate-chip>
   ```
@@ -64,7 +64,7 @@ Preconditions:
 - **Cross-check against the real entity**, e.g. for the Main House zone:
 
   ```bash
-  HB="Authorization: Bearer $HA_TOKEN"; U=http://hass.ehlke.net
+  HB="Authorization: Bearer $HA_TOKEN"; U=https://hass.ehlke.net
   curl -s --max-time 8 -H "$HB" "$U/api/states/climate.casasolar_south_zone_1" | \
     python3 -c "import json,sys; d=json.load(sys.stdin); a=d['attributes']; print(d['state'], a.get('hvac_action'), a.get('target_temp_high'), a.get('target_temp_low'))"
   ```

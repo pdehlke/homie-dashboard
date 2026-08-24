@@ -8,10 +8,13 @@ const HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN";
 // the Fire HD tablet included, whose FireOS has no mDNS resolver and could
 // never reach homeassistant.local. Replaces the literal-IP workaround this
 // file used from 2026-08-10 to 2026-08-11; see homie-dashboard-install-plan.md.
-// Port dropped 2026-08-24: HA moved behind a Caddy reverse proxy on plain
-// HTTP port 80 as part of the Pi-to-Proxmox migration; :8123 no longer works
-// at all. See docs/networking/caddy-reverse-proxy.md in pdehlke/homeassistant.
-const WS_URL = "ws://hass.ehlke.net/api/websocket";
+// Port dropped 2026-08-24: HA moved behind a Caddy reverse proxy as part of
+// the Pi-to-Proxmox migration; :8123 no longer works at all. Scheme flipped
+// to wss:// the same day when Caddy's automatic HTTPS went live (real Let's
+// Encrypt certificate; plain HTTP now redirects). A browser refuses to open
+// a plain ws:// connection from a page loaded over https, so this was not
+// optional: see docs/networking/caddy-reverse-proxy.md in pdehlke/homeassistant.
+const WS_URL = "wss://hass.ehlke.net/api/websocket";
 const BASE = WS_URL
   .replace(/^wss:\/\//, "https://")
   .replace(/^ws:\/\//, "http://")

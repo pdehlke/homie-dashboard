@@ -47,8 +47,8 @@ Preconditions:
   python3 ../scripts/make-auth-state.py HOMIE_TOKEN /tmp/homie-auth-state.json
   playwright-cli open
   playwright-cli state-load /tmp/homie-auth-state.json
-  playwright-cli goto "http://hass.ehlke.net/homie-dash/0"
-  HB="Authorization: Bearer $HA_TOKEN"; U=http://hass.ehlke.net
+  playwright-cli goto "https://hass.ehlke.net/homie-dash/0"
+  HB="Authorization: Bearer $HA_TOKEN"; U=https://hass.ehlke.net
   curl -s --max-time 8 -H "$HB" "$U/api/states/scene.bedroom_evening" | python3 -m json.tool
   ```
 

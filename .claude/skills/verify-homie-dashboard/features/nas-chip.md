@@ -46,7 +46,7 @@ Preconditions:
   python3 ../scripts/make-auth-state.py HA_TOKEN /tmp/pete-auth-state.json
   playwright-cli -s=admin open
   playwright-cli -s=admin state-load /tmp/pete-auth-state.json
-  playwright-cli -s=admin goto "http://hass.ehlke.net/homie-dash/0"
+  playwright-cli -s=admin goto "https://hass.ehlke.net/homie-dash/0"
   playwright-cli -s=admin eval "() => document.querySelector('.chip-nas')?.classList.contains('chip-hidden')"
   ```
 
@@ -61,7 +61,7 @@ Preconditions:
   python3 ../scripts/make-auth-state.py HOMIE_TOKEN /tmp/homie-auth-state.json
   playwright-cli -s=nonadmin open
   playwright-cli -s=nonadmin state-load /tmp/homie-auth-state.json
-  playwright-cli -s=nonadmin goto "http://hass.ehlke.net/homie-dash/0"
+  playwright-cli -s=nonadmin goto "https://hass.ehlke.net/homie-dash/0"
   playwright-cli -s=nonadmin eval "() => document.querySelector('.chip-nas')?.classList.contains('chip-hidden')"
   ```
 

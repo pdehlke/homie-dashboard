@@ -37,7 +37,7 @@ Preconditions:
   python3 ../scripts/make-auth-state.py HOMIE_TOKEN /tmp/homie-auth-state.json
   playwright-cli open
   playwright-cli state-load /tmp/homie-auth-state.json
-  playwright-cli goto "http://hass.ehlke.net/homie-dash/0"
+  playwright-cli goto "https://hass.ehlke.net/homie-dash/0"
   ```
 
   Wait ~7s (weather/background load late), then `playwright-cli console`
@@ -52,7 +52,7 @@ Preconditions:
 
   ```bash
   playwright-cli screenshot --filename=../evidence/overview-a-<run-id>.png
-  HB="Authorization: Bearer $HA_TOKEN"; U=http://hass.ehlke.net
+  HB="Authorization: Bearer $HA_TOKEN"; U=https://hass.ehlke.net
   for e in sensor.homie_solar_generation sensor.homie_whole_house_load sensor.homie_grid_flow; do
     curl -s --max-time 8 -H "$HB" "$U/api/states/$e" | \
       python3 -c "import json,sys; d=json.load(sys.stdin); print(d['entity_id'],'=',d['state'])"

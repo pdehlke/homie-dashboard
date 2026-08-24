@@ -44,13 +44,13 @@ Preconditions:
   python3 ../scripts/make-auth-state.py HOMIE_TOKEN /tmp/homie-auth-state.json
   playwright-cli open
   playwright-cli state-load /tmp/homie-auth-state.json
-  playwright-cli goto "http://hass.ehlke.net/homie-dash/0"
+  playwright-cli goto "https://hass.ehlke.net/homie-dash/0"
   ```
 
 - **Read baseline state.**
 
   ```bash
-  HB="Authorization: Bearer $HA_TOKEN"; U=http://hass.ehlke.net
+  HB="Authorization: Bearer $HA_TOKEN"; U=https://hass.ehlke.net
   curl -s --max-time 8 -H "$HB" "$U/api/states/media_player.crestron" | \
     python3 -c "import json,sys; d=json.load(sys.stdin); print(d['state'], d.get('attributes',{}).get('media_title'))"
   ```

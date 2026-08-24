@@ -99,7 +99,7 @@ To check the add-on state from the sibling `homeassistant` repo:
 
 ```bash
 cd /Users/pde/src/github.com/pdehlke/homeassistant
-export HA_URL=http://hass.ehlke.net
+export HA_URL=https://hass.ehlke.net
 python3 .claude/skills/home-assistant/scripts/haws.py \
   '{"type":"supervisor/api","endpoint":"/addons/a0d7b954_ssh/info","method":"get"}'
 ```
@@ -115,8 +115,8 @@ per scratch dir with `npm install @playwright/cli@latest`). There is no
 
 **Two ways to load the app, pick based on what the feature needs:**
 
-- **Direct file, no HA login.** `http://hass.ehlke.net/local/community/homie-dashboard/homie-dashboard.html?v=<version>`. Homie authenticates its own WebSocket using the token baked into the live `config.js`; the browser never needs an HA session. Use this for anything that is purely Homie's own state (chip toggles, popups, Music Assistant playback) and does not depend on which HA user is "logged in."
-- **Full Lovelace path, HA-session-aware.** `http://hass.ehlke.net/homie-dash/0`. This is what the Fire HD tablet actually loads: Homie runs inside HA's own iframe strategy dashboard, `kiosk_mode` hides the outer header/sidebar for the `Homie Dashboard` user, and same-origin cross-frame features (`isAdminViewer()` for the NAS chip, the Climate chip's native `hass-more-info` dialog) only work here, because they read the parent frame's real logged-in `hass.user`. Requires an HA browser session — inject one without ever touching the login form:
+- **Direct file, no HA login.** `https://hass.ehlke.net/local/community/homie-dashboard/homie-dashboard.html?v=<version>`. Homie authenticates its own WebSocket using the token baked into the live `config.js`; the browser never needs an HA session. Use this for anything that is purely Homie's own state (chip toggles, popups, Music Assistant playback) and does not depend on which HA user is "logged in."
+- **Full Lovelace path, HA-session-aware.** `https://hass.ehlke.net/homie-dash/0`. This is what the Fire HD tablet actually loads: Homie runs inside HA's own iframe strategy dashboard, `kiosk_mode` hides the outer header/sidebar for the `Homie Dashboard` user, and same-origin cross-frame features (`isAdminViewer()` for the NAS chip, the Climate chip's native `hass-more-info` dialog) only work here, because they read the parent frame's real logged-in `hass.user`. Requires an HA browser session — inject one without ever touching the login form:
 
 ```bash
 python3 .claude/skills/verify-homie-dashboard/scripts/make-auth-state.py HOMIE_TOKEN /path/to/scratch/homie-auth-state.json   # Homie Dashboard account, non-admin
@@ -128,16 +128,26 @@ Then, from wherever `playwright-cli` is installed:
 ```bash
 playwright-cli open
 playwright-cli state-load /path/to/scratch/homie-auth-state.json
-playwright-cli goto "http://hass.ehlke.net/homie-dash/0"
+playwright-cli goto "https://hass.ehlke.net/homie-dash/0"
 # give it ~7s: weather/solar/background images load late
 playwright-cli screenshot --filename=/path/to/evidence/whatever.png
 playwright-cli close
 ```
 
-Verified working 2026-08-23 (this exact sequence, `HOMIE_TOKEN` account):
-loaded, console showed `Homie Dashboard package initialized successfully.`,
-screenshot showed real live data (see `evidence/overview-a-homie-account.png`
-and the Overview A feature file).
+Verified working 2026-08-24 (this exact sequence, `HOMIE_TOKEN` account, over
+HTTPS): loaded, real live data rendered (weather, status grid, solar pill),
+zero Mixed Content or WebSocket errors, only the same pre-existing unrelated
+console entries (`navigator.vibrate`, the `rss-news-card` duplicate
+custom-element warning) prior checkpoints already recorded. This re-proves,
+not supersedes, the 2026-08-23 confirmation below. The sequence itself
+hasn't changed, only the URL scheme.
+
+Superseded but left for the record: verified working 2026-08-23 (same
+sequence, over plain HTTP, before Caddy's automatic HTTPS went live 2026-08-24;
+see [docs/networking/caddy-reverse-proxy.md](../../../../homeassistant/docs/networking/caddy-reverse-proxy.md)
+in the sibling `homeassistant` repo): loaded, console showed `Homie Dashboard
+package initialized successfully.`, screenshot showed real live data (see
+`evidence/overview-a-homie-account.png` and the Overview A feature file).
 
 For anything that has to reach inside the DOM directly (reading a chip's
 computed state, calling a global function like `musicStationIsOn()`, or

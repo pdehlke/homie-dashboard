@@ -20,7 +20,7 @@ import os
 import pathlib
 import sys
 
-URL = os.environ.get("HA_URL", "http://hass.ehlke.net")
+URL = os.environ.get("HA_URL", "https://hass.ehlke.net")
 
 
 def main() -> int:
