@@ -27,7 +27,7 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE_URL = os.environ.get("HA_URL", "http://hass.ehlke.net:8123")
+BASE_URL = os.environ.get("HA_URL", "http://hass.ehlke.net")
 LIVE_ROOT = f"{BASE_URL}/local/community/homie-dashboard"
 DIST = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent / "dist"
 TIMEOUT = 8

@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260817.2");
+  assert.equal(version, "20260824.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1376,11 +1376,12 @@ test("shared UI defaults select Screen A, Steel Blue, and 12-hour time", () => {
   assert.deepEqual(Array.from(config.backgroundImages || []), []);
 });
 
-test("Homie connects to Home Assistant by real DNS name, not the old mDNS hostname or literal IP", () => {
+test("Homie connects to Home Assistant by real DNS name, no port, not the old mDNS hostname, literal IP, or :8123", () => {
   const source = fs.readFileSync(path.join(workDir, "config.js"), "utf8");
-  assert.match(source, /const WS_URL = "ws:\/\/hass\.ehlke\.net:8123\/api\/websocket";/);
+  assert.match(source, /const WS_URL = "ws:\/\/hass\.ehlke\.net\/api\/websocket";/);
   assert.doesNotMatch(source, /const WS_URL = .*homeassistant\.local/);
   assert.doesNotMatch(source, /const WS_URL = .*192\.168\.4\.125/);
+  assert.doesNotMatch(source, /const WS_URL = .*:8123/);
 });
 
 test("custom actions route Climate and A/V without generic toggles", () => {
