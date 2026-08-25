@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260824.2");
+  assert.equal(version, "20260824.3");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1260,6 +1260,7 @@ test("control row and popup mappings match the approved design", () => {
       ["library://radio/5", "The Jam"],
       ["library://radio/38", "1st Wave"],
       ["library://radio/39", "Blues"],
+      ["library://radio/40", "AltNation"],
     ],
   );
   for (const station of config.controls[3].subGroups[0].stations) {

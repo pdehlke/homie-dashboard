@@ -1,7 +1,7 @@
 # Music chip
 
-Six radio-station bubbles (Jazz: Hiromi, 80s/90s, Dinner Party, The Jam, 1st
-Wave, Blues) played through Music Assistant on `media_player.crestron`. A
+Seven radio-station bubbles (Jazz: Hiromi, 80s/90s, Dinner Party, The Jam, 1st
+Wave, Blues, AltNation) played through Music Assistant on `media_player.crestron`. A
 tap starts Harmony Hub's Airplay activity, sets the Crestron player to its
 idle-start volume, then plays the station. Tapping the active bubble again
 stops Music Assistant and turns Harmony off. On-state is derived live from
@@ -56,7 +56,7 @@ Preconditions:
   ```
 
 - **Open the chip and tap a station.** Snapshot to find the bubble's ref
-  (labels match the six station names above), click it, then re-read
+  (labels match the seven station names above), click it, then re-read
   `media_player.crestron` — expect `state: playing` within a few seconds and
   `media_title` reflecting the station.
 
