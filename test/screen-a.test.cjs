@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260824.3");
+  assert.equal(version, "20260826.4");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -949,7 +949,7 @@ test("togglePopupMusic plays and resets volume to 40% when the player was idle",
   const music = loadMusicToggle();
   music.setState("media_player.crestron", "idle", {});
   await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
-  assert.equal(music.calls.length, 3);
+  assert.equal(music.calls.length, 4);
   assert.equal(music.calls[0].domain, "remote");
   assert.equal(music.calls[0].service, "turn_on");
   assert.equal(music.calls[0].data.entity_id, "remote.harmony_hub");
@@ -958,26 +958,113 @@ test("togglePopupMusic plays and resets volume to 40% when the player was idle",
   assert.equal(music.calls[1].service, "volume_set");
   assert.equal(music.calls[1].data.entity_id, "media_player.crestron");
   assert.equal(music.calls[1].data.volume_level, 0.4);
-  assert.equal(music.calls[2].domain, "music_assistant");
-  assert.equal(music.calls[2].service, "play_media");
-  assert.equal(music.calls[2].data.entity_id, "media_player.crestron");
-  assert.equal(music.calls[2].data.media_id, "library://radio/38");
-  assert.equal(music.calls[2].data.media_type, "radio");
+  assert.equal(music.calls[2].domain, "media_player");
+  assert.equal(music.calls[2].service, "shuffle_set");
+  assert.equal(music.calls[2].data.shuffle, false, "radio always plays unshuffled");
+  assert.equal(music.calls[3].domain, "music_assistant");
+  assert.equal(music.calls[3].service, "play_media");
+  assert.equal(music.calls[3].data.entity_id, "media_player.crestron");
+  assert.equal(music.calls[3].data.media_id, "library://radio/38");
+  assert.equal(music.calls[3].data.media_type, "radio");
   assert.ok(music.classesOf("pmb-0-4").has("on"), "bubble should show on optimistically after playing");
+});
+
+test("togglePopupMusic sends the bubble's own mediaType through to play_media, defaulting to radio when omitted", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "idle", {});
+  await music.toggle("media_player.crestron", "library://playlist/10", "pmb-1-0", "playlist");
+  assert.equal(music.calls[3].domain, "music_assistant");
+  assert.equal(music.calls[3].service, "play_media");
+  assert.equal(music.calls[3].data.media_id, "library://playlist/10");
+  assert.equal(music.calls[3].data.media_type, "playlist");
+  assert.ok(music.classesOf("pmb-1-0").has("on"));
+});
+
+test("togglePopupMusic always shuffles a Playlists bubble and never a Stations bubble", async () => {
+  // Verified live 2026-08-26: media_player.shuffle_set(true) called before
+  // music_assistant.play_media survives into the new queue and changes which
+  // track plays first, so it must run before play_media, not after.
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "idle", {});
+  await music.toggle("media_player.crestron", "library://playlist/10", "pmb-1-0", "playlist");
+  const shuffleCall = music.calls.find((c) => c.service === "shuffle_set");
+  assert.equal(shuffleCall.data.shuffle, true);
+  assert.ok(
+    music.calls.indexOf(shuffleCall) < music.calls.findIndex((c) => c.service === "play_media"),
+    "shuffle must be set before play_media, not after",
+  );
+});
+
+test("togglePopupMusic tracks a playing playlist's on-state separately, since media_content_id becomes a track URI once it actually plays", async () => {
+  // Real bug, caught live 2026-08-26 driving the deployed Alternative
+  // bubble: MA rewrites media_content_id to the currently-playing track's
+  // own URI (e.g. library://track/851) the instant a playlist starts, never
+  // the playlist's own URI. A naive media_content_id === uri check (radio's
+  // check, correct for radio) would never read a playing playlist as "on",
+  // and worse, tapping the bubble again would restart it instead of
+  // stopping it, since wasOn would always be false.
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "idle", {});
+  await music.toggle("media_player.crestron", "library://playlist/10", "pmb-1-0", "playlist");
+  assert.equal(music.calls.length, 4);
+  assert.equal(music.calls[3].data.media_id, "library://playlist/10");
+  assert.equal(music.calls[3].data.media_type, "playlist");
+  assert.ok(music.classesOf("pmb-1-0").has("on"));
+
+  // Simulate exactly what MA does live: media_content_id now names a track,
+  // not the playlist.
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://track/851" });
+  assert.equal(
+    music.stationIsOn("media_player.crestron", "library://playlist/10"),
+    true,
+    "must still read on via the optimistic tracker; a media_content_id match can never succeed for a playing playlist",
+  );
+
+  // Tapping the same bubble again must stop it, not restart it.
+  await music.toggle("media_player.crestron", "library://playlist/10", "pmb-1-0", "playlist");
+  assert.equal(music.calls.length, 6);
+  assert.equal(music.calls[4].domain, "media_player");
+  assert.equal(music.calls[4].service, "media_stop");
+  assert.equal(music.calls[5].domain, "remote");
+  assert.equal(music.calls[5].service, "turn_off");
+  assert.ok(!music.classesOf("pmb-1-0").has("on"));
+  assert.equal(
+    music.stationIsOn("media_player.crestron", "library://playlist/10"),
+    false,
+    "the optimistic tracker must clear on stop, not just the bubble's own CSS class",
+  );
+});
+
+test("togglePopupMusic clears a stale playlist on-marker when a Stations bubble takes over the player", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "idle", {});
+  await music.toggle("media_player.crestron", "library://playlist/10", "pmb-1-0", "playlist");
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://track/851" });
+  assert.equal(music.stationIsOn("media_player.crestron", "library://playlist/10"), true);
+
+  // Switching to a station bubble while the playlist is "on" must not leave
+  // the playlist marked on too: only one bubble can be on at a time.
+  await music.toggle("media_player.crestron", "library://radio/1", "pmb-0-0");
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/1" });
+  assert.equal(music.stationIsOn("media_player.crestron", "library://playlist/10"), false);
+  assert.equal(music.stationIsOn("media_player.crestron", "library://radio/1"), true);
 });
 
 test("togglePopupMusic hot-switches straight to a new station without touching volume when already playing", async () => {
   const music = loadMusicToggle();
   music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/1" });
   await music.toggle("media_player.crestron", "library://radio/38", "pmb-0-4");
-  assert.equal(music.calls.length, 2); // no volume_set call this time
+  assert.equal(music.calls.length, 3); // no volume_set call this time
   assert.equal(music.calls[0].domain, "remote");
   assert.equal(music.calls[0].service, "turn_on");
   assert.equal(music.calls[0].data.entity_id, "remote.harmony_hub");
   assert.equal(music.calls[0].data.activity, "Airplay");
-  assert.equal(music.calls[1].domain, "music_assistant");
-  assert.equal(music.calls[1].service, "play_media");
-  assert.equal(music.calls[1].data.media_id, "library://radio/38");
+  assert.equal(music.calls[1].domain, "media_player");
+  assert.equal(music.calls[1].service, "shuffle_set");
+  assert.equal(music.calls[1].data.shuffle, false);
+  assert.equal(music.calls[2].domain, "music_assistant");
+  assert.equal(music.calls[2].service, "play_media");
+  assert.equal(music.calls[2].data.media_id, "library://radio/38");
 });
 
 test("togglePopupMusic stops playback and turns off Harmony when tapping the currently-active station's own bubble", () => {
@@ -1025,12 +1112,14 @@ test("refreshOpenMusicPopup marks a station's bubble disabled, and never on, whi
 
 test("the Music chip's initial bubble render also marks a station disabled at build time, not just on the next refresh tick", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
-  const openStart = source.indexOf("async function openPopup(i)");
-  const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
-  assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
-  const musicBlockStart = source.indexOf("if (c.isMusicChip)", openStart);
-  assert.ok(musicBlockStart > -1 && musicBlockStart < openEnd, "Music chip render branch must be found inside openPopup");
-  const musicBlock = source.slice(musicBlockStart, openEnd);
+  // Music bubbles render inside toggleRoomAccordion()'s isMusicControl branch
+  // now (the accordion generalization), not a bespoke block in openPopup.
+  const traStart = source.indexOf("async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx)");
+  const traEnd = source.indexOf("\n/**\n * togglePopupScene", traStart);
+  assert.ok(traStart > -1 && traEnd > traStart, "toggleRoomAccordion must be found");
+  const musicBlockStart = source.indexOf("isMusicControl) {", traStart);
+  assert.ok(musicBlockStart > -1 && musicBlockStart < traEnd, "Music bubble render branch must be found inside toggleRoomAccordion");
+  const musicBlock = source.slice(musicBlockStart, traEnd);
   assert.match(musicBlock, /state\s*===\s*["']unavailable["']/, "initial render must know about unavailable, not just musicStationIsOn's on/off");
   assert.match(musicBlock, /disabled/, "must actually emit the disabled class into the built HTML");
 });
@@ -1043,11 +1132,11 @@ test("disabled Music bubble styling reuses the app's existing muted-red 'can't u
 test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
 
-  // Popup bubble render.
-  const openStart = source.indexOf("async function openPopup(i)");
-  const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
-  assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
-  assert.match(source.slice(openStart, openEnd), /const on = !disabled && musicStationIsOn\(c\.entity, st\.uri\)/);
+  // Popup bubble render, now toggleRoomAccordion()'s isMusicControl branch.
+  const traStart = source.indexOf("async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx)");
+  const traEnd = source.indexOf("\n/**\n * togglePopupScene", traStart);
+  assert.ok(traStart > -1 && traEnd > traStart, "toggleRoomAccordion must be found");
+  assert.match(source.slice(traStart, traEnd), /const on = !disabled && musicStationIsOn\(c\.entity, s\.uri\)/);
 
   // Bottom chip glow (no count badge, see the config comment).
   const rcStart = source.indexOf("function refreshControls()");
@@ -1242,15 +1331,20 @@ test("control row and popup mappings match the approved design", () => {
     ],
   );
   // Music: isMusicChip / subGroups[].stations[], the Scenes chip's shape
-  // adapted for radio presets. Every bubble shares the one chip-level
-  // `entity` (there's only one physical player), unlike Scenes where each
-  // bubble carries its own entities — see
+  // adapted for radio presets and library playlists. Every bubble shares the
+  // one chip-level `entity` (there's only one physical player), unlike
+  // Scenes where each bubble carries its own entities — see
   // docs/homie-dashboard/homie-music-chip.md in the pdehlke/homeassistant
-  // repo. Deliberately no showCount (see the config comment).
+  // repo. Deliberately no showCount (see the config comment). Two labeled
+  // subGroups render as an accordion: "Stations" (radio, mediaType omitted,
+  // togglePopupMusic defaults to "radio") and "Playlists" (MA library
+  // playlists sourced from Jellyfin, explicit mediaType: "playlist").
   assert.equal(config.controls[3].isMusicChip, true);
   assert.equal(config.controls[3].entity, "media_player.crestron");
   assert.equal(config.controls[3].showCount, undefined);
-  assert.equal(config.controls[3].subGroups.length, 1);
+  assert.equal(config.controls[3].subGroups.length, 2);
+  assert.equal(config.controls[3].subGroups[0].label, "Stations");
+  assert.equal(config.controls[3].subGroups[1].label, "Playlists");
   assert.deepEqual(
     Array.from(config.controls[3].subGroups[0].stations, (station) => [station.uri, station.label]),
     [
@@ -1265,6 +1359,14 @@ test("control row and popup mappings match the approved design", () => {
   );
   for (const station of config.controls[3].subGroups[0].stations) {
     assert.match(station.uri, /^library:\/\/radio\/\d+$/);
+    assert.equal(station.mediaType, undefined, "Stations entries omit mediaType; togglePopupMusic defaults to radio");
+  }
+  assert.deepEqual(
+    Array.from(config.controls[3].subGroups[1].stations, (station) => [station.uri, station.label, station.mediaType]),
+    [["library://playlist/10", "Alternative", "playlist"]],
+  );
+  for (const station of config.controls[3].subGroups[1].stations) {
+    assert.match(station.uri, /^library:\/\/playlist\/\d+$/);
   }
   // Scenes: stock isSceneChip mechanism. Each scene's "entities" is one or
   // more real scene.* entities — togglePopupScene fires scene.turn_on /

@@ -296,20 +296,39 @@ const CONFIG = {
     },
     {
       // Bottom-row equivalent of the Scenes chip (isSceneChip / subGroups[].scenes[])
-      // but for radio presets: isMusicChip / subGroups[].stations[]. Every bubble
-      // targets the one fixed `entity` below rather than carrying its own, since
-      // there's only one physical player these presets can play through. On-state
-      // is derived live from that entity's own state/media_content_id
-      // (musicStationIsOn(), homie-dashboard.html) rather than tracked separately,
-      // same reasoning as sceneIsOn() — see docs/homie-dashboard/homie-music-chip.md
-      // in the pdehlke/homeassistant repo for the full design writeup (parallels
-      // homie-scenes-chip.md). Deliberately no showCount: at most one of these can
-      // ever be "on" at once, so an "N on" badge would only ever read 0 or 1.
+      // but for radio presets and library playlists: isMusicChip /
+      // subGroups[].stations[]. Every bubble targets the one fixed `entity`
+      // below rather than carrying its own, since there's only one physical
+      // player these presets can play through. On-state is derived live from
+      // that entity's own state/media_content_id (musicStationIsOn(),
+      // homie-dashboard.html) rather than tracked separately, same reasoning
+      // as sceneIsOn() — see docs/homie-dashboard/homie-music-chip.md in the
+      // pdehlke/homeassistant repo for the full design writeup (parallels
+      // homie-scenes-chip.md). Deliberately no showCount: at most one of
+      // these can ever be "on" at once, so an "N on" badge would only ever
+      // read 0 or 1.
+      //
+      // Two labeled subGroups render as an accordion (the same
+      // toggleRoomAccordion() mechanism the Lights chip uses, generalized in
+      // homie-dashboard.html to build a bubble grid instead of Mushroom cards
+      // when the group belongs to a Music chip): "Stations" is Music
+      // Assistant's own radio presets (`library://radio/<n>`); "Playlists" is
+      // MA library playlists (`library://playlist/<n>`) sourced from Jellyfin.
+      // MA ingests a Jellyfin playlist into its regular library exactly like
+      // any other playlist, so this needs no bridge to MA's native (non-HA)
+      // API. A bubble's `mediaType` selects which `music_assistant.play_media`
+      // media_type gets sent; omitted means "radio" (togglePopupMusic's
+      // default), so every existing Station entry below is unchanged. Every
+      // Playlists entry always plays shuffled (togglePopupMusic sets
+      // media_player.shuffle_set accordingly before play_media); Stations
+      // explicitly turn shuffle back off, since it's meaningless for radio
+      // and would otherwise carry over from a previous Playlists tap.
       label: "Music",
       isMusicChip: true,
       entity: "media_player.crestron",
       subGroups: [
         {
+          label: "Stations",
           stations: [
             {
               uri: "library://radio/1",
@@ -345,6 +364,20 @@ const CONFIG = {
               uri: "library://radio/40",
               label: "AltNation",
               icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.25a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+            },
+          ],
+        },
+        {
+          label: "Playlists",
+          stations: [
+            {
+              uri: "library://playlist/10",
+              label: "Alternative",
+              mediaType: "playlist",
+              // Lucide "list-music": three list rows + a music-note circle,
+              // distinct from the Stations glyph so a bubble's kind is
+              // readable at a glance even before reading its label.
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 6H3"/><path d="M16 12H3"/><path d="M12 18H3"/></svg>`,
             },
           ],
         },

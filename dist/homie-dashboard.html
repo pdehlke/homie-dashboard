@@ -1511,6 +1511,18 @@
     align-items: start;
   }
 
+  /* ─── WRAPPING BUBBLE ROW FOR MUSIC CARDS INSIDE ACCORDION PANEL ───
+   * .popup-room-panel's own flex-direction:column (base rule above) would
+   * stack bubbles one per line; this overrides back to the same wrapping
+   * row .popup-scenes-grid uses everywhere else, so a Music accordion panel
+   * looks like the Stations/Playlists bubble grid, not a list. */
+  .popup-room-panel.music-grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+
   /* ─── MUSHROOM-STYLE LIGHT CARDS ─── */
   .mush-light-card {
     background: rgba(255,255,255,0.05);
@@ -8909,7 +8921,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260824.3";
+      const HOMIE_ASSET_VERSION = "20260826.4";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -11227,19 +11239,42 @@ function sceneIsOn(entities) {
   });
 }
 
+// Tracks the last library://playlist/<n> URI togglePopupMusic started on a
+// given entity, entity -> uri. Radio doesn't need this: a station is one
+// continuous stream, so media_content_id stays equal to its own URI for as
+// long as it plays. A playlist queues discrete tracks, checked live
+// 2026-08-26: playing library://playlist/10 immediately made
+// media_content_id read library://track/851, never the playlist's own URI
+// again, and no media_player attribute names which playlist seeded the
+// current queue (media_content_id, active_queue, source, app_id all checked
+// live; none of them do). Without this map, musicStationIsOn would never
+// read a playing playlist bubble as "on", and worse, a second tap would
+// never see wasOn=true and would restart the playlist instead of stopping
+// it. Cleared whenever togglePopupMusic starts or stops anything else on
+// that entity, so switching to a station or a different playlist doesn't
+// leave a stale playlist marked on. This can drift from truth if playback is
+// redirected from elsewhere (another dashboard, an HA automation) without
+// going through togglePopupMusic again, the same class of limitation
+// _acCardState already accepts for AC cards, not a new one introduced here.
+const _lastPlaylistStarted = new Map();
+
 /**
  * musicStationIsOn — a Music chip bubble reads "on" only when its target
- * media_player is actually mid-playback of that exact station's URI, not
- * merely powered on. Unlike a scene (whose own state carries nothing useful,
- * so "on" has to be inferred from what it controls), a media_player's own
- * state and media_content_id already say everything needed, so there's no
- * separate affected-entities step the way sceneAffectedEntities() has.
+ * media_player is actually mid-playback of that exact bubble's URI, not
+ * merely powered on. For a Stations bubble (radio) this is a live check
+ * against media_content_id, same discipline sceneIsOn() follows for Scenes:
+ * a media_player's own state already says everything needed, no separate
+ * affected-entities step required. For a Playlists bubble it falls back to
+ * _lastPlaylistStarted above, since media_content_id itself can't answer the
+ * question once a playlist starts playing actual tracks.
  * Shared by the popup bubble ring, the chip glow (via musicChipIsOn()), and
- * the Overview C sidebar dot, same discipline sceneIsOn() follows for Scenes.
+ * the Overview C sidebar dot.
  */
 function musicStationIsOn(entity, uri) {
   const d = haGetCached(entity);
-  return !!d && d.state === "playing" && !!d.attributes && d.attributes.media_content_id === uri;
+  if (!d || d.state !== "playing") return false;
+  if (uri.startsWith("library://playlist/")) return _lastPlaylistStarted.get(entity) === uri;
+  return !!d.attributes && d.attributes.media_content_id === uri;
 }
 
 /**
@@ -12315,31 +12350,11 @@ async function openPopup(i) {
     return;
   }
 
-  // ── Music chip: render station bubbles, each showing live on/off ────────
-  if (c.isMusicChip) {
-    let musicHtml = "";
-    // Computed once per chip, not per station: every bubble shares the same
-    // target player, so they're all reachable or all unreachable together.
-    const disabled = haGetCached(c.entity)?.state === "unavailable";
-    (c.subGroups || []).forEach((group, gIdx) => {
-      if (group.label) musicHtml += `<div class="popup-group-label">${escapeHtml(group.label)}</div>`;
-      musicHtml += `<div class="popup-scenes-grid">`;
-      (group.stations || []).forEach((st, idx) => {
-        const bubbleId = `pmb-${gIdx}-${idx}`;
-        const on = !disabled && musicStationIsOn(c.entity, st.uri);
-        musicHtml += `
-          <div class="popup-scene-bubble" onclick="togglePopupMusic('${escapeHtml(c.entity)}','${escapeHtml(st.uri)}','${escapeHtml(bubbleId)}')">
-            <div class="popup-scene-icon${on ? " on" : ""}${disabled ? " disabled" : ""}" id="${bubbleId}" style="background:var(--accent)">${st.icon}</div>
-            <div class="popup-scene-label">${escapeHtml(st.label)}</div>
-          </div>`;
-      });
-      musicHtml += `</div>`;
-    });
-    list.innerHTML = "";
-    _openPopupOverlay("popup--scene");
-    requestAnimationFrame(() => { list.innerHTML = musicHtml; });
-    return;
-  }
+  // ── Music chip: no early return. Its two subGroups ("Stations",
+  // "Playlists") fall through into the generic accordion below, the same
+  // path the Lights chip uses, so bubble rendering is a card-type branch
+  // inside toggleRoomAccordion() rather than a bespoke flat grid here. See
+  // the isMusicControl branch there and the accordion block just below.
 
   // ── Determine card type from entity domain ───────────────────────────────
   // Fall back to first sub-entity domain when parent is a group/null.
@@ -12353,6 +12368,10 @@ async function openPopup(i) {
   const isClimateControl  = effectiveDomain === "climate";
   const isCoverControl    = effectiveDomain === "cover";
   const isPurifierControl = effectiveDomain === "fan";
+  // Music has its own explicit flag rather than a domain guess: its chip-level
+  // `entity` is media_player.crestron, a domain no other accordion chip uses,
+  // but relying on that would be an accident, not a rule.
+  const isMusicControl     = !!c.isMusicChip;
   // Scopes the disabled-zone red treatment to Irrigation specifically, not
   // every switch/input_boolean/fan card everywhere: an unrelated switch
   // going unavailable (a device offline, say) isn't "disabled" in the
@@ -12379,19 +12398,25 @@ async function openPopup(i) {
   if (!c.noRoomGrouping && c.subGroups) {
     // Build a flat list of all sub-entities across all groups, tracking offsets
     let flatSubs = [];
-    const groupMeta = c.subGroups.map(group => {
+    // group.stations (Music: {uri,label,icon,mediaType}) or group.subEntities
+    // (every other accordion chip: {label,entity,...}). Music has no
+    // per-item `.entity`, so downstream entity-keyed logic (the badge count
+    // below, hydrateCards' cache reads) naturally no-ops for it rather than
+    // needing its own guard.
+    const groupMeta = c.subGroups.map((group, gIdx) => {
       const startIdx = flatSubs.length;
-      (group.subEntities || []).forEach(s => flatSubs.push(s));
-      return { label: group.label, startIdx, count: group.subEntities ? group.subEntities.length : 0 };
+      const groupItems = group.subEntities || group.stations || [];
+      groupItems.forEach(s => flatSubs.push(s));
+      return { label: group.label, startIdx, count: groupItems.length, gIdx };
     });
 
     // Synthesise a room-id from the group label for stable DOM ids
     const roomIdOf = label => label.toLowerCase().replace(/\s+/g, "_");
 
-    let accordionHtml = groupMeta.map(({ label, startIdx, count }) => {
+    let accordionHtml = groupMeta.map(({ label, startIdx, count, gIdx }) => {
       const rid = roomIdOf(label);
       return `
-        <div class="popup-room-row" id="room-row-${rid}" onclick="toggleRoomAccordion('${rid}',${i},${startIdx},${count})">
+        <div class="popup-room-row" id="room-row-${rid}" onclick="toggleRoomAccordion('${rid}',${i},${startIdx},${count},${gIdx})">
           <div class="popup-room-row-left">
             <span class="popup-room-name">${escapeHtml(label)}</span>
             <span class="popup-room-badge" id="room-badge-${rid}"></span>
@@ -12408,6 +12433,7 @@ async function openPopup(i) {
     c._isClimate     = isClimateControl;
     c._isCover       = isCoverControl;
     c._isPurifier    = isPurifierControl;
+    c._isMusic       = isMusicControl;
 
     list.innerHTML = "";
     _openPopupOverlay("popup--compact");
@@ -13697,15 +13723,24 @@ let _openAccordionRoomId = null;
  * @param {number} ctrlIdx  — index into activeControls (the chip that was tapped)
  * @param {number} startIdx — start index of this room's entities in c._flatSubs
  * @param {number} count    — how many entities this room has
+ * @param {number} gIdx     — this group's index within c.subGroups. Only used
+ *                            by the Music branch, to build each bubble's DOM
+ *                            id as `pmb-${gIdx}-${k}`, the same scheme
+ *                            refreshOpenMusicPopup() already looks up by;
+ *                            every other card type ignores it.
  *
  * Performance notes:
- *  - Cards are built lazily (only on first open) and reused on re-open.
+ *  - Cards are built lazily (only on first open) and reused on re-open. Music
+ *    bubbles' on/off state doesn't need this function to re-hydrate them on
+ *    every re-open the way Mushroom cards do below: refreshOpenMusicPopup()
+ *    already keeps any built bubble's ring live from the moment it exists,
+ *    panel collapsed or not, for as long as the popup stays open.
  *  - State is read from the in-memory cache first; a network fetch is only
  *    triggered when an entity is genuinely missing from cache (cold start).
  *  - The panel opens and cards render synchronously; state hydration happens
  *    async so the expansion animation is never blocked.
  */
-async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count) {
+async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
   haptic("light");
   const c     = activeControls[ctrlIdx];
   const row   = document.getElementById(`room-row-${roomId}`);
@@ -13741,6 +13776,7 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count) {
   const isClimateControl = c._isClimate;
   const isCoverControl   = c._isCover;
   const isPurifierControl = c._isPurifier;
+  const isMusicControl   = c._isMusic;
   const COLOR_PRESETS    = c._colorPresets;
   const TEMP_PRESETS     = c._tempPresets;
 
@@ -13765,6 +13801,20 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count) {
       } else if (isClimateControl) parts.push(buildMushroomAcCard(ctrlIdx, j, s));
       else if (isCoverControl)   parts.push(buildMushroomCoverCard(ctrlIdx, j, s));
       else if (isPurifierControl) parts.push(buildMushroomPurifierCard(ctrlIdx, j, s));
+      else if (isMusicControl) {
+        // Same bubble markup the flat Music popup used before the accordion
+        // generalization. The id scheme (pmb-${gIdx}-${k}) matches what
+        // refreshOpenMusicPopup() looks up, so live on/off updates keep
+        // working even though this build only runs once per panel.
+        const disabled = haGetCached(c.entity)?.state === "unavailable";
+        const on = !disabled && musicStationIsOn(c.entity, s.uri);
+        const bubbleId = `pmb-${gIdx}-${k}`;
+        parts.push(`
+          <div class="popup-scene-bubble" onclick="togglePopupMusic('${escapeHtml(c.entity)}','${escapeHtml(s.uri)}','${escapeHtml(bubbleId)}','${escapeHtml(s.mediaType || "radio")}')">
+            <div class="popup-scene-icon${on ? " on" : ""}${disabled ? " disabled" : ""}" id="${bubbleId}" style="background:var(--accent)">${s.icon}</div>
+            <div class="popup-scene-label">${escapeHtml(s.label)}</div>
+          </div>`);
+      }
       else {
         const domain = s.entity ? s.entity.split(".")[0] : "";
         if (domain === "switch" || domain === "input_boolean" || domain === "fan")
@@ -13792,6 +13842,11 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count) {
         badge.classList.toggle("visible", activeCount > 0);
       }
       return; // hydration done — skip the generic hydration block below
+    } else if (isMusicControl) {
+      panel.classList.add("music-grid");
+      panel.innerHTML = parts.join("");
+      return; // on/off state is baked in above; refreshOpenMusicPopup() keeps
+               // it live from here, no per-entity hydration applies to bubbles
     } else {
       panel.innerHTML = parts.join("");
     }
@@ -13935,27 +13990,31 @@ async function togglePopupScene(entities, bubbleId) {
 }
 
 /**
- * togglePopupMusic — plays or stops a Music chip station on its target
- * media_player.
+ * togglePopupMusic — plays or stops a Music chip bubble (a Stations radio
+ * preset or a Playlists library playlist) on its target media_player.
  *
  * Off is an explicit media_player.media_stop followed by turning off the
  * Harmony Hub's Airplay activity, not pause — pde chose a clean stop over a
  * resumable pause for this chip (unlike Scenes, which has no off action of
  * its own and has to synthesize one; media_player already has a real stop).
- * On starts the Harmony Hub's Airplay activity, then plays the station through
- * Music Assistant's own
- * play_media service (media_id/media_type, the pattern already confirmed
- * working for radio content on this instance — see the home-assistant
- * skill's music-assistant.md), and only resets volume to 40% when the
- * player wasn't already mid-playback: switching directly between two
- * configured stations, or away from whatever else happened to be playing,
+ * On starts the Harmony Hub's Airplay activity, then plays the bubble's URI
+ * through Music Assistant's own play_media service (media_id/media_type, the
+ * pattern already confirmed working for radio content on this instance, see
+ * the home-assistant skill's music-assistant.md), and only resets volume to
+ * 40% when the player wasn't already mid-playback: switching directly between
+ * two configured bubbles, or away from whatever else happened to be playing,
  * leaves the volume exactly where it was rather than jumping on every tap.
  *
- * @param {string} entity   — target media_player entity_id (chip-level, not per-bubble)
- * @param {string} uri      — this bubble's station URI (library://radio/n)
- * @param {string} bubbleId — DOM id of the bubble element for animation
+ * @param {string} entity    — target media_player entity_id (chip-level, not per-bubble)
+ * @param {string} uri       — this bubble's URI (library://radio/n or library://playlist/n)
+ * @param {string} bubbleId  — DOM id of the bubble element for animation
+ * @param {string} [mediaType="radio"] — music_assistant.play_media's media_type
+ *                            for this bubble. Every Stations entry omits it
+ *                            (defaults to "radio"); Playlists entries set
+ *                            "playlist" explicitly via config.js's `mediaType`
+ *                            field.
  */
-async function togglePopupMusic(entity, uri, bubbleId) {
+async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
   // Bail before doing anything at all when the target player is unreachable
   // (HA hasn't restored a state for it yet, or it's outright `unavailable`,
   // e.g. mid-reconnect after an HA restart). Every service call below would
@@ -13982,6 +14041,7 @@ async function togglePopupMusic(entity, uri, bubbleId) {
   if (wasOn) {
     await haService("media_player", "media_stop", { entity_id: entity });
     await haService("remote", "turn_off", { entity_id: "remote.harmony_hub" });
+    _lastPlaylistStarted.delete(entity);
   } else {
     await haService("remote", "turn_on", {
       entity_id: "remote.harmony_hub",
@@ -13991,7 +14051,27 @@ async function togglePopupMusic(entity, uri, bubbleId) {
     if (!wasPlaying) {
       await haService("media_player", "volume_set", { entity_id: entity, volume_level: 0.4 });
     }
-    await haService("music_assistant", "play_media", { entity_id: entity, media_id: uri, media_type: "radio" });
+    // Playlists always shuffle; radio has no meaningful shuffle concept, and
+    // shuffle is a player-level setting that otherwise carries over from
+    // whatever last set it (checked live 2026-08-26: shuffle_set(true) while
+    // idle survived into the next play_media call, even changing which track
+    // played first), so a Stations tap must explicitly clear it rather than
+    // leave a stale "on" from an earlier Playlists tap. Set before play_media,
+    // not after: verified live that shuffling only the queue after the fact
+    // still plays its original first track, while setting it first shuffles
+    // that choice too.
+    const isPlaylist = uri.startsWith("library://playlist/");
+    await haService("media_player", "shuffle_set", { entity_id: entity, shuffle: isPlaylist });
+    await haService("music_assistant", "play_media", { entity_id: entity, media_id: uri, media_type: mediaType });
+    // See _lastPlaylistStarted's own comment above musicStationIsOn: a
+    // playlist's media_content_id stops matching its own URI the moment
+    // playback starts, so this is the only record of "this bubble is the one
+    // that's on" for a Playlists entry. A Stations tap clears any stale
+    // playlist marker for this entity, since switching to a station is
+    // exactly the kind of "something else took over the player" this must
+    // not miss.
+    if (isPlaylist) _lastPlaylistStarted.set(entity, uri);
+    else _lastPlaylistStarted.delete(entity);
   }
   // Optimistic instant feedback, same as togglePopupScene()'s — the WS
   // state_changed subscription reconciles this from real state shortly
@@ -15028,7 +15108,11 @@ function refreshOpenAcCards() {
     const subs = c._flatSubs || c.subEntities || [];
     for (let j = 0; j < subs.length; j++) {
       const s = subs[j];
-      if (!s.entity.startsWith("climate.")) continue;
+      // Music's flatSubs entries carry no `.entity` (uri instead), and now that
+      // Music flows through the same accordion path as Climate, c._flatSubs
+      // gets set on it too, so this guard must tolerate that shape rather
+      // than assume every _flatSubs owner is entity-keyed.
+      if (!s.entity || !s.entity.startsWith("climate.")) continue;
       const mem = _acCardState.get(s.entity);
       if (!mem) continue;
       const card = document.getElementById(`sub-${ci}-${j}`);

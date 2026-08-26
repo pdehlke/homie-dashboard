@@ -1,21 +1,41 @@
 # Music chip
 
-Seven radio-station bubbles (Jazz: Hiromi, 80s/90s, Dinner Party, The Jam, 1st
-Wave, Blues, AltNation) played through Music Assistant on `media_player.crestron`. A
-tap starts Harmony Hub's Airplay activity, sets the Crestron player to its
-idle-start volume, then plays the station. Tapping the active bubble again
-stops Music Assistant and turns Harmony off. On-state is derived live from
-the player's real `state`/`media_content_id` (`musicStationIsOn()`), not a
-tracked boolean. This is a **mutating** feature: driving it starts real
+Two accordion categories (same `toggleRoomAccordion()` mechanism the Lights
+chip uses: tap a row to expand it in place, only one open at a time):
+**Stations**, seven radio-preset bubbles (Jazz: Hiromi, 80s/90s, Dinner Party,
+The Jam, 1st Wave, Blues, AltNation), and **Playlists**, MA library playlists
+sourced from Jellyfin (currently one: Alternative). Everything plays through
+Music Assistant on `media_player.crestron`. A tap starts Harmony Hub's Airplay
+activity, sets the Crestron player to its idle-start volume, sets shuffle
+(always on for Playlists, always off for Stations), then plays the bubble's
+URI with its configured `media_type` (`"radio"` for Stations, `"playlist"`
+for Playlists; a Stations entry omits the config field entirely and
+`togglePopupMusic` defaults it). Tapping the active bubble again stops Music
+Assistant and turns Harmony off. On-state is derived live from the player's
+real `state` for Stations (`musicStationIsOn()` matching `media_content_id`
+against the bubble's own URI), but tracked in-memory for Playlists, since MA
+rewrites `media_content_id` to the currently-playing *track's* URI the moment
+a playlist starts, never the playlist's own URI again; kept live while the
+popup is open by `refreshOpenMusicPopup()` regardless of which accordion row
+is currently expanded. This is a **mutating** feature: driving it starts real
 audio and moves a real receiver.
 
 ## Sub-features
 
+- `music-category-switch` — tapping "Stations" or "Playlists" expands that
+  row's bubble grid in place and collapses whichever row was open before;
+  only one category is ever expanded at once.
 - `music-play` — tapping an idle bubble routes Harmony → volume → play.
 - `music-stop` — tapping the active bubble stops playback and Harmony.
 - `music-hot-switch` — tapping a different bubble while one is active
   switches stations without resetting volume (only a cold/idle start resets
-  it).
+  it). Works across categories too: a Station playing, then a Playlist
+  tapped, is still a hot switch, both go through the same function.
+- `music-playlist-shuffle` — a Playlists tap always sets shuffle on first
+  (`media_player.shuffle_set`, before `play_media`); a Stations tap always
+  sets it off. Verify via the entity's own `shuffle` attribute, not just that
+  a different track played first, since a false positive there is possible by
+  chance.
 - `music-unavailable` — a bubble whose target `media_player` is
   `unavailable` renders `.disabled`, skips every service call, and gives a
   haptic tick instead of the optimistic on-flash it used to show before the
@@ -24,7 +44,9 @@ audio and moves a real receiver.
 ## How to get to it (user POV)
 
 - Bottom chip row, "MUSIC" chip, on any Overview screen.
-- Tap the chip to expand its popup; tap a station bubble to play/stop it.
+- Tap the chip to expand its popup (a compact category list, not bubbles
+  yet); tap "Stations" or "Playlists" to expand that category's bubbles; tap
+  a bubble to play/stop it.
 
 ## Driving it with playwright-cli
 
@@ -55,18 +77,23 @@ Preconditions:
     python3 -c "import json,sys; d=json.load(sys.stdin); print(d['state'], d.get('attributes',{}).get('media_title'))"
   ```
 
-- **Open the chip and tap a station.** Snapshot to find the bubble's ref
-  (labels match the seven station names above), click it, then re-read
-  `media_player.crestron` — expect `state: playing` within a few seconds and
-  `media_title` reflecting the station.
+- **Open the chip, expand a category, tap a bubble.** The popup opens to the
+  compact two-row category list first; a bubble only exists in the DOM once
+  its row has been tapped and expanded. Snapshot after each step rather than
+  assuming a bubble ref exists from the first snapshot.
 
   ```bash
   playwright-cli snapshot
   playwright-cli click <ref-for-Music-chip>
-  playwright-cli snapshot
+  playwright-cli snapshot                      # shows "Stations" / "Playlists" rows only
+  playwright-cli click <ref-for-"Stations"-row>
+  playwright-cli snapshot                      # now the 7 station bubbles exist
   playwright-cli click <ref-for-"Jazz: Hiromi"-bubble>
   # give it a few seconds for Harmony's activity switch + MA to start streaming
   ```
+
+  For a Playlists bubble, click the "Playlists" row instead of "Stations" at
+  the expand step; everything else (proof, restore, cleanup) is identical.
 
 - **Proof.** Screenshot the bubble showing its on state (glow + popup ring),
   and re-confirm via the real entity, matching the standard this feature's
@@ -99,5 +126,10 @@ Preconditions:
   through the tap for: proving `music-unavailable` means forcing the
   client-side cached state to `unavailable` via `eval`/`run-code` (no real
   device touched), not waiting for a real outage.
+- Only one accordion row is expanded at a time: tapping "Playlists" while
+  "Stations" is open collapses Stations first. A collapsed row's bubbles stay
+  in the DOM (just visually hidden), so `eval`-based checks against a bubble
+  by id work even when its row isn't the currently-expanded one; a `click`
+  on it won't, since it isn't visible/interactable until expanded.
 - Stop-not-pause is deliberate. Do not report the lack of a paused state as
   a bug.
