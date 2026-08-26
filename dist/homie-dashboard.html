@@ -1496,6 +1496,20 @@
     padding: 10px;
   }
 
+  /* Music chip's "All Off" row — a one-shot action appended after the
+   * Stations/Playlists rows, not another expandable category, so it borrows
+   * the same muted-red "stop" tint .tv-action-btn--off uses for Harmony's
+   * own PowerOff button instead of the accent color the expandable rows
+   * use, and gets no chevron. */
+  .popup-room-row--off {
+    color: #f28a92;
+    background: rgba(230,57,70,0.12);
+    border-color: rgba(230,57,70,0.4);
+  }
+  .popup-room-row--off:hover { background: rgba(230,57,70,0.2); }
+  .popup-room-row--off .popup-room-name { color: #f28a92; }
+  .popup-room-row--off svg { stroke: #f28a92; flex-shrink: 0; }
+
   /* ─── 2-COLUMN GRID FOR FLAT POPUP LISTS (e.g. Irrigation) ─── */
   .popup-two-col-grid {
     display: grid;
@@ -8921,7 +8935,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260826.4";
+      const HOMIE_ASSET_VERSION = "20260826.5";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -12426,6 +12440,23 @@ async function openPopup(i) {
         <div class="popup-room-panel" id="room-panel-${rid}"></div>`;
     }).join('');
 
+    // Music-only: a one-shot "stop whatever is playing" row appended after
+    // the Stations/Playlists category rows, not a category of its own — no
+    // chevron, no expanding panel, and it never appears for Lights/Climate/
+    // Covers/Purifier, whose accordions have nothing analogous to stop.
+    // Reuses the same red tint and power icon the TV control overlay's own
+    // "ALL OFF" button already uses, so "all off" reads the same everywhere
+    // it appears in the app. See stopAllMusic() for what tapping it does.
+    if (isMusicControl) {
+      accordionHtml += `
+        <div class="popup-room-row popup-room-row--off" id="music-all-off-row" onclick="stopAllMusic('${escapeHtml(c.entity)}')">
+          <div class="popup-room-row-left">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+            <span class="popup-room-name">All Off</span>
+          </div>
+        </div>`;
+    }
+
     c._flatSubs      = flatSubs;
     c._colorPresets  = COLOR_PRESETS;
     c._tempPresets   = TEMP_PRESETS;
@@ -13990,6 +14021,22 @@ async function togglePopupScene(entities, bubbleId) {
 }
 
 /**
+ * stopPopupMusic — the actual off sequence for the Music chip: media_stop
+ * followed by turning off the Harmony Hub's Airplay activity, plus clearing
+ * the playlist on-marker (see _lastPlaylistStarted's own comment above
+ * musicStationIsOn). Factored out of togglePopupMusic so the "All Off" row
+ * (stopAllMusic, just below togglePopupMusic) runs the identical sequence
+ * rather than a second copy of it.
+ *
+ * @param {string} entity — target media_player entity_id (chip-level)
+ */
+async function stopPopupMusic(entity) {
+  await haService("media_player", "media_stop", { entity_id: entity });
+  await haService("remote", "turn_off", { entity_id: "remote.harmony_hub" });
+  _lastPlaylistStarted.delete(entity);
+}
+
+/**
  * togglePopupMusic — plays or stops a Music chip bubble (a Stations radio
  * preset or a Playlists library playlist) on its target media_player.
  *
@@ -14039,9 +14086,7 @@ async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
   }
   const wasOn = musicStationIsOn(entity, uri);
   if (wasOn) {
-    await haService("media_player", "media_stop", { entity_id: entity });
-    await haService("remote", "turn_off", { entity_id: "remote.harmony_hub" });
-    _lastPlaylistStarted.delete(entity);
+    await stopPopupMusic(entity);
   } else {
     await haService("remote", "turn_on", {
       entity_id: "remote.harmony_hub",
@@ -14077,6 +14122,32 @@ async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
   // state_changed subscription reconciles this from real state shortly
   // after, via refreshOpenMusicPopup() while this popup stays open.
   if (bubble) bubble.classList.toggle("on", !wasOn);
+}
+
+/**
+ * stopAllMusic — the Music chip's "All Off" row, appended below the
+ * Stations/Playlists accordion rows (see the isMusicControl branch of
+ * openPopup's accordion block). Stops whatever bubble happens to be
+ * playing without pde needing to know which Stations or Playlists entry it
+ * is: the same stopPopupMusic() sequence togglePopupMusic's own off branch
+ * runs, just triggered without a specific bubble/URI in hand.
+ *
+ * No optimistic bubble update here, unlike togglePopupMusic: there is no
+ * single bubbleId to flash off, and refreshOpenMusicPopup() already
+ * re-hydrates every bubble's ring from live state on the next refresh tick
+ * once the WS state_changed confirms the stop, the same path that already
+ * covers a stop triggered from outside this popup entirely.
+ *
+ * @param {string} entity — target media_player entity_id (chip-level)
+ */
+async function stopAllMusic(entity) {
+  const liveState = haGetCached(entity)?.state;
+  if (!liveState || liveState === "unavailable") {
+    haptic("light");
+    return;
+  }
+  haptic("heavy");
+  await stopPopupMusic(entity);
 }
 
 /**

@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260826.4");
+  assert.equal(version, "20260826.5");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -882,12 +882,14 @@ function loadMusicToggle() {
   vm.runInContext(
     `${entityIsOnSource}\n${helpersSource}\n${toggleSource}\n` +
       `globalThis.__toggle = togglePopupMusic;\n` +
+      `globalThis.__stopAll = stopAllMusic;\n` +
       `globalThis.__stationIsOn = musicStationIsOn;\n` +
       `globalThis.__chipIsOn = musicChipIsOn;`,
     context,
   );
   return {
     toggle: context.__toggle,
+    stopAll: context.__stopAll,
     stationIsOn: context.__stationIsOn,
     chipIsOn: context.__chipIsOn,
     setState: (id, state, attributes = {}) => stateCache.set(id, { state, attributes }),
@@ -1100,6 +1102,50 @@ test("togglePopupMusic treats a never-cached target the same as unavailable (no 
   assert.ok(!music.classesOf("pmb-0-0").has("on"));
 });
 
+test("stopAllMusic stops playback and turns off Harmony, the same sequence tapping the active bubble runs", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/38" });
+  await music.stopAll("media_player.crestron");
+  assert.equal(music.calls.length, 2);
+  assert.equal(music.calls[0].domain, "media_player");
+  assert.equal(music.calls[0].service, "media_stop");
+  assert.equal(music.calls[0].data.entity_id, "media_player.crestron");
+  assert.equal(music.calls[1].domain, "remote");
+  assert.equal(music.calls[1].service, "turn_off");
+  assert.equal(music.calls[1].data.entity_id, "remote.harmony_hub");
+});
+
+test("stopAllMusic clears a playing playlist's on-marker too, not just a station's live state", async () => {
+  // The whole point of "All Off" is not needing to know which bubble is
+  // playing. A playlist's on-state lives only in _lastPlaylistStarted (see
+  // musicStationIsOn's own comment), so stopAllMusic must clear that map
+  // the same way stopPopupMusic already does for togglePopupMusic's own
+  // off branch, or a stopped playlist would keep reading as on.
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "idle", {});
+  await music.toggle("media_player.crestron", "library://playlist/10", "pmb-1-0", "playlist");
+  music.setState("media_player.crestron", "playing", { media_content_id: "library://track/851" });
+  assert.equal(music.stationIsOn("media_player.crestron", "library://playlist/10"), true);
+
+  await music.stopAll("media_player.crestron");
+  music.setState("media_player.crestron", "idle", {});
+  assert.equal(music.stationIsOn("media_player.crestron", "library://playlist/10"), false);
+});
+
+test("stopAllMusic does nothing when the target player is unavailable", async () => {
+  const music = loadMusicToggle();
+  music.setState("media_player.crestron", "unavailable", {});
+  await music.stopAll("media_player.crestron");
+  assert.equal(music.calls.length, 0, "no service call can do anything useful against an unreachable player");
+});
+
+test("stopAllMusic treats a never-cached target the same as unavailable (no calls)", async () => {
+  const music = loadMusicToggle();
+  // No music.setState() call at all — haGetCached() returns null.
+  await music.stopAll("media_player.crestron");
+  assert.equal(music.calls.length, 0);
+});
+
 test("refreshOpenMusicPopup marks a station's bubble disabled, and never on, while its player is unavailable", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const ropStart = source.indexOf("function refreshOpenMusicPopup()");
@@ -1127,6 +1173,24 @@ test("the Music chip's initial bubble render also marks a station disabled at bu
 test("disabled Music bubble styling reuses the app's existing muted-red 'can't use this' language, not a new color", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   assert.match(cssDeclarations(source, ".popup-scene-icon.disabled"), /255,\s*82,\s*82/, "same red as .popup-item.disabled / .ov3-garden-irr-btn.disabled");
+});
+
+test("openPopup's accordion appends an All Off row for the Music chip only, calling stopAllMusic", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const openStart = source.indexOf("async function openPopup(i)");
+  const openEnd = source.indexOf("// ── Flat list or noRoomGrouping subGroups", openStart);
+  assert.ok(openStart > -1 && openEnd > openStart, "openPopup's accordion block must be found");
+  const accordionBlock = source.slice(openStart, openEnd);
+
+  // Gated on isMusicControl, not emitted unconditionally into every
+  // accordion chip's row list (Lights/Climate/Covers/Purifier have nothing
+  // analogous to stop).
+  const gateIndex = accordionBlock.indexOf("if (isMusicControl) {");
+  assert.ok(gateIndex > -1, "All Off row must be gated behind isMusicControl");
+  const rowBlock = accordionBlock.slice(gateIndex);
+  assert.match(rowBlock, /popup-room-row--off/);
+  assert.match(rowBlock, /onclick="stopAllMusic\('\$\{escapeHtml\(c\.entity\)\}'\)"/);
+  assert.match(rowBlock, />All Off</);
 });
 
 test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {

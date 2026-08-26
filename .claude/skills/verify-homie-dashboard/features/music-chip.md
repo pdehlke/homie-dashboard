@@ -17,14 +17,23 @@ against the bubble's own URI), but tracked in-memory for Playlists, since MA
 rewrites `media_content_id` to the currently-playing *track's* URI the moment
 a playlist starts, never the playlist's own URI again; kept live while the
 popup is open by `refreshOpenMusicPopup()` regardless of which accordion row
-is currently expanded. This is a **mutating** feature: driving it starts real
-audio and moves a real receiver.
+is currently expanded. Below both category rows sits a third, non-expanding
+row, **All Off** (`stopAllMusic()`): the same stop sequence as tapping the
+active bubble, but without needing to know which Station or Playlist it is.
+This is a **mutating** feature: driving it starts real audio and moves a real
+receiver.
 
 ## Sub-features
 
 - `music-category-switch` — tapping "Stations" or "Playlists" expands that
   row's bubble grid in place and collapses whichever row was open before;
   only one category is ever expanded at once.
+- `music-all-off` — tapping the "All Off" row stops whatever bubble is
+  playing (media_stop + Harmony turn_off, same as `music-stop`) regardless of
+  which category or bubble is active, and is safe to tap even when nothing is
+  playing. It has no bubbleId to flash, so there is no optimistic UI update;
+  the on-ring clears once `refreshOpenMusicPopup()`'s next tick picks up the
+  real state.
 - `music-play` — tapping an idle bubble routes Harmony → volume → play.
 - `music-stop` — tapping the active bubble stops playback and Harmony.
 - `music-hot-switch` — tapping a different bubble while one is active
@@ -46,7 +55,8 @@ audio and moves a real receiver.
 - Bottom chip row, "MUSIC" chip, on any Overview screen.
 - Tap the chip to expand its popup (a compact category list, not bubbles
   yet); tap "Stations" or "Playlists" to expand that category's bubbles; tap
-  a bubble to play/stop it.
+  a bubble to play/stop it. The red "All Off" row sits below both categories
+  at all times, no expansion needed.
 
 ## Driving it with playwright-cli
 
@@ -107,7 +117,10 @@ Preconditions:
 
 - **Restore.** Tap the active bubble again to stop, confirm `media_player.crestron`
   returns to `idle`/`off` and Harmony's `current_activity` returns to
-  `PowerOff`.
+  `PowerOff`. To prove `music-all-off` specifically, tap the "All Off" row
+  (`#music-all-off-row`, always present, no category expansion needed)
+  instead of the bubble itself, and confirm the same two entities the same
+  way.
 
 - **Cleanup.** `playwright-cli close`, `rm -f /tmp/homie-auth-state.json`.
 
@@ -133,3 +146,6 @@ Preconditions:
   on it won't, since it isn't visible/interactable until expanded.
 - Stop-not-pause is deliberate. Do not report the lack of a paused state as
   a bug.
+- "All Off" is one row, not per-category: there is exactly one
+  `#music-all-off-row` in the popup, not one under Stations and another
+  under Playlists.
