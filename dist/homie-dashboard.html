@@ -8935,7 +8935,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260826.5";
+      const HOMIE_ASSET_VERSION = "20260826.6";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -14149,6 +14149,49 @@ async function stopAllMusic(entity) {
   haptic("heavy");
   await stopPopupMusic(entity);
 }
+
+// Same "list-music" glyph config.js's old static Playlists entry used, kept
+// as one JS constant instead of per-item config so every dynamically-synced
+// playlist (see syncDynamicPlaylistsFromHA below) looks the same without
+// needing its own icon field in the sensor payload.
+const DYNAMIC_PLAYLIST_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 6H3"/><path d="M16 12H3"/><path d="M12 18H3"/></svg>`;
+
+/**
+ * syncDynamicPlaylistsFromHA — replaces config.js's Playlists subGroup
+ * (previously a hand-maintained array: adding a Jellyfin playlist meant
+ * editing config.js and redeploying) with whatever
+ * sensor.homie_dynamic_playlists currently lists. That sensor is written by
+ * an external script, not by this dashboard or any HA automation — see
+ * docs/homie-dashboard/homie-dynamic-playlists.md in the pdehlke/homeassistant
+ * repo for why (MA's Jellyfin-vs-builtin distinction is only reachable over a
+ * WebSocket call HA's own script/shell_command environment on this instance
+ * has no way to make) and how often it refreshes.
+ *
+ * Runs once at page load, not per popup-open: the boundary this was scoped
+ * to was "refreshed periodically", not "live every time the chip opens", so
+ * one fetch here is enough to have the current list in place well before a
+ * user could tap into the Music chip. A failed fetch (HA unreachable, sensor
+ * missing) just leaves the Playlists row empty rather than throwing; Stations
+ * is entirely unaffected either way.
+ */
+async function syncDynamicPlaylistsFromHA() {
+  const musicChip = (CONFIG.controls || []).find(c => c.isMusicChip);
+  const playlistsGroup = musicChip?.subGroups?.find(g => g.label === "Playlists");
+  if (!playlistsGroup) return;
+  try {
+    const r = await fetch(`${BASE}/api/states/sensor.homie_dynamic_playlists`, { headers: _haHeaders() });
+    if (!r.ok) return;
+    const j = await r.json();
+    const playlists = Array.isArray(j.attributes?.playlists) ? j.attributes.playlists : [];
+    playlistsGroup.stations = playlists.map(p => ({
+      uri: p.uri,
+      label: p.label,
+      mediaType: "playlist",
+      icon: DYNAMIC_PLAYLIST_ICON,
+    }));
+  } catch { /* leave the Playlists row empty; Stations is unaffected */ }
+}
+document.addEventListener("DOMContentLoaded", () => { syncDynamicPlaylistsFromHA(); });
 
 /**
  * closePopup — closes the control detail popup when the backdrop is tapped.

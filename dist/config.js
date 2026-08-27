@@ -368,18 +368,17 @@ const CONFIG = {
           ],
         },
         {
+          // Populated at runtime, not here. This used to be a hand-maintained
+          // list (one entry, "Alternative", library://playlist/10) that
+          // needed a config.js edit and a redeploy every time a Jellyfin
+          // playlist was added or removed. syncDynamicPlaylistsFromHA()
+          // (homie-dashboard.html) now overwrites this array on page load
+          // from sensor.homie_dynamic_playlists, which an external script
+          // refreshes periodically. See
+          // docs/homie-dashboard/homie-dynamic-playlists.md in the
+          // pdehlke/homeassistant repo for the full design.
           label: "Playlists",
-          stations: [
-            {
-              uri: "library://playlist/10",
-              label: "Alternative",
-              mediaType: "playlist",
-              // Lucide "list-music": three list rows + a music-note circle,
-              // distinct from the Stations glyph so a bubble's kind is
-              // readable at a glance even before reading its label.
-              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 6H3"/><path d="M16 12H3"/><path d="M12 18H3"/></svg>`,
-            },
-          ],
+          stations: [],
         },
       ],
     },

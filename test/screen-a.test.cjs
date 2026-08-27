@@ -176,7 +176,7 @@ function loadSceneToggle() {
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
   const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId)");
-  const toggleEnd = source.indexOf("\n/**\n * closePopup", toggleStart);
+  const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
     "entityIsOn/sceneAffectedEntities/sceneIsOn/togglePopupScene must all be found");
@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260826.5");
+  assert.equal(version, "20260826.6");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -850,7 +850,7 @@ function loadMusicToggle() {
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
   const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId)");
-  const toggleEnd = source.indexOf("\n/**\n * closePopup", toggleStart);
+  const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
     "entityIsOn/musicStationIsOn/musicChipIsOn/togglePopupMusic must all be found");
@@ -945,6 +945,119 @@ test("musicChipIsOn is on only when the target player is mid-playback of one of 
 
   music.setState("media_player.crestron", "playing", { media_content_id: "library://radio/2" });
   assert.equal(music.chipIsOn(chip), true);
+});
+
+// loadDynamicPlaylistsSync: syncDynamicPlaylistsFromHA against a fake CONFIG
+// and a fake fetch, the same slice-real-source approach as loadMusicToggle
+// above.
+function loadDynamicPlaylistsSync() {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("const DYNAMIC_PLAYLIST_ICON");
+  const end = source.indexOf('document.addEventListener("DOMContentLoaded", () => { syncDynamicPlaylistsFromHA(); });');
+  assert.ok(start > -1 && end > start, "DYNAMIC_PLAYLIST_ICON/syncDynamicPlaylistsFromHA must be found");
+  const syncSource = source.slice(start, end);
+
+  let fetchResponse = null; // { ok, json: async () => {...} } or a thrown Error
+  const context = {
+    CONFIG: null,
+    BASE: "https://hass.ehlke.net",
+    _haHeaders: () => ({ Authorization: "Bearer fake" }),
+    fetch: async (url, opts) => {
+      if (fetchResponse instanceof Error) throw fetchResponse;
+      return fetchResponse;
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${syncSource}\n` +
+      `globalThis.__sync = syncDynamicPlaylistsFromHA;\n` +
+      `globalThis.__icon = DYNAMIC_PLAYLIST_ICON;`,
+    context,
+  );
+  return {
+    sync: context.__sync,
+    setConfig: (config) => { context.CONFIG = config; },
+    setResponse: (ok, attributes) => { fetchResponse = { ok, json: async () => ({ attributes }) }; },
+    setFetchError: (err) => { fetchResponse = err; },
+    icon: context.__icon,
+  };
+}
+
+function musicChipWithEmptyPlaylists() {
+  return {
+    isMusicChip: true,
+    entity: "media_player.crestron",
+    subGroups: [
+      { label: "Stations", stations: [{ uri: "library://radio/1", label: "Jazz: Hiromi" }] },
+      { label: "Playlists", stations: [] },
+    ],
+  };
+}
+
+test("syncDynamicPlaylistsFromHA replaces the Playlists subGroup with the sensor's current list", async () => {
+  const sync = loadDynamicPlaylistsSync();
+  const chip = musicChipWithEmptyPlaylists();
+  sync.setConfig({ controls: [chip] });
+  sync.setResponse(true, { playlists: [
+    { uri: "library://playlist/10", label: "Alternative" },
+    { uri: "library://playlist/12", label: "Focus" },
+  ] });
+
+  await sync.sync();
+
+  // JSON round-trip: the mapped entries are built by a callback running
+  // inside the vm context, so they carry that realm's Object prototype —
+  // deepEqual against a plain literal needs both sides normalized first,
+  // same as the CONFIG.uiDefaults comparison above.
+  const playlistsGroup = chip.subGroups.find(g => g.label === "Playlists");
+  assert.deepEqual(JSON.parse(JSON.stringify(playlistsGroup.stations)), [
+    { uri: "library://playlist/10", label: "Alternative", mediaType: "playlist", icon: sync.icon },
+    { uri: "library://playlist/12", label: "Focus", mediaType: "playlist", icon: sync.icon },
+  ]);
+  // Stations is untouched by a Playlists-only sync.
+  assert.deepEqual(chip.subGroups.find(g => g.label === "Stations").stations,
+    [{ uri: "library://radio/1", label: "Jazz: Hiromi" }]);
+});
+
+test("syncDynamicPlaylistsFromHA leaves Playlists alone when the sensor fetch fails", async () => {
+  const sync = loadDynamicPlaylistsSync();
+  const chip = musicChipWithEmptyPlaylists();
+  const playlistsGroup = chip.subGroups.find(g => g.label === "Playlists");
+  playlistsGroup.stations = [{ uri: "library://playlist/10", label: "Alternative", mediaType: "playlist", icon: "old-icon" }];
+  sync.setConfig({ controls: [chip] });
+  sync.setResponse(false, {}); // 404, sensor doesn't exist yet
+
+  await sync.sync();
+
+  assert.deepEqual(playlistsGroup.stations,
+    [{ uri: "library://playlist/10", label: "Alternative", mediaType: "playlist", icon: "old-icon" }]);
+});
+
+test("syncDynamicPlaylistsFromHA swallows a network error instead of throwing", async () => {
+  const sync = loadDynamicPlaylistsSync();
+  const chip = musicChipWithEmptyPlaylists();
+  sync.setConfig({ controls: [chip] });
+  sync.setFetchError(new Error("network unreachable"));
+
+  await assert.doesNotReject(sync.sync());
+  assert.deepEqual(chip.subGroups.find(g => g.label === "Playlists").stations, []);
+});
+
+test("syncDynamicPlaylistsFromHA no-ops when CONFIG has no Music chip", async () => {
+  const sync = loadDynamicPlaylistsSync();
+  sync.setConfig({ controls: [{ label: "Lights", subGroups: [] }] });
+  sync.setResponse(true, { playlists: [{ uri: "library://playlist/10", label: "Alternative" }] });
+
+  await assert.doesNotReject(sync.sync());
+});
+
+test("config.js no longer hand-maintains the Playlists list — it's populated at runtime", () => {
+  const config = loadConfig();
+  const musicChip = config.controls.find(c => c.isMusicChip);
+  assert.ok(musicChip, "a Music chip must exist in CONFIG.controls");
+  const playlistsGroup = musicChip.subGroups.find(g => g.label === "Playlists");
+  assert.ok(playlistsGroup, "a Playlists subGroup must exist");
+  assert.equal(playlistsGroup.stations.length, 0);
 });
 
 test("togglePopupMusic plays and resets volume to 40% when the player was idle", async () => {
@@ -1402,7 +1515,11 @@ test("control row and popup mappings match the approved design", () => {
   // repo. Deliberately no showCount (see the config comment). Two labeled
   // subGroups render as an accordion: "Stations" (radio, mediaType omitted,
   // togglePopupMusic defaults to "radio") and "Playlists" (MA library
-  // playlists sourced from Jellyfin, explicit mediaType: "playlist").
+  // playlists sourced from Jellyfin). Playlists.stations starts empty here —
+  // syncDynamicPlaylistsFromHA() populates it at runtime from
+  // sensor.homie_dynamic_playlists instead of config.js hand-maintaining it;
+  // see docs/homie-dashboard/homie-dynamic-playlists.md and the
+  // syncDynamicPlaylistsFromHA tests above for that behavior.
   assert.equal(config.controls[3].isMusicChip, true);
   assert.equal(config.controls[3].entity, "media_player.crestron");
   assert.equal(config.controls[3].showCount, undefined);
@@ -1425,13 +1542,7 @@ test("control row and popup mappings match the approved design", () => {
     assert.match(station.uri, /^library:\/\/radio\/\d+$/);
     assert.equal(station.mediaType, undefined, "Stations entries omit mediaType; togglePopupMusic defaults to radio");
   }
-  assert.deepEqual(
-    Array.from(config.controls[3].subGroups[1].stations, (station) => [station.uri, station.label, station.mediaType]),
-    [["library://playlist/10", "Alternative", "playlist"]],
-  );
-  for (const station of config.controls[3].subGroups[1].stations) {
-    assert.match(station.uri, /^library:\/\/playlist\/\d+$/);
-  }
+  assert.equal(config.controls[3].subGroups[1].stations.length, 0);
   // Scenes: stock isSceneChip mechanism. Each scene's "entities" is one or
   // more real scene.* entities — togglePopupScene fires scene.turn_on /
   // homeassistant.turn_off directly (see
