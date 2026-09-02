@@ -225,50 +225,96 @@ const CONFIG = {
     {
       label: "Lights",
       showCount: true,
+      // Refilled 2026-09-02 with the real Crestron loads, once the CIP bridge
+      // was live and driving them. Grouped by Home Assistant area, not by
+      // Crestron zone page: the eight panel pages are groupings of what one
+      // panel can reach, and they do not line up with rooms anywhere. The
+      // mapping is docs/crestron/crestron-load-room-worksheet.md in the
+      // sibling homeassistant repo.
+      //
+      // 26 of the house's 30 loads. The four missing ones are Kitchen Range,
+      // Island, Pathway and Cabinet, whose only joins sit inside the range the
+      // DSC alarm keypad shares, so they are reached through the MC2E instead
+      // and are still unmapped; their HA entities report unavailable. They are
+      // left out rather than listed, because this chip gives an unavailable
+      // entity no distinct treatment (that is scoped to Irrigation on purpose)
+      // and would render four ordinary-looking buttons that silently do
+      // nothing. Add them here once the identification pass lands.
       subGroups: [
+        {
+          label: "Courtyard",
+          subEntities: [
+            { label: "Patio North", entity: "light.courtyard_patio_north" },
+            { label: "Patio South", entity: "light.courtyard_patio_south" },
+          ],
+        },
         {
           label: "Dining Room",
           subEntities: [
-            { label: "North", entity: "light.north" },
-            { label: "South", entity: "light.south" },
-            { label: "Table", entity: "light.table" },
+            { label: "North", entity: "light.dining_room_north" },
+            { label: "Powder", entity: "light.dining_room_powder" },
+            { label: "South", entity: "light.dining_room_south" },
+            { label: "Table", entity: "light.dining_room_table" },
           ],
         },
         {
           label: "Entry",
           subEntities: [
-            { label: "Door", entity: "light.door" },
             { label: "Center", entity: "light.entry_center" },
+            { label: "Door", entity: "light.entry_door" },
             { label: "Perimeter", entity: "light.entry_perimeter" },
-            { label: "Garage Sconces", entity: "light.garage_sconces" },
-            { label: "Home Perimeter", entity: "light.home_perimeter" },
+          ],
+        },
+        {
+          label: "Guest Suite",
+          subEntities: [
+            { label: "East Hall", entity: "light.guest_suite_east_hall" },
           ],
         },
         {
           label: "Kitchen",
           subEntities: [
-            { label: "Cabinet", entity: "light.cabinet" },
-            { label: "Island", entity: "light.island" },
-            { label: "Pathway", entity: "light.pathway" },
-            { label: "Powder", entity: "light.powder" },
-            { label: "Range", entity: "light.range" },
+            { label: "Perimeter", entity: "light.kitchen_perimeter" },
+          ],
+        },
+        {
+          label: "Living Room",
+          subEntities: [
+            { label: "Ambient", entity: "light.living_room_ambient" },
+            { label: "East Seating", entity: "light.living_room_east_seating" },
+            { label: "Pathway", entity: "light.living_room_pathway" },
+            { label: "Perimeter", entity: "light.living_room_perimeter" },
+            { label: "West Seating", entity: "light.living_room_west_seating" },
           ],
         },
         {
           label: "Office",
           subEntities: [
-            { label: "North Sink", entity: "light.north_sink" },
-            { label: "Pool Bathroom", entity: "light.pool_bathroom" },
+            { label: "North Sink", entity: "light.office_north_sink" },
+            { label: "Pool Bath", entity: "light.office_pool_bath" },
+          ],
+        },
+        {
+          label: "Outdoor Kitchen",
+          subEntities: [
+            { label: "Outdoor Kitchen", entity: "light.outdoor_kitchen" },
+          ],
+        },
+        {
+          label: "Outside",
+          subEntities: [
+            { label: "Garage Sconces", entity: "light.outside_garage_sconces" },
+            { label: "Home Perimeter", entity: "light.outside_home_perimeter" },
           ],
         },
         {
           label: "Primary Suite",
           subEntities: [
-            { label: "Bath Diagonals", entity: "light.bath_diagonals" },
-            { label: "Bath Perimeter", entity: "light.bath_perimeter" },
-            { label: "Bedroom Diagonals", entity: "light.bedroom_diagonals" },
-            { label: "Bedroom Perimeter", entity: "light.bedroom_perimeter" },
-            { label: "Hallway", entity: "light.hallway" },
+            { label: "Bath Diagonal", entity: "light.primary_suite_bath_diagonal" },
+            { label: "Bath Perimeter", entity: "light.primary_suite_bath_perimeter" },
+            { label: "Bed Diagonal", entity: "light.primary_suite_bed_diagonal" },
+            { label: "Bed Perimeter", entity: "light.primary_suite_bed_perimeter" },
+            { label: "Hallway", entity: "light.primary_suite_hallway" },
           ],
         },
       ],
