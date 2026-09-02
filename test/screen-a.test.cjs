@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260826.6");
+  assert.equal(version, "20260902.3");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1492,10 +1492,38 @@ test("control row and popup mappings match the approved design", () => {
       "sensor.basement_casasolar_north_casasolar_north_alert",
     ],
   );
+  // Lights: refilled 2026-09-02 with the real Crestron loads, grouped by Home
+  // Assistant area rather than by Crestron zone page (the eight panel pages are
+  // groupings of what one panel reaches and don't line up with rooms).
+  assert.equal(config.controls[0].showCount, true);
   assert.deepEqual(
     Array.from(config.controls[0].subGroups, (group) => group.label),
-    ["Dining Room", "Entry", "Kitchen", "Office", "Primary Suite"],
+    [
+      "Courtyard", "Dining Room", "Entry", "Guest Suite", "Kitchen",
+      "Living Room", "Office", "Outdoor Kitchen", "Outside", "Primary Suite",
+    ],
   );
+
+  const lightEntities = config.controls[0].subGroups.flatMap((g) =>
+    Array.from(g.subEntities, (s) => s.entity),
+  );
+  assert.equal(lightEntities.length, 26);
+  assert.equal(new Set(lightEntities).size, 26, "a load must not appear in two rooms");
+  assert.ok(lightEntities.every((e) => e.startsWith("light.")));
+
+  // The four Kitchen loads reached through the MC2E are still unmapped and
+  // their entities report unavailable. This chip gives an unavailable entity no
+  // distinct treatment, so listing one would render a button that looks fine
+  // and silently does nothing. Fail if any reappears before it can actually be
+  // driven.
+  for (const dead of [
+    "light.kitchen_range",
+    "light.kitchen_island",
+    "light.kitchen_pathway",
+    "light.kitchen_cabinet",
+  ]) {
+    assert.ok(!lightEntities.includes(dead), `${dead} is unavailable and must not be listed`);
+  }
   assert.deepEqual(
     Array.from(config.controls[5].subEntities, (entry) => entry.entity),
     [
@@ -2595,4 +2623,23 @@ test("NAS overlay scrolls internally rather than overflowing a vertically center
   const decl = cssDeclarations(source, ".popup--nas");
   assert.match(decl, /overflow-y:\s*auto/);
   assert.match(decl, /max-height:\s*\d+(\.\d+)?vh/);
+});
+
+test("toggleSubEntity's optimistic label respects a light with no brightness", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // The generic toggle used to write a hardcoded "100%" when switching a light
+  // on, which was harmless while every light in the Lights chip was a template
+  // light with a brightness channel. The 26 Crestron panel-slot loads are
+  // on/off only, so that literal would claim a dim level that cannot exist.
+  const toggle = source.slice(
+    source.indexOf("async function toggleSubEntity"),
+    source.indexOf("async function toggleSubEntity") + 3000,
+  );
+  assert.doesNotMatch(
+    toggle,
+    /pctEl\.textContent = isOn \? fmtOff\(\) : "100%"/,
+    "optimistic label must not hardcode a percentage",
+  );
+  assert.match(toggle, /getLightCaps\(haGetCached\(s\.entity\)\)\.hasBrightness/);
 });

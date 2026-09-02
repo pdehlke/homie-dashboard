@@ -8935,7 +8935,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260826.6";
+      const HOMIE_ASSET_VERSION = "20260902.3";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -13711,9 +13711,18 @@ async function toggleSubEntity(e, i, j) {
     service = isOn ? "turn_off" : "turn_on";
   }
   el.classList.toggle("on", !isOn);
-  // Update mushroom card pct label if applicable
+  // Update mushroom card pct label if applicable. An on/off-only light has no
+  // percentage to show optimistically: until the Crestron loads arrived every
+  // light in this chip had a brightness channel, so a hardcoded "100%" was
+  // always plausible. It isn't now — the 26 panel-slot loads are on/off only,
+  // and "100%" would claim a dim level that does not exist. Branch on the same
+  // caps updateMushroomCard uses so the optimistic label and the reconciled
+  // one agree.
   const pctEl = document.getElementById(`pct-${i}-${j}`);
-  if (pctEl) pctEl.textContent = isOn ? fmtOff() : "100%";
+  if (pctEl) {
+    const onLabel = getLightCaps(haGetCached(s.entity)).hasBrightness ? "100%" : fmtOn();
+    pctEl.textContent = isOn ? fmtOff() : onLabel;
+  }
   const fill = document.getElementById(`fill-${i}-${j}`);
   const sl = document.getElementById(`bslider-${i}-${j}`);
   if (fill) fill.style.width = isOn ? "0%" : "100%";
