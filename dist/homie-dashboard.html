@@ -711,10 +711,16 @@
   .popup-overlay.open .popup { transform: scale(1); }
   /* Width overrides for specific popup types — avoids inline style attributes */
   .popup--pet      { max-width: 550px; }
-  /* Compact accordion: just the room list, no room expanded yet */
+  /* Compact accordion: just the room list, no room expanded yet.
+   *
+   * 360px rather than the 300px this was before the Lights rows gained an Area
+   * Off button. At 300px a lit room had to fit its name, an "N ON" badge and
+   * the button into roughly 200px of row, and both "Dining Room" and the
+   * button's own label wrapped to two lines. Measured against the real ten-room
+   * list, where "Primary Suite" is the longest name. */
   .popup--compact {
-    max-width: 300px;
-    width: min(300px, 90vw);
+    max-width: 360px;
+    width: min(360px, 90vw);
   }
   /* Expanded accordion: a room is open, grow to full width for light cards */
   .popup--compact.popup--expanded {
@@ -1453,6 +1459,7 @@
     letter-spacing: 0.25em;
     color: #fff;
     text-transform: uppercase;
+    white-space: nowrap;
   }
   .popup-room-badge {
     font-size: 9px;
@@ -1509,6 +1516,39 @@
   .popup-room-row--off:hover { background: rgba(230,57,70,0.2); }
   .popup-room-row--off .popup-room-name { color: #f28a92; }
   .popup-room-row--off svg { stroke: #f28a92; flex-shrink: 0; }
+
+  /* Per-room "Area Off" button on a Lights accordion row, sharing the row's
+   * right-hand side with the chevron. Borrows the same muted-red stop tint the
+   * Music chip's All Off row uses above, so "turn this lot off" reads the same
+   * wherever it appears.
+   *
+   * Hidden until the room has something on, for the reason the badge beside it
+   * is: an already-dark room gives the button nothing to do, and ten
+   * permanently visible dead buttons is a worse row list than none. */
+  .popup-room-row-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .popup-room-off {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid rgba(230,57,70,0.4);
+    border-radius: 8px;
+    background: rgba(230,57,70,0.12);
+    color: #f28a92;
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .popup-room-off.visible { display: flex; }
+  .popup-room-off:hover { background: rgba(230,57,70,0.22); }
+  .popup-room-off svg { stroke: #f28a92; flex-shrink: 0; }
 
   /* ─── 2-COLUMN GRID FOR FLAT POPUP LISTS (e.g. Irrigation) ─── */
   .popup-two-col-grid {
@@ -8935,7 +8975,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260902.3";
+      const HOMIE_ASSET_VERSION = "20260902.5";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -12427,6 +12467,19 @@ async function openPopup(i) {
     // Synthesise a room-id from the group label for stable DOM ids
     const roomIdOf = label => label.toLowerCase().replace(/\s+/g, "_");
 
+    // Per-room Area Off, Lights only. Climate, Covers and Purifier share this
+    // accordion, but "off" is not a single obvious action for any of them: a
+    // cover closes rather than switching off, and a climate zone has modes. A
+    // whole room's worth of either is not something to make reachable from a
+    // row tap by accident. stopPropagation keeps the tap off the accordion, so
+    // the room does not expand on its way to going dark.
+    const areaOffBtn = (rid, startIdx, count) => !isLightControl ? '' : `
+            <div class="popup-room-off" id="room-off-${rid}"
+                 onclick="event.stopPropagation();areaOff(${i},'${rid}',${startIdx},${count})">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <span>Area Off</span>
+            </div>`;
+
     let accordionHtml = groupMeta.map(({ label, startIdx, count, gIdx }) => {
       const rid = roomIdOf(label);
       return `
@@ -12435,7 +12488,9 @@ async function openPopup(i) {
             <span class="popup-room-name">${escapeHtml(label)}</span>
             <span class="popup-room-badge" id="room-badge-${rid}"></span>
           </div>
-          <span class="popup-room-chevron">›</span>
+          <div class="popup-room-row-right">${areaOffBtn(rid, startIdx, count)}
+            <span class="popup-room-chevron">›</span>
+          </div>
         </div>
         <div class="popup-room-panel" id="room-panel-${rid}"></div>`;
     }).join('');
@@ -12483,11 +12538,7 @@ async function openPopup(i) {
           if (isCoverControl)   return ["open","opening"].includes(d.state);
           return !["off","closed","unavailable","unknown"].includes(d.state);
         }).length;
-        const badge = document.getElementById(`room-badge-${rid}`);
-        if (badge && activeCount > 0) {
-          badge.textContent = activeCount + " " + fmtOn();
-          badge.classList.add("visible");
-        }
+        setRoomRowActive(rid, activeCount);
       });
     });
     return; // accordion rendered — done
@@ -13269,12 +13320,10 @@ async function togglePurifierPower(i, j) {
 
   // Refresh accordion badge immediately
   if (_openAccordionRoomId) {
-    const badge = document.getElementById(`room-badge-${_openAccordionRoomId}`);
     const panel = document.getElementById(`room-panel-${_openAccordionRoomId}`);
-    if (badge && panel) {
+    if (panel) {
       const onCount = panel.querySelectorAll(".popup-item.on, .mush-light-card.on, .mush-cover-card.on, .mush-ac-card.on, .mush-purifier-card.on").length;
-      badge.textContent = onCount > 0 ? onCount + " " + fmtOn() : "";
-      badge.classList.toggle("visible", onCount > 0);
+      setRoomRowActive(_openAccordionRoomId, onCount);
     }
   }
 }
@@ -13739,15 +13788,92 @@ async function toggleSubEntity(e, i, j) {
   }
   // Refresh the room accordion badge immediately
   if (_openAccordionRoomId) {
-    const badge = document.getElementById(`room-badge-${_openAccordionRoomId}`);
     const panel = document.getElementById(`room-panel-${_openAccordionRoomId}`);
-    if (badge && panel) {
+    if (panel) {
       const onCount = panel.querySelectorAll(".popup-item.on, .mush-light-card.on, .mush-cover-card.on, .mush-ac-card.on, .mush-purifier-card.on").length;
-      badge.textContent = onCount > 0 ? onCount + " " + fmtOn() : "";
-      badge.classList.toggle("visible", onCount > 0);
+      setRoomRowActive(_openAccordionRoomId, onCount);
     }
   }
   await haService(domain, service, s.entity);
+}
+
+
+/**
+ * setRoomRowActive — writes how many entities in one accordion room are on to
+ * both places on the row that show it: the "N ON" badge and, for Lights, the
+ * Area Off button's visibility.
+ *
+ * They are two views of one number, so they are written together rather than
+ * updated at each of the three call sites. An Area Off button on a room with
+ * nothing on has nothing to do, and one that disagrees with the badge beside it
+ * is worse than either being absent.
+ *
+ * @param {string} roomId      — the room's stable DOM id
+ * @param {number} activeCount — how many of its entities are currently on
+ */
+function setRoomRowActive(roomId, activeCount) {
+  const badge = document.getElementById(`room-badge-${roomId}`);
+  if (badge) {
+    badge.textContent = activeCount > 0 ? activeCount + " " + fmtOn() : "";
+    badge.classList.toggle("visible", activeCount > 0);
+  }
+  document.getElementById(`room-off-${roomId}`)?.classList.toggle("visible", activeCount > 0);
+}
+
+/**
+ * areaOff — turns off every light in one accordion room that is currently on.
+ *
+ * Sits on the room row rather than inside the expanded panel so it works
+ * without drilling in: the row already says "3 ON", and this is the button that
+ * acts on that. Only the lights actually on are sent, which keeps a five-load
+ * room down to the presses it needs.
+ *
+ * The Crestron loads behind these entities are toggle buttons with no discrete
+ * off of their own — the bridge synthesises one by reading live feedback before
+ * it presses, so a redundant turn_off is a no-op there rather than a light
+ * coming back on. That makes the filter below an optimisation, not the thing
+ * keeping a stale card from switching a light the wrong way. See
+ * docs/crestron/crestron-ha-bridge.md in the pdehlke/homeassistant repo.
+ *
+ * @param {number} i        — control index into activeControls
+ * @param {string} roomId   — the room's stable DOM id
+ * @param {number} startIdx — start index of this room's entities in c._flatSubs
+ * @param {number} count    — how many entities this room has
+ */
+async function areaOff(i, roomId, startIdx, count) {
+  const c = activeControls[i];
+  if (!c || !c._flatSubs) return;
+
+  // A rendered card's own class beats the state cache when both exist: it
+  // carries the optimistic result of a tap HA has not confirmed yet, which the
+  // cache does not. Rooms never expanded have no cards, so they read the cache.
+  const targets = [];
+  for (let k = 0; k < count; k++) {
+    const j = startIdx + k;
+    const s = c._flatSubs[j];
+    if (!s || !s.entity) continue;
+    const card = document.getElementById(`sub-${i}-${j}`);
+    const isOn = card
+      ? card.classList.contains("on")
+      : !["off", "closed", "unavailable", "unknown"].includes(haGetCached(s.entity)?.state ?? "unknown");
+    if (isOn) targets.push({ j, entity: s.entity });
+  }
+
+  // Nothing on. The button is hidden in that case, so this is only reachable
+  // from a tap that raced a change made elsewhere.
+  if (!targets.length) { haptic("light"); return; }
+  haptic("heavy");
+
+  // Repaint before the request goes out. Each of these presses is serialized
+  // behind a per-connection lock on the Crestron side and waits for feedback to
+  // confirm, so a five-light room takes long enough that leaving the cards lit
+  // until HA answers would look like the button had missed.
+  targets.forEach(t => updateMushroomCard(i, t.j, false, haGetCached(t.entity)));
+  setRoomRowActive(roomId, 0);
+
+  // One call with the whole list rather than one per light: HA fans it out
+  // itself, and the bridge serializes the presses either way.
+  await haService("light", "turn_off", { entity_id: targets.map(t => t.entity) });
 }
 
 
@@ -13876,11 +14002,7 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
         updateMushroomCard(ctrlIdx, j, isOn, d);
       });
       const activeCount = buildStates.filter(d => d && !["off","closed","unavailable","unknown"].includes(d.state)).length;
-      const badge = document.getElementById(`room-badge-${roomId}`);
-      if (badge) {
-        badge.textContent = activeCount > 0 ? activeCount + " " + fmtOn() : "";
-        badge.classList.toggle("visible", activeCount > 0);
-      }
+      setRoomRowActive(roomId, activeCount);
       return; // hydration done — skip the generic hydration block below
     } else if (isMusicControl) {
       panel.classList.add("music-grid");
@@ -13960,11 +14082,7 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
       }
     });
 
-    const badge = document.getElementById(`room-badge-${roomId}`);
-    if (badge) {
-      badge.textContent = activeCount > 0 ? activeCount + " " + fmtOn() : "";
-      badge.classList.toggle("visible", activeCount > 0);
-    }
+    setRoomRowActive(roomId, activeCount);
   }
 
   // Pass 1: instant render using _acCardState (climate) or HA cache (others)

@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260902.3");
+  assert.equal(version, "20260902.5");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -2642,4 +2642,78 @@ test("toggleSubEntity's optimistic label respects a light with no brightness", (
     "optimistic label must not hardcode a percentage",
   );
   assert.match(toggle, /getLightCaps\(haGetCached\(s\.entity\)\)\.hasBrightness/);
+});
+
+test("Area Off is offered on Lights accordion rows only, and stops the tap from expanding the room", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const openStart = source.indexOf("async function openPopup(i)");
+  const openEnd = source.indexOf("// ── Flat list or noRoomGrouping subGroups", openStart);
+  assert.ok(openStart > -1 && openEnd > openStart, "openPopup's accordion block must be found");
+  const accordionBlock = source.slice(openStart, openEnd);
+
+  // Gated the same way the Music chip's All Off row is: Climate, Covers and
+  // Purifier share this accordion and have no single "off" that means the same
+  // thing, so the button must not be emitted into their rows.
+  assert.match(accordionBlock, /const areaOffBtn = \(rid, startIdx, count\) => !isLightControl \? '' :/);
+  assert.match(accordionBlock, /onclick="event\.stopPropagation\(\);areaOff\(/,
+    "the tap must not also toggle the accordion open");
+  assert.match(accordionBlock, />Area Off</);
+});
+
+test("Area Off sends turn_off only to the lights in that room that are on", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("async function areaOff(i, roomId, startIdx, count)");
+  assert.ok(start > -1, "areaOff must be found");
+  const body = source.slice(start, source.indexOf("\n}\n", start));
+
+  // Scoped to this room's slice of _flatSubs, not the whole chip.
+  assert.match(body, /c\._flatSubs\[j\]/);
+  assert.match(body, /for \(let k = 0; k < count; k\+\+\)/);
+  assert.match(body, /const j = startIdx \+ k/);
+
+  // A rendered card's class is the better answer than the cache when both are
+  // available, because it carries an optimistic tap HA has not confirmed yet.
+  assert.match(body, /card\s*\n?\s*\? card\.classList\.contains\("on"\)/);
+  assert.match(body, /haGetCached\(s\.entity\)\?\.state/);
+
+  // Only the on ones are sent, and the service is turn_off — never a toggle,
+  // which on a Crestron load would switch a light the user can already see is
+  // off back on.
+  assert.match(body, /if \(isOn\) targets\.push/);
+  assert.match(body, /haService\("light", "turn_off", \{ entity_id: targets\.map\(t => t\.entity\) \}\)/);
+  assert.doesNotMatch(body, /"toggle"/);
+});
+
+test("Area Off repaints its cards and its own row before waiting on HA", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("async function areaOff(i, roomId, startIdx, count)");
+  const body = source.slice(start, source.indexOf("\n}\n", start));
+
+  // Every press behind these entities is serialized on the Crestron side and
+  // waits for feedback, so a room of five takes seconds. Both repaints must
+  // come before the await or the button looks like it missed.
+  const paint = body.indexOf("updateMushroomCard(i, t.j, false");
+  const row = body.indexOf("setRoomRowActive(roomId, 0)");
+  const call = body.indexOf("await haService");
+  assert.ok(paint > -1 && row > -1 && call > -1, "all three steps must be present");
+  assert.ok(paint < call, "cards must be repainted before the service call");
+  assert.ok(row < call, "the row must be repainted before the service call");
+});
+
+test("the 'N on' badge and the Area Off button are written by one function, at every site that updates either", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // Two views of one number. A visible Area Off on a room the badge says is
+  // dark is worse than no button at all, so no call site is allowed to write
+  // the badge directly and leave the button behind.
+  assert.match(source, /function setRoomRowActive\(roomId, activeCount\)/);
+  const helper = source.slice(
+    source.indexOf("function setRoomRowActive(roomId, activeCount)"),
+    source.indexOf("\n}\n", source.indexOf("function setRoomRowActive(roomId, activeCount)")),
+  );
+  assert.match(helper, /room-badge-\$\{roomId\}/);
+  assert.match(helper, /room-off-\$\{roomId\}/);
+
+  const direct = source.match(/document\.getElementById\(`room-badge-\$\{[^}]+\}`\)/g) || [];
+  assert.equal(direct.length, 1, "only setRoomRowActive may look up an accordion row badge");
 });
