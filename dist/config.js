@@ -232,14 +232,11 @@ const CONFIG = {
       // mapping is docs/crestron/crestron-load-room-worksheet.md in the
       // sibling homeassistant repo.
       //
-      // 26 of the house's 30 loads. The four missing ones are Kitchen Range,
-      // Island, Pathway and Cabinet, whose only joins sit inside the range the
-      // DSC alarm keypad shares, so they are reached through the MC2E instead
-      // and are still unmapped; their HA entities report unavailable. They are
-      // left out rather than listed, because this chip gives an unavailable
-      // entity no distinct treatment (that is scoped to Irrigation on purpose)
-      // and would render four ordinary-looking buttons that silently do
-      // nothing. Add them here once the identification pass lands.
+      // All 30 of the house's loads, as of 2026-09-03. The last four, Kitchen
+      // Range, Island, Pathway and Cabinet, were reached through the MC2E
+      // rather than the AADS because their only joins sit inside the range the
+      // DSC alarm keypad shares. They were unmapped and omitted here until the
+      // identification pass (issue #18) found which MC2E join drives each one.
       subGroups: [
         {
           label: "Courtyard",
@@ -274,7 +271,11 @@ const CONFIG = {
         {
           label: "Kitchen",
           subEntities: [
+            { label: "Cabinet", entity: "light.kitchen_cabinet" },
+            { label: "Island", entity: "light.kitchen_island" },
+            { label: "Pathway", entity: "light.kitchen_pathway" },
             { label: "Perimeter", entity: "light.kitchen_perimeter" },
+            { label: "Range", entity: "light.kitchen_range" },
           ],
         },
         {

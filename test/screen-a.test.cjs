@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260902.5");
+  assert.equal(version, "20260903.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1507,23 +1507,27 @@ test("control row and popup mappings match the approved design", () => {
   const lightEntities = config.controls[0].subGroups.flatMap((g) =>
     Array.from(g.subEntities, (s) => s.entity),
   );
-  assert.equal(lightEntities.length, 26);
-  assert.equal(new Set(lightEntities).size, 26, "a load must not appear in two rooms");
+  assert.equal(lightEntities.length, 30);
+  assert.equal(new Set(lightEntities).size, 30, "a load must not appear in two rooms");
   assert.ok(lightEntities.every((e) => e.startsWith("light.")));
 
-  // The four Kitchen loads reached through the MC2E are still unmapped and
-  // their entities report unavailable. This chip gives an unavailable entity no
-  // distinct treatment, so listing one would render a button that looks fine
-  // and silently does nothing. Fail if any reappears before it can actually be
-  // driven.
-  for (const dead of [
-    "light.kitchen_range",
-    "light.kitchen_island",
-    "light.kitchen_pathway",
-    "light.kitchen_cabinet",
-  ]) {
-    assert.ok(!lightEntities.includes(dead), `${dead} is unavailable and must not be listed`);
-  }
+  // The four Kitchen loads reached through the MC2E were unmapped and omitted
+  // until the identification pass (issue #18, 2026-09-03) found which MC2E
+  // join drives each one. Now that they're live-verified, they belong in the
+  // Kitchen group alongside Perimeter.
+  assert.deepEqual(
+    Array.from(
+      config.controls[0].subGroups.find((g) => g.label === "Kitchen").subEntities,
+      (entry) => entry.entity,
+    ),
+    [
+      "light.kitchen_cabinet",
+      "light.kitchen_island",
+      "light.kitchen_pathway",
+      "light.kitchen_perimeter",
+      "light.kitchen_range",
+    ],
+  );
   assert.deepEqual(
     Array.from(config.controls[5].subEntities, (entry) => entry.entity),
     [
