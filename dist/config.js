@@ -456,34 +456,66 @@ const CONFIG = {
       ],
     },
     {
-      // Emptied 2026-09-03 (issue #16). Both scenes this chip pointed at,
+      // Emptied 2026-09-03 (issue #16), refilled 2026-09-03 with the first
+      // real scene: "Dinner". Both scenes this chip originally pointed at,
       // scene.bedroom_evening and scene.bathroom_evening, were deleted
       // 2026-09-02 along with the rest of the placeholder Crestron-PoC
       // fleet, so every bubble looked normal and fired scene.turn_on at
-      // nothing (HTTP 200, empty changed-entity list, no console error).
-      // Same treatment as the Lights chip got the same day: keep the chip
-      // in the bottom row, keep isSceneChip/showCount, empty subGroups
-      // rather than delete the mechanism. isSceneChip's own code paths
+      // nothing. The empty period is why isSceneChip's code paths
       // (refreshControls's count/glow branch, openPopup's scene-popup
       // early return, refreshOpenScenePopup, the Overview C sidebar icon
-      // override) all tolerate an empty subGroups already, since every one
-      // of them starts from `(c.subGroups || []).flatMap(...)`; openPopup
-      // additionally now renders an explicit "No scenes configured" message
-      // for this case rather than an empty grid, matching the Alerts
-      // popup's own empty-state convention.
+      // override) all tolerate an empty subGroups — they start from
+      // `(c.subGroups || []).flatMap(...)` — and why openPopup renders an
+      // explicit "No scenes configured" message rather than an empty grid.
       //
-      // togglePopupScene/sceneIsOn/sceneAffectedEntities/
-      // refreshOpenScenePopup are untouched: that mechanism, its tests, and
-      // the three hand-authored bubble icons (crescent moon, bath, dresser)
-      // are exactly what the next phase refills once a real scene
-      // catalogue exists on top of the Crestron-backed lights. Full
-      // investigation, the icons' recoverable source, and this note in
+      // Dinner isn't a scene.* snapshot: it turns off the TV only if it's
+      // on, then turns on lights, then starts a specific radio station
+      // through Harmony — a conditional plus a service-call sequence, which
+      // a scene (pure entity-state restore) can't express. It's backed by
+      // the HA script script.scene_dinner instead. sceneAffectedEntities()
+      // and togglePopupScene() were generalized to support that (see their
+      // doc comments in homie-dashboard.html and
       // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
-      // repo.
+      // repo): `entities` below is what the bubble's on/off glow follows and
+      // what a tap-while-on turns off (the lights Dinner sets), and
+      // `activate` is what a tap-while-off actually runs (the script) —
+      // tapping off does not stop the music or touch Harmony/TV state.
+      //
+      // The three hand-authored bubble icons this chip's emptying preserved
+      // (crescent moon, bath, dresser) are still unused, waiting for
+      // whichever future scene fits them.
       label: "Scenes",
       isSceneChip: true,
       showCount: true,
-      subGroups: [],
+      subGroups: [
+        {
+          label: "Scenes",
+          scenes: [
+            {
+              entities: [
+                "light.kitchen_cabinet",
+                "light.kitchen_island",
+                "light.kitchen_pathway",
+                "light.kitchen_perimeter",
+                "light.kitchen_range",
+                "light.dining_room_north",
+                "light.dining_room_powder",
+                "light.dining_room_south",
+                "light.dining_room_table",
+                "light.living_room_pathway",
+              ],
+              activate: "script.scene_dinner",
+              // Reused verbatim from ICONS.scenes.candle in homie-dashboard.html
+              // (not referenced live — every other subGroups.scenes icon in this
+              // file is a self-contained inline SVG literal, so this follows the
+              // same convention rather than depending on the HTML's global scope).
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="12" width="6" height="9" rx="1"/><path d="M12 12V9"/><path d="M12 9 C13.5 7 13.5 5 12 3.5 C10.5 5 10.5 7 12 9Z" fill="rgba(255,200,80,0.85)" stroke="rgba(255,160,40,0.9)" stroke-width="1"/><line x1="9" y1="15" x2="9" y2="17" stroke="rgba(255,255,255,0.35)" stroke-width="1"/></svg>`,
+              label: "Dinner",
+              color: "var(--accent)",
+            },
+          ],
+        },
+      ],
     },
     {
       // Read-only Synology NAS health/capacity chip, admin-only (visibility

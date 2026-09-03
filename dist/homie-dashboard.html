@@ -8987,7 +8987,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260903.2";
+      const HOMIE_ASSET_VERSION = "20260903.3";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -11279,9 +11279,17 @@ function climateIsActive(entity) {
  * Bathroom); a single-scene bubble is just the one-element case, not a
  * separate shape. De-duplicated: two scenes controlling the same entity
  * (Bedroom and Bathroom both touch light.hallway) contribute it once.
+ *
+ * Not every bubble is backed by a scene.* snapshot entity — "Dinner"
+ * (docs/homie-dashboard/homie-scenes-chip.md) is a script that runs a
+ * conditional + service-call sequence a scene can't express. A non-scene
+ * entity has no attributes.entity_id to expand, so it's treated as
+ * self-affecting instead: it IS the thing whose on/off state the bubble
+ * glow follows, and what a tap-while-on turns off.
  */
 function sceneAffectedEntities(entities) {
   const all = (entities || []).flatMap(entity => {
+    if (entity.split(".")[0] !== "scene") return [entity];
     const d = haGetCached(entity);
     return (d && d.attributes && d.attributes.entity_id) || [];
   });
@@ -12410,8 +12418,9 @@ async function openPopup(i) {
           // contain a quote), not JSON.stringify: JSON's double quotes would
           // collide with the onclick attribute's own double-quote delimiter.
           const entitiesJs = `[${sc.entities.map(e => `'${escapeHtml(e)}'`).join(",")}]`;
+          const activateJs = sc.activate ? `'${escapeHtml(sc.activate)}'` : "null";
           sceneHtml += `
-            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}')">
+            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}',${activateJs})">
               <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:${sc.color}">${sc.icon}</div>
               <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
             </div>`;
@@ -14134,19 +14143,32 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
  * opposite of a snapshot"), so off is its own explicit action here rather
  * than something derived from the scene: every entity any of the bubble's
  * scenes control (per sceneAffectedEntities, de-duplicated across scenes)
- * gets turned off in one call. On activates every scene's snapshot in one
- * scene.turn_on call (HA applies a multi-entity target to each entity, same
- * as any other domain service). Which direction fires is decided by
- * sceneIsOn() at the moment of the tap, the same shared on-state check the
- * bubble's rendered class and the chip/sidebar glows all use.
+ * gets turned off in one call. On calls homeassistant.turn_on — a generic
+ * dispatcher that forwards to whatever service the target entity's own
+ * domain implements for turn_on (scene.turn_on for a scene.* snapshot,
+ * script.turn_on for a script — confirmed live against this instance) —
+ * rather than the scene-only scene.turn_on this used to call unconditionally.
+ * Which direction fires is decided by sceneIsOn() at the moment of the tap,
+ * the same shared on-state check the bubble's rendered class and the
+ * chip/sidebar glows all use.
  *
- * @param {string[]} entities — one or more scene entity_ids this bubble
- *                              represents (e.g. ["scene.bedroom_evening"], or
- *                              several for a bubble that groups multiple
- *                              scenes into a single toggle)
+ * `activate` exists for bubbles like "Dinner" where the thing that should
+ * run on a tap (a script) isn't the same as the entities whose state the
+ * bubble's on/off glow and off-action are about (the lights it turns on).
+ * It defaults to `entities`, so any bubble that doesn't pass it — every
+ * scene.* bubble so far — turns on exactly what it always has.
+ *
+ * @param {string[]} entities — one or more entity_ids this bubble's on/off
+ *                              glow and off-action are about (e.g.
+ *                              ["scene.bedroom_evening"], or several scenes
+ *                              grouped into one toggle, or the plain
+ *                              entities a script-backed scene turns on)
  * @param {string}   bubbleId — the DOM id of the bubble element for animation
+ * @param {string}   [activate] — entity_id to turn on instead of `entities`
+ *                                (e.g. "script.scene_dinner"); omit to turn
+ *                                on `entities` itself
  */
-async function togglePopupScene(entities, bubbleId) {
+async function togglePopupScene(entities, bubbleId, activate) {
   haptic("heavy");
   const bubble = document.getElementById(bubbleId);
   if (bubble) {
@@ -14160,7 +14182,7 @@ async function togglePopupScene(entities, bubbleId) {
     const targets = sceneAffectedEntities(entities);
     if (targets.length) await haService("homeassistant", "turn_off", { entity_id: targets });
   } else {
-    await haService("scene", "turn_on", { entity_id: entities });
+    await haService("homeassistant", "turn_on", { entity_id: activate || entities });
   }
   // Optimistic instant feedback, same as toggleControl()'s chip flip — the
   // WS state_changed subscription reconciles this from real state shortly

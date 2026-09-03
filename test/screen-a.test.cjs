@@ -175,7 +175,7 @@ function loadSceneToggle() {
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
-  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId)");
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate)");
   const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260903.2");
+  assert.equal(version, "20260903.3");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -744,14 +744,16 @@ test("sceneIsOn over a grouped bubble is on if either underlying scene has anyth
 });
 
 test("togglePopupScene activates the scene when off, and turns off every affected entity when on", async () => {
-  // Off -> on: activates the real scene, HA scenes have no turn_off action.
+  // Off -> on: activates the real scene via homeassistant.turn_on (the generic
+  // dispatcher, which forwards to scene.turn_on for a scene.* entity — HA scenes
+  // have no turn_off action of their own).
   const off = loadSceneToggle();
   off.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter", "light.hallway"] });
   off.setState("light.bedroom_perimeter", "off");
   off.setState("light.hallway", "off");
   await off.toggle(["scene.bedroom_evening"], "psb-Bedroom-0");
   assert.equal(off.calls.length, 1);
-  assert.equal(off.calls[0].domain, "scene");
+  assert.equal(off.calls[0].domain, "homeassistant");
   assert.equal(off.calls[0].service, "turn_on");
   assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening"]);
   assert.ok(off.classesOf("psb-Bedroom-0").has("on"), "bubble should show on optimistically after activating");
@@ -774,8 +776,9 @@ test("togglePopupScene activates the scene when off, and turns off every affecte
 });
 
 test("togglePopupScene on a grouped bubble activates every underlying scene in one call, and clears their de-duplicated union", async () => {
-  // Off -> on: one scene.turn_on call targeting both scenes at once, not two
-  // separate calls — HA applies a multi-entity target to each entity itself.
+  // Off -> on: one homeassistant.turn_on call targeting both scenes at once,
+  // not two separate calls — HA applies a multi-entity target to each entity
+  // itself, whichever domain-specific turn_on it forwards to.
   const off = loadSceneToggle();
   off.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter", "light.hallway"] });
   off.setState("scene.bathroom_evening", "x", { entity_id: ["light.bath_perimeter", "light.hallway"] });
@@ -784,7 +787,7 @@ test("togglePopupScene on a grouped bubble activates every underlying scene in o
   off.setState("light.hallway", "off");
   await off.toggle(["scene.bedroom_evening", "scene.bathroom_evening"], "psb-PrimarySuite-0");
   assert.equal(off.calls.length, 1);
-  assert.equal(off.calls[0].domain, "scene");
+  assert.equal(off.calls[0].domain, "homeassistant");
   assert.equal(off.calls[0].service, "turn_on");
   assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening", "scene.bathroom_evening"]);
 
@@ -804,6 +807,63 @@ test("togglePopupScene on a grouped bubble activates every underlying scene in o
     Array.from(on.calls[0].data.entity_id),
     ["light.bedroom_perimeter", "light.hallway", "light.bath_perimeter"],
   );
+});
+
+test("sceneAffectedEntities treats a non-scene entity as self-affecting (Dinner's shape)", () => {
+  // Dinner's bubble config lists the lights it turns on directly, not a
+  // scene.* snapshot — there's no attributes.entity_id to expand, so each
+  // entity is its own affected entity.
+  const scene = loadSceneToggle();
+  assert.deepEqual(
+    Array.from(scene.sceneAffectedEntities(["light.kitchen_island", "light.dining_room_table"])),
+    ["light.kitchen_island", "light.dining_room_table"],
+  );
+});
+
+test("sceneIsOn over Dinner's light list is on if any of those lights is on, exactly like a scene", () => {
+  const scene = loadSceneToggle();
+  scene.setState("light.kitchen_island", "off");
+  scene.setState("light.dining_room_table", "off");
+  assert.equal(scene.sceneIsOn(["light.kitchen_island", "light.dining_room_table"]), false);
+
+  scene.setState("light.dining_room_table", "on");
+  assert.equal(scene.sceneIsOn(["light.kitchen_island", "light.dining_room_table"]), true);
+});
+
+test("togglePopupScene runs the activate entity when off, not the entities array, and leaves it alone when turning off", async () => {
+  // Off -> on: Dinner's tap runs script.scene_dinner, not the lights directly —
+  // turning the lights on wouldn't run the TV-off/music sequence the script does.
+  const off = loadSceneToggle();
+  off.setState("light.kitchen_island", "off");
+  off.setState("light.dining_room_table", "off");
+  await off.toggle(["light.kitchen_island", "light.dining_room_table"], "psb-Scenes-0", "script.scene_dinner");
+  assert.equal(off.calls.length, 1);
+  assert.equal(off.calls[0].domain, "homeassistant");
+  assert.equal(off.calls[0].service, "turn_on");
+  // A bare string, not a one-element array — haService already treats a plain
+  // string as { entity_id: string }, same convention the TV chip's All Off uses.
+  assert.equal(off.calls[0].data.entity_id, "script.scene_dinner");
+
+  // On -> off: turns off exactly the lights, regardless of what `activate` is —
+  // tapping off must not re-run or stop the script.
+  const on = loadSceneToggle();
+  on.setState("light.kitchen_island", "on");
+  on.setState("light.dining_room_table", "off");
+  await on.toggle(["light.kitchen_island", "light.dining_room_table"], "psb-Scenes-0", "script.scene_dinner");
+  assert.equal(on.calls.length, 1);
+  assert.equal(on.calls[0].domain, "homeassistant");
+  assert.equal(on.calls[0].service, "turn_off");
+  assert.deepEqual(Array.from(on.calls[0].data.entity_id), ["light.kitchen_island", "light.dining_room_table"]);
+});
+
+test("togglePopupScene falls back to entities for the on-direction when activate is omitted", async () => {
+  // Every scene.* bubble that predates `activate` doesn't pass a third arg —
+  // confirm the default still targets `entities` itself, not undefined.
+  const off = loadSceneToggle();
+  off.setState("scene.bedroom_evening", "x", { entity_id: ["light.bedroom_perimeter"] });
+  off.setState("light.bedroom_perimeter", "off");
+  await off.toggle(["scene.bedroom_evening"], "psb-Bedroom-0");
+  assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening"]);
 });
 
 test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
@@ -849,7 +909,7 @@ function loadMusicToggle() {
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
-  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId)");
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate)");
   const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
@@ -1575,16 +1635,25 @@ test("control row and popup mappings match the approved design", () => {
     assert.equal(station.mediaType, undefined, "Stations entries omit mediaType; togglePopupMusic defaults to radio");
   }
   assert.equal(config.controls[3].subGroups[1].stations.length, 0);
-  // Scenes: emptied 2026-09-03 (issue #16). Both scenes it pointed at were
-  // deleted 2026-09-02 with the rest of the placeholder Crestron-PoC fleet;
-  // the stock isSceneChip mechanism, its behavior tests below, and the
-  // hand-authored icons are all kept exactly as they were (see
+  // Scenes: emptied 2026-09-03 (issue #16), refilled the same day with the
+  // first real scene, "Dinner" — script-backed (script.scene_dinner), not a
+  // scene.* snapshot, since it needs a conditional plus a service-call
+  // sequence a scene can't express. See
   // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
-  // repo) pending a real scene catalogue. Asserting empty rather than
-  // deleting this check means placeholders reappearing here fails the suite.
+  // repo.
   assert.equal(config.controls[6].isSceneChip, true);
   assert.equal(config.controls[6].showCount, true);
-  assert.deepEqual(Array.from(config.controls[6].subGroups, (group) => group.label), []);
+  assert.deepEqual(Array.from(config.controls[6].subGroups, (group) => group.label), ["Scenes"]);
+  const dinner = config.controls[6].subGroups[0].scenes[0];
+  assert.equal(dinner.label, "Dinner");
+  assert.equal(dinner.activate, "script.scene_dinner");
+  assert.deepEqual(Array.from(dinner.entities), [
+    "light.kitchen_cabinet", "light.kitchen_island", "light.kitchen_pathway",
+    "light.kitchen_perimeter", "light.kitchen_range",
+    "light.dining_room_north", "light.dining_room_powder",
+    "light.dining_room_south", "light.dining_room_table",
+    "light.living_room_pathway",
+  ]);
 });
 
 test("TV overlay has a second action row for volume/mute, styled like the activity row", () => {
