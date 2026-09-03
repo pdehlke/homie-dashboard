@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260903.3");
+  assert.equal(version, "20260903.4");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1638,13 +1638,15 @@ test("control row and popup mappings match the approved design", () => {
   // Scenes: emptied 2026-09-03 (issue #16), refilled the same day with the
   // first real scene, "Dinner" — script-backed (script.scene_dinner), not a
   // scene.* snapshot, since it needs a conditional plus a service-call
-  // sequence a scene can't express. See
+  // sequence a scene can't express. "Visitors" (script.scene_visitors)
+  // followed the same day: same mechanism, every light.* in the house
+  // instead of just Kitchen/Dining/Pathway. See
   // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
   // repo.
   assert.equal(config.controls[6].isSceneChip, true);
   assert.equal(config.controls[6].showCount, true);
   assert.deepEqual(Array.from(config.controls[6].subGroups, (group) => group.label), ["Scenes"]);
-  const dinner = config.controls[6].subGroups[0].scenes[0];
+  const [dinner, visitors] = config.controls[6].subGroups[0].scenes;
   assert.equal(dinner.label, "Dinner");
   assert.equal(dinner.activate, "script.scene_dinner");
   assert.deepEqual(Array.from(dinner.entities), [
@@ -1654,6 +1656,17 @@ test("control row and popup mappings match the approved design", () => {
     "light.dining_room_south", "light.dining_room_table",
     "light.living_room_pathway",
   ]);
+  assert.equal(visitors.label, "Visitors");
+  assert.equal(visitors.activate, "script.scene_visitors");
+  assert.equal(visitors.entities.length, 30, "every light.* entity in the house");
+  assert.ok(visitors.entities.every((e) => e.startsWith("light.")));
+  assert.equal(new Set(visitors.entities).size, 30, "no duplicate entities");
+  for (const outdoor of [
+    "light.courtyard_patio_north", "light.courtyard_patio_south",
+    "light.outside_garage_sconces", "light.outside_home_perimeter",
+  ]) {
+    assert.ok(visitors.entities.includes(outdoor), `Visitors must include ${outdoor}`);
+  }
 });
 
 test("TV overlay has a second action row for volume/mute, styled like the activity row", () => {

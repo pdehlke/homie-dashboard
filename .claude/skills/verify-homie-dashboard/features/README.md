@@ -62,6 +62,6 @@ behavior, then exactly four H2 sections: `Sub-features`,
   real setpoints if used.
 - [NAS chip](nas-chip.md) — admin-only Synology health overlay, strictly
   read-only, the clearest case of per-account rendering differences.
-- [Scenes chip](scenes-chip.md) — refilled 2026-09-03 with the first real scene, "Dinner",
-  script-backed (`script.scene_dinner`) rather than an HA `scene.*` snapshot. Mutating: turns on
-  real lights and starts real audio.
+- [Scenes chip](scenes-chip.md) — refilled 2026-09-03 with two real scenes, "Dinner" and
+  "Visitors", each script-backed (`script.scene_dinner`, `script.scene_visitors`) rather than an HA
+  `scene.*` snapshot. Mutating: turns on real lights and starts real audio.

@@ -513,6 +513,60 @@ const CONFIG = {
               label: "Dinner",
               color: "var(--accent)",
             },
+            {
+              // Same generalized mechanism as Dinner above, just a bigger
+              // light list: every one of the house's 30 light.* entities
+              // (confirmed live against /api/states, including both
+              // courtyard fixtures and both "outside" ones), backed by its
+              // own script, script.scene_visitors. No dashboard code
+              // changed for this bubble — sceneAffectedEntities(),
+              // togglePopupScene(), and every isSceneChip render/refresh
+              // site already iterate subGroups[].scenes generically, so a
+              // second bubble in the same "Scenes" group needed nothing
+              // beyond this config entry.
+              entities: [
+                "light.courtyard_patio_north",
+                "light.courtyard_patio_south",
+                "light.dining_room_north",
+                "light.dining_room_powder",
+                "light.dining_room_south",
+                "light.dining_room_table",
+                "light.entry_center",
+                "light.entry_door",
+                "light.entry_perimeter",
+                "light.guest_suite_east_hall",
+                "light.kitchen_cabinet",
+                "light.kitchen_island",
+                "light.kitchen_pathway",
+                "light.kitchen_perimeter",
+                "light.kitchen_range",
+                "light.living_room_ambient",
+                "light.living_room_east_seating",
+                "light.living_room_pathway",
+                "light.living_room_perimeter",
+                "light.living_room_west_seating",
+                "light.office_north_sink",
+                "light.office_pool_bath",
+                "light.outdoor_kitchen",
+                "light.outside_garage_sconces",
+                "light.outside_home_perimeter",
+                "light.primary_suite_bath_diagonal",
+                "light.primary_suite_bath_perimeter",
+                "light.primary_suite_bed_diagonal",
+                "light.primary_suite_bed_perimeter",
+                "light.primary_suite_hallway",
+              ],
+              activate: "script.scene_visitors",
+              // Hand-authored, not reused: none of the other five unused
+              // ICONS.scenes entries (relax, romantic, movie, fireplace,
+              // nightlight) or the three "still unused" ones named in the
+              // comment above (crescent moon, bath, dresser) read as
+              // "guests," so this is a plain two-person glyph in the same
+              // stroke style as the rest of the set. Easy for pde to swap.
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+              label: "Visitors",
+              color: "var(--accent)",
+            },
           ],
         },
       ],
