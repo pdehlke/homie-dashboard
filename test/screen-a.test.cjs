@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260903.1");
+  assert.equal(version, "20260903.2");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1575,32 +1575,16 @@ test("control row and popup mappings match the approved design", () => {
     assert.equal(station.mediaType, undefined, "Stations entries omit mediaType; togglePopupMusic defaults to radio");
   }
   assert.equal(config.controls[3].subGroups[1].stations.length, 0);
-  // Scenes: stock isSceneChip mechanism. Each scene's "entities" is one or
-  // more real scene.* entities — togglePopupScene fires scene.turn_on /
-  // homeassistant.turn_off directly (see
+  // Scenes: emptied 2026-09-03 (issue #16). Both scenes it pointed at were
+  // deleted 2026-09-02 with the rest of the placeholder Crestron-PoC fleet;
+  // the stock isSceneChip mechanism, its behavior tests below, and the
+  // hand-authored icons are all kept exactly as they were (see
   // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
-  // repo), no wrapping automation needed. Primary Suite groups both Bedroom
-  // and Bathroom's scenes into a single bubble, the multi-entity case.
+  // repo) pending a real scene catalogue. Asserting empty rather than
+  // deleting this check means placeholders reappearing here fails the suite.
   assert.equal(config.controls[6].isSceneChip, true);
   assert.equal(config.controls[6].showCount, true);
-  assert.deepEqual(
-    Array.from(config.controls[6].subGroups, (group) => group.label),
-    ["Bedroom", "Bathroom", "Primary Suite"],
-  );
-  assert.deepEqual(
-    Array.from(config.controls[6].subGroups, (group) =>
-      Array.from(group.scenes, (scene) => [Array.from(scene.entities), scene.label])),
-    [
-      [[["scene.bedroom_evening"], "Evening"]],
-      [[["scene.bathroom_evening"], "Evening"]],
-      [[["scene.bedroom_evening", "scene.bathroom_evening"], "Evening"]],
-    ],
-  );
-  for (const group of config.controls[6].subGroups) {
-    for (const scene of group.scenes) {
-      for (const entity of scene.entities) assert.match(entity, /^scene\./);
-    }
-  }
+  assert.deepEqual(Array.from(config.controls[6].subGroups, (group) => group.label), []);
 });
 
 test("TV overlay has a second action row for volume/mute, styled like the activity row", () => {

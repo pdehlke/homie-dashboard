@@ -456,59 +456,34 @@ const CONFIG = {
       ],
     },
     {
-      // Stock Homie Dashboard feature (isSceneChip / subGroups[].scenes[]),
-      // present in the template since before any pde customization but never
-      // wired up here. Each scene's "entities" is one or more real scene.*
-      // entities — togglePopupScene (homie-dashboard.html) fires scene.turn_on
-      // against all of them at once and derives what to turn back off from
-      // their own attributes, no wrapping automation needed. A bubble backed
-      // by more than one entity (Primary Suite Evening below) is how multiple
-      // scenes group into a single toggle; add more entries there as more
-      // rooms get combined, rather than inventing a second mechanism. See
+      // Emptied 2026-09-03 (issue #16). Both scenes this chip pointed at,
+      // scene.bedroom_evening and scene.bathroom_evening, were deleted
+      // 2026-09-02 along with the rest of the placeholder Crestron-PoC
+      // fleet, so every bubble looked normal and fired scene.turn_on at
+      // nothing (HTTP 200, empty changed-entity list, no console error).
+      // Same treatment as the Lights chip got the same day: keep the chip
+      // in the bottom row, keep isSceneChip/showCount, empty subGroups
+      // rather than delete the mechanism. isSceneChip's own code paths
+      // (refreshControls's count/glow branch, openPopup's scene-popup
+      // early return, refreshOpenScenePopup, the Overview C sidebar icon
+      // override) all tolerate an empty subGroups already, since every one
+      // of them starts from `(c.subGroups || []).flatMap(...)`; openPopup
+      // additionally now renders an explicit "No scenes configured" message
+      // for this case rather than an empty grid, matching the Alerts
+      // popup's own empty-state convention.
+      //
+      // togglePopupScene/sceneIsOn/sceneAffectedEntities/
+      // refreshOpenScenePopup are untouched: that mechanism, its tests, and
+      // the three hand-authored bubble icons (crescent moon, bath, dresser)
+      // are exactly what the next phase refills once a real scene
+      // catalogue exists on top of the Crestron-backed lights. Full
+      // investigation, the icons' recoverable source, and this note in
       // docs/homie-dashboard/homie-scenes-chip.md in the pdehlke/homeassistant
-      // repo for the full investigation, including an earlier version of this
-      // that did go through a wrapping automation and why that was dropped.
+      // repo.
       label: "Scenes",
       isSceneChip: true,
       showCount: true,
-      subGroups: [
-        {
-          label: "Bedroom",
-          scenes: [
-            {
-              entities: ["scene.bedroom_evening"],
-              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
-              label: "Evening",
-              color: "var(--accent)",
-            },
-          ],
-        },
-        {
-          label: "Bathroom",
-          scenes: [
-            {
-              entities: ["scene.bathroom_evening"],
-              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="12" width="6" height="9" rx="1"/><path d="M12 12V9"/><path d="M12 9 C13.5 7 13.5 5 12 3.5 C10.5 5 10.5 7 12 9Z" fill="rgba(255,200,80,0.85)" stroke="rgba(255,160,40,0.9)" stroke-width="1"/><line x1="9" y1="15" x2="9" y2="17" stroke="rgba(255,255,255,0.35)" stroke-width="1"/></svg>`,
-              label: "Evening",
-              color: "var(--accent)",
-            },
-          ],
-        },
-        {
-          label: "Primary Suite",
-          scenes: [
-            {
-              // Both scenes overlap on light.hallway; sceneAffectedEntities
-              // dedupes the union so it's only ever turned off/on once, not
-              // fought over by two redundant service calls.
-              entities: ["scene.bedroom_evening", "scene.bathroom_evening"],
-              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4" r="1.5"/><path d="M9 9 Q8 13 10 15 L8 21"/><path d="M9 9 L15 9 Q17 9 17 12 L17 15"/><path d="M10 15 L17 15 L19 21"/><path d="M6 21 L20 21"/></svg>`,
-              label: "Evening",
-              color: "var(--accent)",
-            },
-          ],
-        },
-      ],
+      subGroups: [],
     },
     {
       // Read-only Synology NAS health/capacity chip, admin-only (visibility

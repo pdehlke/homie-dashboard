@@ -1367,6 +1367,18 @@
     gap: 18px;
     padding: 8px 2px 12px;
   }
+  /* Shown instead of the grid above when every subGroup is empty (issue
+   * #16) — same visual language as .alert-popup-empty/.history-empty
+   * elsewhere in this file, this chip's own version of "say so, don't
+   * render nothing." */
+  .popup-scene-empty {
+    color: rgba(255,255,255,0.5);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 1rem 0;
+    text-align: center;
+  }
   .popup-scene-bubble {
     display: flex;
     flex-direction: column;
@@ -8975,7 +8987,7 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260903.1";
+      const HOMIE_ASSET_VERSION = "20260903.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -12379,25 +12391,34 @@ async function openPopup(i) {
 
   // ── Scene chip: render grouped scene bubbles, each showing live on/off ──────
   if (c.isSceneChip) {
-    let sceneHtml = "";
-    (c.subGroups || []).forEach(group => {
-      sceneHtml += `<div class="popup-group-label">${escapeHtml(group.label)}</div>`;
-      sceneHtml += `<div class="popup-scenes-grid">`;
-      (group.scenes || []).forEach((sc, idx) => {
-        const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
-        const on = sceneIsOn(sc.entities);
-        // A JS array literal (single-quoted strings — entity_ids never
-        // contain a quote), not JSON.stringify: JSON's double quotes would
-        // collide with the onclick attribute's own double-quote delimiter.
-        const entitiesJs = `[${sc.entities.map(e => `'${escapeHtml(e)}'`).join(",")}]`;
-        sceneHtml += `
-          <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}')">
-            <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:${sc.color}">${sc.icon}</div>
-            <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
-          </div>`;
+    const allScenes = (c.subGroups || []).flatMap(group => group.scenes || []);
+    let sceneHtml;
+    if (allScenes.length === 0) {
+      // Empty since 2026-09-03 (issue #16) — see the config comment on this
+      // chip. Same "say so, don't render nothing" convention the Alerts
+      // popup already uses for its own empty case.
+      sceneHtml = `<div class="popup-scene-empty">No scenes configured</div>`;
+    } else {
+      sceneHtml = "";
+      (c.subGroups || []).forEach(group => {
+        sceneHtml += `<div class="popup-group-label">${escapeHtml(group.label)}</div>`;
+        sceneHtml += `<div class="popup-scenes-grid">`;
+        (group.scenes || []).forEach((sc, idx) => {
+          const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
+          const on = sceneIsOn(sc.entities);
+          // A JS array literal (single-quoted strings — entity_ids never
+          // contain a quote), not JSON.stringify: JSON's double quotes would
+          // collide with the onclick attribute's own double-quote delimiter.
+          const entitiesJs = `[${sc.entities.map(e => `'${escapeHtml(e)}'`).join(",")}]`;
+          sceneHtml += `
+            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}')">
+              <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:${sc.color}">${sc.icon}</div>
+              <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
+            </div>`;
+        });
+        sceneHtml += `</div>`;
       });
-      sceneHtml += `</div>`;
-    });
+    }
     list.innerHTML = "";
     _openPopupOverlay("popup--scene");
     requestAnimationFrame(() => { list.innerHTML = sceneHtml; });
