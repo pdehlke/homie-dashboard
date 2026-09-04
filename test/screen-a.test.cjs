@@ -175,7 +175,7 @@ function loadSceneToggle() {
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
-  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate)");
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate, allMustBeOn)");
   const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
@@ -203,6 +203,9 @@ function loadSceneToggle() {
     haptic: () => {},
     document: { getElementById: bubble },
     setTimeout: () => {}, // fired-class removal not exercised by these tests
+    // togglePopupScene's full-undo off-branch looks up the Music chip's
+    // configured entity here, the same way the real config.js does.
+    CONFIG: { controls: [{ isMusicChip: true, entity: "media_player.crestron" }] },
   };
   vm.createContext(context);
   vm.runInContext(
@@ -220,6 +223,20 @@ function loadSceneToggle() {
     calls,
     classesOf: (id) => classSets.get(id) || new Set(),
   };
+}
+
+// Every togglePopupScene on->off call now also runs a full undo of whatever
+// music a scene's script may have started, via stopPopupMusic()'s exact
+// sequence (media_stop, then Harmony off) — see togglePopupScene's own doc
+// comment. Shared by every on->off test below rather than repeating the same
+// two assertions three times.
+function assertFullUndoStopsMusic(calls, fromIndex) {
+  assert.equal(calls[fromIndex].domain, "media_player");
+  assert.equal(calls[fromIndex].service, "media_stop");
+  assert.equal(calls[fromIndex].data.entity_id, "media_player.crestron");
+  assert.equal(calls[fromIndex + 1].domain, "remote");
+  assert.equal(calls[fromIndex + 1].service, "turn_off");
+  assert.equal(calls[fromIndex + 1].data.entity_id, "remote.harmony_hub");
 }
 
 test("Screen A has the agreed balanced status grid", () => {
@@ -628,7 +645,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260904.1");
+  assert.equal(version, "20260904.2");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -768,10 +785,11 @@ test("togglePopupScene activates the scene when off, and turns off every affecte
   // data.entity_id is built inside the vm sandbox (a different-realm Array),
   // so it's checked separately via Array.from rather than one deepEqual over
   // the whole call, same reason as the sceneAffectedEntities test above.
-  assert.equal(on.calls.length, 1);
+  assert.equal(on.calls.length, 3, "light turn_off, then the full-undo music stop");
   assert.equal(on.calls[0].domain, "homeassistant");
   assert.equal(on.calls[0].service, "turn_off");
   assert.deepEqual(Array.from(on.calls[0].data.entity_id), ["light.bedroom_perimeter", "light.hallway"]);
+  assertFullUndoStopsMusic(on.calls, 1);
   assert.ok(!on.classesOf("psb-Bedroom-0").has("on"), "bubble should show off optimistically after clearing");
 });
 
@@ -800,13 +818,14 @@ test("togglePopupScene on a grouped bubble activates every underlying scene in o
   on.setState("light.bath_perimeter", "off");
   on.setState("light.hallway", "on");
   await on.toggle(["scene.bedroom_evening", "scene.bathroom_evening"], "psb-PrimarySuite-0");
-  assert.equal(on.calls.length, 1);
+  assert.equal(on.calls.length, 3, "light turn_off, then the full-undo music stop");
   assert.equal(on.calls[0].domain, "homeassistant");
   assert.equal(on.calls[0].service, "turn_off");
   assert.deepEqual(
     Array.from(on.calls[0].data.entity_id),
     ["light.bedroom_perimeter", "light.hallway", "light.bath_perimeter"],
   );
+  assertFullUndoStopsMusic(on.calls, 1);
 });
 
 test("sceneAffectedEntities treats a non-scene entity as self-affecting (Dinner's shape)", () => {
@@ -830,6 +849,30 @@ test("sceneIsOn over Dinner's light list is on if any of those lights is on, exa
   assert.equal(scene.sceneIsOn(["light.kitchen_island", "light.dining_room_table"]), true);
 });
 
+test("sceneIsOn's allMustBeOn requires every affected entity on, not just one (Visitors' shape)", () => {
+  // Visitors means "every light in the house," so any-on would light its
+  // indicator the moment a single overlapping light comes on for any other
+  // reason (Dinner, a manual switch) — allMustBeOn is what makes this
+  // bubble's "on" actually mean what Visitors is supposed to mean.
+  const scene = loadSceneToggle();
+  scene.setState("light.a", "on");
+  scene.setState("light.b", "off");
+  assert.equal(scene.sceneIsOn(["light.a", "light.b"]), true, "default stays any-on for every other bubble");
+  assert.equal(scene.sceneIsOn(["light.a", "light.b"], true), false, "one entity off is enough to read off");
+
+  scene.setState("light.b", "on");
+  assert.equal(scene.sceneIsOn(["light.a", "light.b"], true), true, "all on reads on");
+});
+
+test("sceneIsOn's allMustBeOn reads off for an empty affected-entity list, not vacuously on", () => {
+  // Array.prototype.every() on an empty array is true — without the explicit
+  // length guard in sceneIsOn, a scene with nothing left to check would read
+  // "on" under allMustBeOn, the opposite of every other empty-state default
+  // on this dashboard.
+  const scene = loadSceneToggle();
+  assert.equal(scene.sceneIsOn([], true), false);
+});
+
 test("togglePopupScene runs the activate entity when off, not the entities array, and leaves it alone when turning off", async () => {
   // Off -> on: Dinner's tap runs script.scene_dinner, not the lights directly —
   // turning the lights on wouldn't run the TV-off/music sequence the script does.
@@ -850,10 +893,11 @@ test("togglePopupScene runs the activate entity when off, not the entities array
   on.setState("light.kitchen_island", "on");
   on.setState("light.dining_room_table", "off");
   await on.toggle(["light.kitchen_island", "light.dining_room_table"], "psb-Scenes-0", "script.scene_dinner");
-  assert.equal(on.calls.length, 1);
+  assert.equal(on.calls.length, 3, "light turn_off, then the full-undo music stop");
   assert.equal(on.calls[0].domain, "homeassistant");
   assert.equal(on.calls[0].service, "turn_off");
   assert.deepEqual(Array.from(on.calls[0].data.entity_id), ["light.kitchen_island", "light.dining_room_table"]);
+  assertFullUndoStopsMusic(on.calls, 1);
 });
 
 test("togglePopupScene falls back to entities for the on-direction when activate is omitted", async () => {
@@ -866,6 +910,21 @@ test("togglePopupScene falls back to entities for the on-direction when activate
   assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening"]);
 });
 
+test("togglePopupScene's allMustBeOn changes which direction a tap fires, not just the glow", async () => {
+  // Same shape as Visitors: activate + allMustBeOn, one of two lights off.
+  // Under any-on this would read "on" and tap-off would fire; allMustBeOn
+  // means it reads "off" instead, so the tap must activate again, not clear.
+  const scene = loadSceneToggle();
+  scene.setState("light.a", "on");
+  scene.setState("light.b", "off");
+  await scene.toggle(["light.a", "light.b"], "psb-Scenes-1", "script.scene_visitors", true);
+  assert.equal(scene.calls.length, 1, "activation only — allMustBeOn read this as off, not on");
+  assert.equal(scene.calls[0].domain, "homeassistant");
+  assert.equal(scene.calls[0].service, "turn_on");
+  assert.equal(scene.calls[0].data.entity_id, "script.scene_visitors");
+  assert.ok(scene.classesOf("psb-Scenes-1").has("on"), "optimistic flip still follows allMustBeOn's read of wasOn");
+});
+
 test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
 
@@ -873,25 +932,25 @@ test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls,
   const openStart = source.indexOf("async function openPopup(i)");
   const openEnd = source.indexOf("\n  // ── Determine card type from entity domain", openStart);
   assert.ok(openStart > -1 && openEnd > openStart, "openPopup must be found");
-  assert.match(source.slice(openStart, openEnd), /const on = sceneIsOn\(sc\.entities\)/);
+  assert.match(source.slice(openStart, openEnd), /const on = sceneIsOn\(sc\.entities, sc\.allMustBeOn\)/);
 
   // Bottom chip glow/count.
   const rcStart = source.indexOf("function refreshControls()");
   const rcEnd = source.indexOf("\nfunction refreshNotifications()", rcStart);
   assert.ok(rcStart > -1 && rcEnd > rcStart, "refreshControls must be found");
-  assert.match(source.slice(rcStart, rcEnd), /activeCount = allScenes\.filter\(sc => sceneIsOn\(sc\.entities\)\)/);
+  assert.match(source.slice(rcStart, rcEnd), /activeCount = allScenes\.filter\(sc => sceneIsOn\(sc\.entities, sc\.allMustBeOn\)\)/);
 
   // Overview C sidebar glow.
   const sbStart = source.indexOf("function _refreshOv3SidebarControls()");
   const sbEnd = source.indexOf("\n/* Build/rebuild the entire purifier card", sbStart);
   assert.ok(sbStart > -1 && sbEnd > sbStart, "_refreshOv3SidebarControls must be found");
-  assert.match(source.slice(sbStart, sbEnd), /flatMap\(g => g\.scenes \|\| \[\]\)\.some\(sc => sceneIsOn\(sc\.entities\)\)/);
+  assert.match(source.slice(sbStart, sbEnd), /flatMap\(g => g\.scenes \|\| \[\]\)\.some\(sc => sceneIsOn\(sc\.entities, sc\.allMustBeOn\)\)/);
 
   // Live popup refresh (only surface that doesn't reuse refreshControls' loop).
   const ropStart = source.indexOf("function refreshOpenScenePopup()");
   const ropEnd = source.indexOf("\n/**\n * isPopupOpen", ropStart);
   assert.ok(ropStart > -1 && ropEnd > ropStart, "refreshOpenScenePopup must be found");
-  assert.match(source.slice(ropStart, ropEnd), /sceneIsOn\(sc\.entities\)/);
+  assert.match(source.slice(ropStart, ropEnd), /sceneIsOn\(sc\.entities, sc\.allMustBeOn\)/);
 
   // Called from the popup-open branch of refreshAllUI, not just defined.
   assert.match(source, /refreshOpenAcCards\(\);\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*refreshOpenScenePopup\(\);/);
@@ -909,7 +968,7 @@ function loadMusicToggle() {
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
-  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate)");
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate, allMustBeOn)");
   const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
@@ -1673,8 +1732,14 @@ test("control row and popup mappings match the approved design", () => {
   // light.dinner_lights group pde created in HA, so membership changes are
   // made to the group, not this config.
   assert.deepEqual(Array.from(dinner.entities), ["light.dinner_lights"]);
+  // Dinner keeps the any-on default — it doesn't claim to speak for the
+  // whole house the way Visitors does, so any-on is still the right read.
+  assert.ok(!dinner.allMustBeOn);
   assert.equal(visitors.label, "Visitors");
   assert.equal(visitors.activate, "script.scene_visitors");
+  // Visitors means every light in the house, not "a light is on somewhere" —
+  // see the "Ninth pass" fix for why any-on was wrong for this bubble.
+  assert.equal(visitors.allMustBeOn, true);
   // 34, not the original 30: the four Zigbee lights added to the Lights
   // chip 2026-09-04 (Globe Lamp, Reading Nook, Living Room Cabinet,
   // Kitchen Counter Lamp) were missed here at the time, which left them

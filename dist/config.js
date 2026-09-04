@@ -589,6 +589,14 @@ const CONFIG = {
                 // both directions — found live when a Visitors off-tap left
                 // them lit. See homie-scenes-chip.md's "Ninth pass".
               ],
+              // Visitors specifically means every light in the house is on,
+              // not "a light is on somewhere" — the any-on convention every
+              // other bubble here uses would light this indicator the
+              // instant Dinner (or anyone) turns on a single overlapping
+              // light. allMustBeOn (sceneIsOn(), homie-dashboard.html)
+              // requires literally all of the above on before this bubble
+              // reads "on". Found and fixed 2026-09-04.
+              allMustBeOn: true,
               activate: "script.scene_visitors",
               // Hand-authored, not reused: none of the other five unused
               // ICONS.scenes entries (relax, romantic, movie, fireplace,

@@ -9019,7 +9019,7 @@ const ICONS = {
       // used the new light.dinner_lights group, but the *bubble's config*
       // (this file's config.js, browser-cached) was still the pre-group
       // ten-light array, so on/off used two different light lists.
-      const HOMIE_ASSET_VERSION = "20260904.1";
+      const HOMIE_ASSET_VERSION = "20260904.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -11337,12 +11337,26 @@ function sceneAffectedEntities(entities) {
  * show. Shared by the popup bubble, the bottom chip glow/count, and the
  * Overview C sidebar glow so all three agree on what "on" means — same
  * discipline climateIsActive() follows.
+ *
+ * `allMustBeOn` flips that to requiring every affected entity on, for a
+ * bubble like Visitors whose whole point is "every light in the house" —
+ * any-on would light its indicator the instant a single light comes on for
+ * any reason at all (another scene, a manual switch), which isn't "Visitors
+ * is active" by any reasonable reading. Not the default: every other scene
+ * bubble (Dinner, and any future one that doesn't opt in) keeps the any-on
+ * behavior, which is still the right reading for a scene that only touches
+ * a handful of lights rather than claiming to speak for the whole house.
+ * An empty affected-entity list reads as off either way — vacuously "every
+ * one of zero entities is on" would otherwise read true under `.every()`.
  */
-function sceneIsOn(entities) {
-  return sceneAffectedEntities(entities).some(e => {
+function sceneIsOn(entities, allMustBeOn) {
+  const affected = sceneAffectedEntities(entities);
+  if (affected.length === 0) return false;
+  const isOn = e => {
     const d = haGetCached(e);
-    return d && entityIsOn(d.state, e);
-  });
+    return !!d && entityIsOn(d.state, e);
+  };
+  return allMustBeOn ? affected.every(isOn) : affected.some(isOn);
 }
 
 // Tracks the last library://playlist/<n> URI togglePopupMusic started on a
@@ -11632,7 +11646,7 @@ function refreshControls() {
       // computed here instead, from the same sceneIsOn() every other scene
       // entry point (the popup bubble, the Overview C sidebar glow) uses.
       const allScenes = (c.subGroups || []).flatMap(g => g.scenes || []);
-      const activeCount = allScenes.filter(sc => sceneIsOn(sc.entities)).length;
+      const activeCount = allScenes.filter(sc => sceneIsOn(sc.entities, sc.allMustBeOn)).length;
       isOn = activeCount > 0;
       if (c.showCount) {
         const countEl = document.getElementById(`chip-count-${i}`);
@@ -12445,14 +12459,15 @@ async function openPopup(i) {
         sceneHtml += `<div class="popup-scenes-grid">`;
         (group.scenes || []).forEach((sc, idx) => {
           const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
-          const on = sceneIsOn(sc.entities);
+          const on = sceneIsOn(sc.entities, sc.allMustBeOn);
           // A JS array literal (single-quoted strings — entity_ids never
           // contain a quote), not JSON.stringify: JSON's double quotes would
           // collide with the onclick attribute's own double-quote delimiter.
           const entitiesJs = `[${sc.entities.map(e => `'${escapeHtml(e)}'`).join(",")}]`;
           const activateJs = sc.activate ? `'${escapeHtml(sc.activate)}'` : "null";
+          const allMustBeOnJs = sc.allMustBeOn ? "true" : "false";
           sceneHtml += `
-            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}',${activateJs})">
+            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}',${activateJs},${allMustBeOnJs})">
               <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="--scene-color:${sc.color}">${sc.icon}</div>
               <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
             </div>`;
@@ -14196,6 +14211,14 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
  * It defaults to `entities`, so any bubble that doesn't pass it — every
  * scene.* bubble so far — turns on exactly what it always has.
  *
+ * Off is a full undo, not just the lights: every scene script on this
+ * dashboard that plays music does it through the same one media_player, so
+ * off always stops it too via stopPopupMusic() (media_stop, then Harmony
+ * off), the exact sequence the Music chip's own off action and "All Off"
+ * row already use. Unconditional and harmless if nothing was playing —
+ * stopping an idle player is a no-op, not an error — so bubbles that never
+ * touch music pay nothing for this beyond two no-op service calls.
+ *
  * @param {string[]} entities — one or more entity_ids this bubble's on/off
  *                              glow and off-action are about (e.g.
  *                              ["scene.bedroom_evening"], or several scenes
@@ -14205,8 +14228,10 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
  * @param {string}   [activate] — entity_id to turn on instead of `entities`
  *                                (e.g. "script.scene_dinner"); omit to turn
  *                                on `entities` itself
+ * @param {boolean}  [allMustBeOn] — passed straight through to sceneIsOn();
+ *                                   see its own doc comment
  */
-async function togglePopupScene(entities, bubbleId, activate) {
+async function togglePopupScene(entities, bubbleId, activate, allMustBeOn) {
   haptic("heavy");
   const bubble = document.getElementById(bubbleId);
   if (bubble) {
@@ -14215,10 +14240,12 @@ async function togglePopupScene(entities, bubbleId, activate) {
     bubble.classList.add("fired");
     setTimeout(() => bubble.classList.remove("fired"), 700);
   }
-  const wasOn = sceneIsOn(entities);
+  const wasOn = sceneIsOn(entities, allMustBeOn);
   if (wasOn) {
     const targets = sceneAffectedEntities(entities);
     if (targets.length) await haService("homeassistant", "turn_off", { entity_id: targets });
+    const musicChip = (CONFIG.controls || []).find(c => c.isMusicChip);
+    if (musicChip && musicChip.entity) await stopPopupMusic(musicChip.entity);
   } else {
     await haService("homeassistant", "turn_on", { entity_id: activate || entities });
   }
@@ -15464,7 +15491,7 @@ function refreshOpenScenePopup() {
       (group.scenes || []).forEach((sc, idx) => {
         const bubbleId = `psb-${escapeHtml(group.label)}-${idx}`;
         const el = document.getElementById(bubbleId);
-        if (el) el.classList.toggle("on", sceneIsOn(sc.entities));
+        if (el) el.classList.toggle("on", sceneIsOn(sc.entities, sc.allMustBeOn));
       });
     });
   }
@@ -19079,7 +19106,7 @@ function _refreshOv3SidebarControls() {
       ? c.subGroups.flatMap(g => g.subEntities || [])
       : (c.subEntities || []);
     const isOn = c.isSceneChip
-      ? (c.subGroups || []).flatMap(g => g.scenes || []).some(sc => sceneIsOn(sc.entities))
+      ? (c.subGroups || []).flatMap(g => g.scenes || []).some(sc => sceneIsOn(sc.entities, sc.allMustBeOn))
       : c.isMusicChip
         ? musicChipIsOn(c)
         : c.isNasChip
