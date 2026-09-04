@@ -9000,7 +9000,26 @@ const ICONS = {
      dashboard for your home.
   ──────────────────────────────────────────────────────────────────────── -->
 <script>
-      const HOMIE_ASSET_VERSION = "20260903.4";
+      // Keep this equal to the Lovelace iframe's own `?v=` (homie-dash's
+      // dashboard config, `strategy.url`) on every deploy that touches
+      // config.js or homie-custom.js. They are two independent
+      // cache-busting mechanisms — the iframe's ?v= only forces a fresh
+      // fetch of homie-dashboard.html itself, not of the two files it loads
+      // below — and HA's static file server sends
+      // `Cache-Control: public, max-age=2678400` (31 days) on everything
+      // under /local/. Found 2026-09-04: this constant sat unbumped at
+      // "20260903.4" through three same-day config.js-only deploys (the
+      // Dinner light-group change, four new Zigbee lights, and this comment
+      // going in), so any browser that had cached config.js from on or
+      // before 2026-09-03 kept serving that exact stale copy for the full
+      // 31 days regardless of how many times the outer iframe ?v# changed —
+      // it never had a reason to refetch a URL whose query string never
+      // changed. That's what made the Dinner scene's off-tap look broken:
+      // the *script* (server-side, no browser cache involved) correctly
+      // used the new light.dinner_lights group, but the *bubble's config*
+      // (this file's config.js, browser-cached) was still the pre-group
+      // ten-light array, so on/off used two different light lists.
+      const HOMIE_ASSET_VERSION = "20260904.1";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>

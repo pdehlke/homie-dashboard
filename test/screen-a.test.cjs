@@ -628,7 +628,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260903.4");
+  assert.equal(version, "20260904.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1675,14 +1675,25 @@ test("control row and popup mappings match the approved design", () => {
   assert.deepEqual(Array.from(dinner.entities), ["light.dinner_lights"]);
   assert.equal(visitors.label, "Visitors");
   assert.equal(visitors.activate, "script.scene_visitors");
-  assert.equal(visitors.entities.length, 30, "every light.* entity in the house");
+  // 34, not the original 30: the four Zigbee lights added to the Lights
+  // chip 2026-09-04 (Globe Lamp, Reading Nook, Living Room Cabinet,
+  // Kitchen Counter Lamp) were missed here at the time, which left them
+  // permanently on after a Visitors off-tap — see homie-scenes-chip.md's
+  // "Ninth pass".
+  assert.equal(visitors.entities.length, 34, "every light.* entity in the house");
   assert.ok(visitors.entities.every((e) => e.startsWith("light.")));
-  assert.equal(new Set(visitors.entities).size, 30, "no duplicate entities");
+  assert.equal(new Set(visitors.entities).size, 34, "no duplicate entities");
   for (const outdoor of [
     "light.courtyard_patio_north", "light.courtyard_patio_south",
     "light.outside_garage_sconces", "light.outside_home_perimeter",
   ]) {
     assert.ok(visitors.entities.includes(outdoor), `Visitors must include ${outdoor}`);
+  }
+  for (const zigbee of [
+    "light.living_room_globe_lamp", "light.living_room_reading_nook",
+    "light.living_room_living_room_cabinet", "light.kitchen_kitchen_counter_lamp",
+  ]) {
+    assert.ok(visitors.entities.includes(zigbee), `Visitors must include ${zigbee}`);
   }
 });
 

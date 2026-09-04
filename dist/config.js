@@ -533,15 +533,20 @@ const CONFIG = {
             },
             {
               // Same generalized mechanism as Dinner above, just a bigger
-              // light list: every one of the house's 30 light.* entities
-              // (confirmed live against /api/states, including both
-              // courtyard fixtures and both "outside" ones), backed by its
-              // own script, script.scene_visitors. No dashboard code
-              // changed for this bubble — sceneAffectedEntities(),
-              // togglePopupScene(), and every isSceneChip render/refresh
-              // site already iterate subGroups[].scenes generically, so a
-              // second bubble in the same "Scenes" group needed nothing
-              // beyond this config entry.
+              // light list: every one of the house's light.* entities
+              // (originally 30, confirmed live against /api/states,
+              // including both courtyard fixtures and both "outside"
+              // ones; 34 as of 2026-09-04 once the four Zigbee lights
+              // below were added), backed by its own script,
+              // script.scene_visitors — which needs the same four added to
+              // its own light.turn_on step, since this array only drives
+              // the bubble's on/off glow and off-tap, not what a tap-while-
+              // off actually turns on. No dashboard code changed for this
+              // bubble — sceneAffectedEntities(), togglePopupScene(), and
+              // every isSceneChip render/refresh site already iterate
+              // subGroups[].scenes generically, so a second bubble in the
+              // same "Scenes" group needed nothing beyond this config
+              // entry.
               entities: [
                 "light.courtyard_patio_north",
                 "light.courtyard_patio_south",
@@ -555,13 +560,17 @@ const CONFIG = {
                 "light.guest_suite_east_hall",
                 "light.kitchen_cabinet",
                 "light.kitchen_island",
+                "light.kitchen_kitchen_counter_lamp",
                 "light.kitchen_pathway",
                 "light.kitchen_perimeter",
                 "light.kitchen_range",
                 "light.living_room_ambient",
                 "light.living_room_east_seating",
+                "light.living_room_globe_lamp",
+                "light.living_room_living_room_cabinet",
                 "light.living_room_pathway",
                 "light.living_room_perimeter",
+                "light.living_room_reading_nook",
                 "light.living_room_west_seating",
                 "light.office_north_sink",
                 "light.office_pool_bath",
@@ -573,6 +582,12 @@ const CONFIG = {
                 "light.primary_suite_bed_diagonal",
                 "light.primary_suite_bed_perimeter",
                 "light.primary_suite_hallway",
+                // 2026-09-04: the four Zigbee lights added to the Lights
+                // chip the same day (Globe Lamp, Reading Nook, Living Room
+                // Cabinet, Kitchen Counter Lamp) were never added here, so
+                // "every light in the house" silently excluded them from
+                // both directions — found live when a Visitors off-tap left
+                // them lit. See homie-scenes-chip.md's "Ninth pass".
               ],
               activate: "script.scene_visitors",
               // Hand-authored, not reused: none of the other five unused
