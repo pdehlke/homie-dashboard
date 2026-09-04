@@ -1393,15 +1393,28 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.15s, opacity 0.15s;
+    transition: transform 0.15s, opacity 0.15s, background 0.2s, box-shadow 0.2s;
     position: relative;
     overflow: hidden;
+    /* Resting/off look: a muted grey circle, the same "nothing's happening
+     * here" language .popup-item's resting background uses for an off
+     * Lights row. Previously this circle was always sc.color (inline,
+     * see the render site) regardless of on/off, so the only on-signal was
+     * the faint ring below on top of an already-colored circle — easy to
+     * miss and the reason pde reported scenes as looking permanently "on".
+     * The bubble's own color only appears once .on is added, via the
+     * --scene-color custom property the render site sets inline. */
+    background: rgba(255,255,255,0.1);
+    opacity: 0.55;
   }
   .popup-scene-icon:active { transform: scale(0.9); opacity: 0.8; }
-  /* On/off ring, same visual language as .chip.on's glow border below —
-   * a box-shadow rather than a border so it doesn't shift the 52px circle's
-   * layout or fight the bubble's own background (sc.color, inline). */
+  /* On: the bubble's real color (--scene-color, set inline per bubble —
+   * falls back to --accent for Music's bubbles, which never set it) at full
+   * strength, plus the existing ring, same visual language .chip.on's glow
+   * border already uses elsewhere rather than a new one invented for this. */
   .popup-scene-icon.on {
+    background: var(--scene-color, var(--accent));
+    opacity: 1;
     box-shadow: 0 0 0 2px var(--ac-6), 0 0 10px 2px var(--ac-4);
   }
   .popup-scene-bubble:has(.popup-scene-icon.on) .popup-scene-label { color: var(--accent-hi); }
@@ -12421,7 +12434,7 @@ async function openPopup(i) {
           const activateJs = sc.activate ? `'${escapeHtml(sc.activate)}'` : "null";
           sceneHtml += `
             <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}',${activateJs})">
-              <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="background:${sc.color}">${sc.icon}</div>
+              <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="--scene-color:${sc.color}">${sc.icon}</div>
               <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
             </div>`;
         });
@@ -14005,9 +14018,15 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
         const disabled = haGetCached(c.entity)?.state === "unavailable";
         const on = !disabled && musicStationIsOn(c.entity, s.uri);
         const bubbleId = `pmb-${gIdx}-${k}`;
+        // No --scene-color set here (unlike a Scenes bubble, every Station
+        // plays through the one fixed media_player, so there's only one
+        // color to ever show) — .popup-scene-icon.on's own
+        // var(--scene-color, var(--accent)) fallback already resolves to
+        // var(--accent) with nothing set, same color this used to set inline
+        // unconditionally before the dim-when-off pass below existed.
         parts.push(`
           <div class="popup-scene-bubble" onclick="togglePopupMusic('${escapeHtml(c.entity)}','${escapeHtml(s.uri)}','${escapeHtml(bubbleId)}','${escapeHtml(s.mediaType || "radio")}')">
-            <div class="popup-scene-icon${on ? " on" : ""}${disabled ? " disabled" : ""}" id="${bubbleId}" style="background:var(--accent)">${s.icon}</div>
+            <div class="popup-scene-icon${on ? " on" : ""}${disabled ? " disabled" : ""}" id="${bubbleId}">${s.icon}</div>
             <div class="popup-scene-label">${escapeHtml(s.label)}</div>
           </div>`);
       }
