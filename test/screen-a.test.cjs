@@ -1567,8 +1567,8 @@ test("control row and popup mappings match the approved design", () => {
   const lightEntities = config.controls[0].subGroups.flatMap((g) =>
     Array.from(g.subEntities, (s) => s.entity),
   );
-  assert.equal(lightEntities.length, 30);
-  assert.equal(new Set(lightEntities).size, 30, "a load must not appear in two rooms");
+  assert.equal(lightEntities.length, 34);
+  assert.equal(new Set(lightEntities).size, 34, "a load must not appear in two rooms");
   assert.ok(lightEntities.every((e) => e.startsWith("light.")));
 
   // The four Kitchen loads reached through the MC2E were unmapped and omitted
@@ -1582,10 +1582,30 @@ test("control row and popup mappings match the approved design", () => {
     ),
     [
       "light.kitchen_cabinet",
+      "light.kitchen_kitchen_counter_lamp",
       "light.kitchen_island",
       "light.kitchen_pathway",
       "light.kitchen_perimeter",
       "light.kitchen_range",
+    ],
+  );
+  // Four Zigbee smart plugs (switch_as_x), not Crestron loads, added
+  // 2026-09-04 to fill gaps the Crestron wiring never reached. Same
+  // subEntities shape as every Crestron entry above.
+  assert.deepEqual(
+    Array.from(
+      config.controls[0].subGroups.find((g) => g.label === "Living Room").subEntities,
+      (entry) => entry.entity,
+    ),
+    [
+      "light.living_room_ambient",
+      "light.living_room_living_room_cabinet",
+      "light.living_room_east_seating",
+      "light.living_room_globe_lamp",
+      "light.living_room_pathway",
+      "light.living_room_perimeter",
+      "light.living_room_reading_nook",
+      "light.living_room_west_seating",
     ],
   );
   assert.deepEqual(

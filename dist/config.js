@@ -232,11 +232,20 @@ const CONFIG = {
       // mapping is docs/crestron/crestron-load-room-worksheet.md in the
       // sibling homeassistant repo.
       //
-      // All 30 of the house's loads, as of 2026-09-03. The last four, Kitchen
-      // Range, Island, Pathway and Cabinet, were reached through the MC2E
-      // rather than the AADS because their only joins sit inside the range the
-      // DSC alarm keypad shares. They were unmapped and omitted here until the
-      // identification pass (issue #18) found which MC2E join drives each one.
+      // All 30 of the house's Crestron loads, as of 2026-09-03. The last four,
+      // Kitchen Range, Island, Pathway and Cabinet, were reached through the
+      // MC2E rather than the AADS because their only joins sit inside the
+      // range the DSC alarm keypad shares. They were unmapped and omitted
+      // here until the identification pass (issue #18) found which MC2E join
+      // drives each one.
+      //
+      // Four more, added 2026-09-04, aren't Crestron loads at all: Kitchen
+      // Counter Lamp and Living Room's Cabinet/Globe Lamp/Reading Nook are
+      // Zigbee smart plugs (switch_as_x over Third Reality plugs) filling
+      // gaps the Crestron wiring never reached. They render the same as every
+      // Crestron entry -- this popup has no notion of how a light is driven,
+      // only that it's a light.* entity -- so they're placed straight into
+      // their rooms' existing subGroups rather than a separate group.
       subGroups: [
         {
           label: "Courtyard",
@@ -272,6 +281,11 @@ const CONFIG = {
           label: "Kitchen",
           subEntities: [
             { label: "Cabinet", entity: "light.kitchen_cabinet" },
+            // Counter Lamp: a Zigbee smart plug (switch_as_x over a Third
+            // Reality plug), not a Crestron load, added 2026-09-04 alongside
+            // three more in Living Room. Same subEntities shape either way --
+            // the popup doesn't distinguish how a light is actually driven.
+            { label: "Counter Lamp", entity: "light.kitchen_kitchen_counter_lamp" },
             { label: "Island", entity: "light.kitchen_island" },
             { label: "Pathway", entity: "light.kitchen_pathway" },
             { label: "Perimeter", entity: "light.kitchen_perimeter" },
@@ -282,9 +296,14 @@ const CONFIG = {
           label: "Living Room",
           subEntities: [
             { label: "Ambient", entity: "light.living_room_ambient" },
+            // Cabinet, Globe Lamp, Reading Nook: the other three new Zigbee
+            // lights (see Counter Lamp's comment above, Kitchen subGroup).
+            { label: "Cabinet", entity: "light.living_room_living_room_cabinet" },
             { label: "East Seating", entity: "light.living_room_east_seating" },
+            { label: "Globe Lamp", entity: "light.living_room_globe_lamp" },
             { label: "Pathway", entity: "light.living_room_pathway" },
             { label: "Perimeter", entity: "light.living_room_perimeter" },
+            { label: "Reading Nook", entity: "light.living_room_reading_nook" },
             { label: "West Seating", entity: "light.living_room_west_seating" },
           ],
         },
