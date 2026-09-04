@@ -492,18 +492,17 @@ const CONFIG = {
           label: "Scenes",
           scenes: [
             {
-              entities: [
-                "light.kitchen_cabinet",
-                "light.kitchen_island",
-                "light.kitchen_pathway",
-                "light.kitchen_perimeter",
-                "light.kitchen_range",
-                "light.dining_room_north",
-                "light.dining_room_powder",
-                "light.dining_room_south",
-                "light.dining_room_table",
-                "light.living_room_pathway",
-              ],
+              // 2026-09-04: was the ten lights spelled out individually; now
+              // just the light.dinner_lights group pde created in HA, which
+              // wraps those same fixtures (plus a couple more). One indirection
+              // point instead of ten means the light list can be changed by
+              // editing the group in HA, not this config: sceneIsOn() reads the
+              // group's own on/off state, and a tap-while-on calls
+              // homeassistant.turn_off on the group, which HA forwards to every
+              // member. script.scene_dinner's light.turn_on step was updated the
+              // same way, so both the on- and off-direction now go through the
+              // group.
+              entities: ["light.dinner_lights"],
               activate: "script.scene_dinner",
               // Reused verbatim from ICONS.scenes.candle in homie-dashboard.html
               // (not referenced live — every other subGroups.scenes icon in this

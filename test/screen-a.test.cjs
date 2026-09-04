@@ -1649,13 +1649,10 @@ test("control row and popup mappings match the approved design", () => {
   const [dinner, visitors] = config.controls[6].subGroups[0].scenes;
   assert.equal(dinner.label, "Dinner");
   assert.equal(dinner.activate, "script.scene_dinner");
-  assert.deepEqual(Array.from(dinner.entities), [
-    "light.kitchen_cabinet", "light.kitchen_island", "light.kitchen_pathway",
-    "light.kitchen_perimeter", "light.kitchen_range",
-    "light.dining_room_north", "light.dining_room_powder",
-    "light.dining_room_south", "light.dining_room_table",
-    "light.living_room_pathway",
-  ]);
+  // 2026-09-04: the ten individual lights were replaced with the
+  // light.dinner_lights group pde created in HA, so membership changes are
+  // made to the group, not this config.
+  assert.deepEqual(Array.from(dinner.entities), ["light.dinner_lights"]);
   assert.equal(visitors.label, "Visitors");
   assert.equal(visitors.activate, "script.scene_visitors");
   assert.equal(visitors.entities.length, 30, "every light.* entity in the house");
