@@ -25,8 +25,8 @@ in the sibling `homeassistant` repo for the full mechanism and history.
   it was on, turns on the Kitchen/Dining Room/Living Room Pathway lights, and starts "Jazz: Hiromi"
   through Harmony. The bubble glows on once any of those ten lights reports on.
 - `scene-dinner-off` — tapping Dinner while on calls `homeassistant.turn_off` against exactly the
-  ten backing lights (`light.kitchen_cabinet`, `light.kitchen_island`, `light.kitchen_pathway`,
-  `light.kitchen_perimeter`, `light.kitchen_range`, `light.dining_room_north`,
+  nine backing lights (`light.kitchen_cabinet`, `light.kitchen_island`, `light.kitchen_pathway`,
+  `light.kitchen_range`, `light.dining_room_north`,
   `light.dining_room_powder`, `light.dining_room_south`, `light.dining_room_table`,
   `light.living_room_pathway`). This does **not** stop the music or touch `remote.harmony_hub` —
   by design, per the chosen bubble behavior (glow tracks the lights, not the script's own transient

@@ -1626,14 +1626,16 @@ test("control row and popup mappings match the approved design", () => {
   const lightEntities = config.controls[0].subGroups.flatMap((g) =>
     Array.from(g.subEntities, (s) => s.entity),
   );
-  assert.equal(lightEntities.length, 34);
-  assert.equal(new Set(lightEntities).size, 34, "a load must not appear in two rooms");
+  assert.equal(lightEntities.length, 33);
+  assert.equal(new Set(lightEntities).size, 33, "a load must not appear in two rooms");
   assert.ok(lightEntities.every((e) => e.startsWith("light.")));
 
   // The four Kitchen loads reached through the MC2E were unmapped and omitted
   // until the identification pass (issue #18, 2026-09-03) found which MC2E
   // join drives each one. Now that they're live-verified, they belong in the
-  // Kitchen group alongside Perimeter.
+  // Kitchen group. Perimeter dropped 2026-09-05: it turned out to be the same
+  // physical fixture as Pathway (d103, "Perimeter" on the Dining page, was
+  // never a load of its own), not a second Kitchen light.
   assert.deepEqual(
     Array.from(
       config.controls[0].subGroups.find((g) => g.label === "Kitchen").subEntities,
@@ -1644,7 +1646,6 @@ test("control row and popup mappings match the approved design", () => {
       "light.kitchen_kitchen_counter_lamp",
       "light.kitchen_island",
       "light.kitchen_pathway",
-      "light.kitchen_perimeter",
       "light.kitchen_range",
     ],
   );
@@ -1744,10 +1745,11 @@ test("control row and popup mappings match the approved design", () => {
   // chip 2026-09-04 (Globe Lamp, Reading Nook, Living Room Cabinet,
   // Kitchen Counter Lamp) were missed here at the time, which left them
   // permanently on after a Visitors off-tap — see homie-scenes-chip.md's
-  // "Ninth pass".
-  assert.equal(visitors.entities.length, 34, "every light.* entity in the house");
+  // "Ninth pass". Down to 33 as of 2026-09-05: light.kitchen_perimeter
+  // dropped, same fixture as light.kitchen_pathway, never a light of its own.
+  assert.equal(visitors.entities.length, 33, "every light.* entity in the house");
   assert.ok(visitors.entities.every((e) => e.startsWith("light.")));
-  assert.equal(new Set(visitors.entities).size, 34, "no duplicate entities");
+  assert.equal(new Set(visitors.entities).size, 33, "no duplicate entities");
   for (const outdoor of [
     "light.courtyard_patio_north", "light.courtyard_patio_south",
     "light.outside_garage_sconces", "light.outside_home_perimeter",
