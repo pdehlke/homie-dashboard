@@ -323,6 +323,7 @@ const CONFIG = {
           label: "Outside",
           subEntities: [
             { label: "Garage Sconces", entity: "light.outside_garage_sconces" },
+            { label: "Holiday", entity: "light.outside_holiday" },
             { label: "Home Perimeter", entity: "light.outside_home_perimeter" },
           ],
         },

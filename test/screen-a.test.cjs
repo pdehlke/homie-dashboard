@@ -645,7 +645,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260904.2");
+  assert.equal(version, "20260906.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1626,8 +1626,8 @@ test("control row and popup mappings match the approved design", () => {
   const lightEntities = config.controls[0].subGroups.flatMap((g) =>
     Array.from(g.subEntities, (s) => s.entity),
   );
-  assert.equal(lightEntities.length, 33);
-  assert.equal(new Set(lightEntities).size, 33, "a load must not appear in two rooms");
+  assert.equal(lightEntities.length, 34);
+  assert.equal(new Set(lightEntities).size, 34, "a load must not appear in two rooms");
   assert.ok(lightEntities.every((e) => e.startsWith("light.")));
 
   // The four Kitchen loads reached through the MC2E were unmapped and omitted
@@ -1647,6 +1647,21 @@ test("control row and popup mappings match the approved design", () => {
       "light.kitchen_island",
       "light.kitchen_pathway",
       "light.kitchen_range",
+    ],
+  );
+  // Holiday added 2026-09-06 (d221, the Modes page's "Holiday" button):
+  // categorized as a scene in the original panel worksheet, but pde traced it
+  // physically and found it switches the outdoor eave receptacles, an
+  // ordinary load like any other. Deliberately excluded from Visitors below.
+  assert.deepEqual(
+    Array.from(
+      config.controls[0].subGroups.find((g) => g.label === "Outside").subEntities,
+      (entry) => entry.entity,
+    ),
+    [
+      "light.outside_garage_sconces",
+      "light.outside_holiday",
+      "light.outside_home_perimeter",
     ],
   );
   // Four Zigbee smart plugs (switch_as_x), not Crestron loads, added
@@ -1747,9 +1762,15 @@ test("control row and popup mappings match the approved design", () => {
   // permanently on after a Visitors off-tap — see homie-scenes-chip.md's
   // "Ninth pass". Down to 33 as of 2026-09-05: light.kitchen_perimeter
   // dropped, same fixture as light.kitchen_pathway, never a light of its own.
-  assert.equal(visitors.entities.length, 33, "every light.* entity in the house");
+  // Still 33 as of 2026-09-06: light.outside_holiday joined the Lights chip
+  // (34 total there now) but was deliberately left out of Visitors, pde's
+  // call — the eave holiday-light receptacles are seasonal decoration, not
+  // room lighting, so "every light in the house" is no longer literally every
+  // light.* entity, just every one that reads as a room light.
+  assert.equal(visitors.entities.length, 33, "every room light, but not the seasonal Holiday circuit");
   assert.ok(visitors.entities.every((e) => e.startsWith("light.")));
   assert.equal(new Set(visitors.entities).size, 33, "no duplicate entities");
+  assert.ok(!visitors.entities.includes("light.outside_holiday"), "Holiday is Lights-chip only, not part of Visitors");
   for (const outdoor of [
     "light.courtyard_patio_north", "light.courtyard_patio_south",
     "light.outside_garage_sconces", "light.outside_home_perimeter",
