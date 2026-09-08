@@ -324,7 +324,6 @@ const CONFIG = {
           subEntities: [
             { label: "Garage Sconces", entity: "light.outside_garage_sconces" },
             { label: "Holiday", entity: "light.outside_holiday" },
-            { label: "Home Perimeter", entity: "light.outside_home_perimeter" },
           ],
         },
         {
@@ -575,7 +574,6 @@ const CONFIG = {
                 "light.office_pool_bath",
                 "light.outdoor_kitchen",
                 "light.outside_garage_sconces",
-                "light.outside_home_perimeter",
                 "light.primary_suite_bath_diagonal",
                 "light.primary_suite_bath_perimeter",
                 "light.primary_suite_bed_diagonal",

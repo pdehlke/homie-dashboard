@@ -645,7 +645,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260906.1");
+  assert.equal(version, "20260908.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1626,8 +1626,12 @@ test("control row and popup mappings match the approved design", () => {
   const lightEntities = config.controls[0].subGroups.flatMap((g) =>
     Array.from(g.subEntities, (s) => s.entity),
   );
-  assert.equal(lightEntities.length, 34);
-  assert.equal(new Set(lightEntities).size, 34, "a load must not appear in two rooms");
+  // 33, not 34, since 2026-09-08: light.outside_home_perimeter removed from
+  // the Outside room. It was never a distinct fixture (folded into
+  // light.entry_door as an alias), so the Lights chip has nothing left to
+  // show for it.
+  assert.equal(lightEntities.length, 33);
+  assert.equal(new Set(lightEntities).size, 33, "a load must not appear in two rooms");
   assert.ok(lightEntities.every((e) => e.startsWith("light.")));
 
   // The four Kitchen loads reached through the MC2E were unmapped and omitted
@@ -1653,6 +1657,10 @@ test("control row and popup mappings match the approved design", () => {
   // categorized as a scene in the original panel worksheet, but pde traced it
   // physically and found it switches the outdoor eave receptacles, an
   // ordinary load like any other. Deliberately excluded from Visitors below.
+  // Home Perimeter removed 2026-09-08: it was never a distinct fixture (its
+  // joins are aliases of light.entry_door), and the real Home Perimeter
+  // fixture lives entirely outside the join space Home Assistant can reach.
+  // See the pdehlke/homeassistant repo's crestron-ha-bridge.md and issue #23.
   assert.deepEqual(
     Array.from(
       config.controls[0].subGroups.find((g) => g.label === "Outside").subEntities,
@@ -1661,7 +1669,6 @@ test("control row and popup mappings match the approved design", () => {
     [
       "light.outside_garage_sconces",
       "light.outside_holiday",
-      "light.outside_home_perimeter",
     ],
   );
   // Four Zigbee smart plugs (switch_as_x), not Crestron loads, added
@@ -1767,13 +1774,17 @@ test("control row and popup mappings match the approved design", () => {
   // call — the eave holiday-light receptacles are seasonal decoration, not
   // room lighting, so "every light in the house" is no longer literally every
   // light.* entity, just every one that reads as a room light.
-  assert.equal(visitors.entities.length, 33, "every room light, but not the seasonal Holiday circuit");
+  // Down to 32 as of 2026-09-08: light.outside_home_perimeter removed. It was
+  // never a distinct fixture (folded into light.entry_door as an alias), and
+  // the real Home Perimeter circuit has no Home Assistant entity to turn on.
+  assert.equal(visitors.entities.length, 32, "every room light, but not the seasonal Holiday circuit");
   assert.ok(visitors.entities.every((e) => e.startsWith("light.")));
-  assert.equal(new Set(visitors.entities).size, 33, "no duplicate entities");
+  assert.equal(new Set(visitors.entities).size, 32, "no duplicate entities");
   assert.ok(!visitors.entities.includes("light.outside_holiday"), "Holiday is Lights-chip only, not part of Visitors");
+  assert.ok(!visitors.entities.includes("light.outside_home_perimeter"), "Home Perimeter has no HA entity to include");
   for (const outdoor of [
     "light.courtyard_patio_north", "light.courtyard_patio_south",
-    "light.outside_garage_sconces", "light.outside_home_perimeter",
+    "light.outside_garage_sconces",
   ]) {
     assert.ok(visitors.entities.includes(outdoor), `Visitors must include ${outdoor}`);
   }
