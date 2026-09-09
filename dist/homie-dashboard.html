@@ -4357,6 +4357,22 @@
     pointer-events: none;
     transition: opacity 0.3s ease;
   }
+  /* Screensaver "blank" mode — plain black, no content. z-index is above every
+     other overlay in the file (history-overlay's 9000 is the previous high)
+     so it can cover whatever was on screen, popups included, when idle fires. */
+  #screensaver-blank-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  #screensaver-blank-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
   /* Single image with fade */
   .pf-img {
     position: absolute;
@@ -20325,10 +20341,10 @@ const SETTINGS_DEFAULTS = {
   dashFontWeight:      400,
   timeOfDayThemes:     { morning: null, afternoon: null, evening: null, night: null },
   exitGesture:         "swipe-down",  // "swipe-down" | "swipe-up" | "pinch"
-  screensaverEnabled:  false,
+  screensaverEnabled:  true,
   screensaverDelay:    5,   // minutes before screensaver starts
   screensaverRotate:   5,   // minutes between mode rotations
-  screensaverModes:    ["overview1"],  // array of mode keys
+  screensaverModes:    ["blank"],  // array of mode keys
 };
 
 // _settings declared early near _activeTheme (required before applyThemeBg fires)
@@ -20506,7 +20522,17 @@ const _SS_LAUNCHERS = {
   'clock-digital': () => { openClock    && openClock('digital'); },
   weather:       () => { openWeatherFS   && openWeatherFS();   },
   solar:         () => { openSolarFS     && openSolarFS();     },
+  blank:         () => { _ssShowBlank();                       },
 };
+
+// "blank" mode has no existing overlay/view to launch, unlike every other
+// entry above — it shows its own dedicated full-black overlay instead.
+function _ssShowBlank() {
+  document.getElementById("screensaver-blank-overlay")?.classList.add("open");
+}
+function _ssHideBlank() {
+  document.getElementById("screensaver-blank-overlay")?.classList.remove("open");
+}
 
 function _ssGetModes() {
   const modes = _settings.screensaverModes;
@@ -20549,6 +20575,10 @@ function _ssDismiss() {
   _ssActive = false;
   clearTimeout(_ssRotateTimer);
   _ssRotateTimer = null;
+  // Unconditional and harmless when it was never shown — unlike the other
+  // launched modes, "blank" has no view of its own for switchOverview(0)
+  // below to implicitly cover, so it needs its own explicit close.
+  _ssHideBlank();
   // Return to overview 1 on dismiss
   if (typeof switchOverview === "function") switchOverview(0);
   _ssResetIdleTimer();
@@ -21805,6 +21835,12 @@ _applyDailyI18n();
   </div>
 </div>
 
+<!-- ─── SCREENSAVER BLANK OVERLAY ─── -->
+<!-- Plain black, no content. Shown by the screensaver engine's "blank" mode
+     (_SS_LAUNCHERS.blank / _ssShowBlank) and hidden on dismiss (_ssHideBlank),
+     called unconditionally from _ssDismiss() below. -->
+<div id="screensaver-blank-overlay"></div>
+
 <!-- ─── THERMOSTAT OVERLAY ─── -->
 <!-- Room picker only: shown for the unfiltered Climate chip (Overview A/B), where more
      than one climate entity exists and the real native dialog (opened by
@@ -22480,6 +22516,11 @@ _applyDailyI18n();
         <label class="startup-mode-option" onclick="toggleScreensaverMode('solar'); event.preventDefault()">
           <input type="radio" value="solar" id="ssm-solar">
           <span class="startup-mode-label">Solar</span>
+          <span class="startup-mode-check"><svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg></span>
+        </label>
+        <label class="startup-mode-option" onclick="toggleScreensaverMode('blank'); event.preventDefault()">
+          <input type="radio" value="blank" id="ssm-blank">
+          <span class="startup-mode-label">Blank Screen</span>
           <span class="startup-mode-check"><svg width="10" height="10" aria-hidden="true"><use href="#icon-check"/></svg></span>
         </label>
       </div>

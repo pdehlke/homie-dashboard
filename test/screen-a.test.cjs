@@ -2983,3 +2983,54 @@ test("the 'N on' badge and the Area Off button are written by one function, at e
   const direct = source.match(/document\.getElementById\(`room-badge-\$\{[^}]+\}`\)/g) || [];
   assert.equal(direct.length, 1, "only setRoomRowActive may look up an accordion row badge");
 });
+
+test("Screensaver's blank mode has its own overlay and is closed unconditionally on dismiss", () => {
+  // The upstream screensaver engine's other modes (overview1, nowplaying,
+  // weather, ...) each launch an existing view/overlay; _ssDismiss() only
+  // ever calls switchOverview(0) to leave them, which happens to cover
+  // overview1/2/3 but not the rest -- a pre-existing gap in modes this fork
+  // didn't add. "blank" has no existing view to reuse, so it gets a
+  // dedicated overlay and _ssDismiss() must close it explicitly, the same
+  // class of "handler calls a function that doesn't do what's needed" bug
+  // the Escape-handler test above guards against.
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  assert.ok(elements.has("screensaver-blank-overlay"), "the blank-mode overlay element must exist");
+  assert.match(
+    cssDeclarations(source, "#screensaver-blank-overlay"),
+    /position:\s*fixed/,
+  );
+  assert.match(
+    cssDeclarations(source, "#screensaver-blank-overlay.open"),
+    /opacity:\s*1/,
+  );
+
+  assert.match(source, /blank:\s*\(\)\s*=>\s*\{\s*_ssShowBlank\(\);\s*\},/, "_SS_LAUNCHERS.blank must call _ssShowBlank()");
+  assert.match(source, /function _ssShowBlank\(\)/);
+  assert.match(source, /function _ssHideBlank\(\)/);
+
+  const dismissStart = source.indexOf("function _ssDismiss()");
+  const dismissEnd = source.indexOf("\n}", dismissStart);
+  assert.ok(dismissStart > -1 && dismissEnd > dismissStart, "_ssDismiss must be found");
+  assert.match(source.slice(dismissStart, dismissEnd), /_ssHideBlank\(\);/, "_ssDismiss() must close the blank overlay unconditionally");
+
+  // Settings-panel entry: reachable and wired to the real mode key.
+  assert.match(source, /toggleScreensaverMode\('blank'\); event\.preventDefault\(\)/);
+  assert.match(source, /<input type="radio" value="blank" id="ssm-blank">/);
+});
+
+test("Screensaver defaults to on, 5 minutes, blank-only for any device with no saved settings", () => {
+  // Only takes effect for a fresh localStorage -- an existing device that
+  // already has homie_dashboard_settings saved keeps whatever it was set to,
+  // since loadSettings() spreads stored values over these defaults.
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("const SETTINGS_DEFAULTS = {");
+  const end = source.indexOf("\n};", start);
+  assert.ok(start > -1 && end > start, "SETTINGS_DEFAULTS must be found");
+  const block = source.slice(start, end);
+
+  assert.match(block, /screensaverEnabled:\s*true,/);
+  assert.match(block, /screensaverDelay:\s*5,/);
+  assert.match(block, /screensaverModes:\s*\["blank"\],/);
+});
