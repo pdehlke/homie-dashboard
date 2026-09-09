@@ -21,7 +21,12 @@ const BASE = WS_URL
   .replace(/\/api\/websocket$/, "");
 
 const ALARM_CODE = "";
-const ALARM_ENTITY = "";
+// Alarmo (nielsfaber/alarmo via HACS), installed 2026-09-08. A virtual,
+// HA-native alarm engine with no connection to the house's real Crestron/
+// DSC/Apex hardware -- see docs/adr and issue #24 in the pdehlke/homeassistant
+// repo. ALARM_CODE stays empty because Alarmo's own config currently has
+// code_disarm_required: false; set both together if that changes.
+const ALARM_ENTITY = "alarm_control_panel.alarmo";
 // The three activities below (Watch TV, Watch a Movie, and Harmony's own
 // built-in "PowerOff" all-off activity) are what's actually programmed into
 // the physical hub right now. See docs/harmony-hub/harmony-hub-integration.md

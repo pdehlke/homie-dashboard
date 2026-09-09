@@ -124,10 +124,6 @@
     return !(panel && panel.interactive === false);
   }
 
-  function securityMessage() {
-    return "Alarm Not Configured";
-  }
-
   function numericState(value) {
     const parsed = typeof value === "number" ? value : Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : null;
@@ -418,7 +414,6 @@
     mergeHourlyStatistics,
     powerKw,
     requiresStartConfirmation,
-    securityMessage,
     sensorPanelInteractive,
     signedValue,
     solarCardView,

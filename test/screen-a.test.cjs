@@ -645,7 +645,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260908.1");
+  assert.equal(version, "20260908.3");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1486,6 +1486,72 @@ test("Overview C sidebar pins Settings, Modes, and Security; everything else is 
   assert.match(cssDeclarations(source, ".ov3-sb-btn"), /border-radius:\s*12px/);
 });
 
+test("Escape key's overlay-closing handler calls only functions that actually exist", () => {
+  // Found live while verifying issue #24: the security-overlay branch called
+  // closeSecurity(), which was never defined -- the real function is
+  // closeSecurityOverlay(). Invisible while the button was disabled
+  // (showAlarmNotConfigured() never opened the overlay to begin with), it
+  // threw a ReferenceError the instant Escape was pressed with the popup
+  // open, once openSecurity() started opening it for real. Fixed alongside
+  // the rest of the Alarmo wiring; this test guards every branch of the
+  // handler generically so the same class of typo can't recur unnoticed.
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const handlerStart = source.indexOf("document.addEventListener('keydown', e => {");
+  const handlerEnd = source.indexOf("\n});", handlerStart);
+  assert.ok(handlerStart > -1 && handlerEnd > handlerStart, "the overlay-closing Escape handler must be found");
+  const handlerBody = source.slice(handlerStart, handlerEnd);
+
+  const calledFns = [...handlerBody.matchAll(/\b(close\w+)\(\)/g)].map((m) => m[1]);
+  assert.ok(calledFns.length >= 10, "expected the handler to close many overlays, found too few to be the right block");
+  for (const fn of calledFns) {
+    // Definitions in this file take either shape: a plain declaration
+    // (function closePopup() {...}) or a window.-scoped assignment
+    // (window.closeClock = function() {...}, closeClock defined inline
+    // inside the clock IIFE) -- accept either.
+    assert.match(
+      source,
+      new RegExp(`function ${fn}\\(|(?:window\\.)?${fn}\\s*=\\s*function`),
+      `${fn}() is called from the Escape handler but never defined`,
+    );
+  }
+  assert.ok(calledFns.includes("closeSecurityOverlay"), "security-overlay branch must call the real closeSecurityOverlay()");
+});
+
+test("Security buttons open the real Alarmo popup, not the retired not-configured alert", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+
+  // Both topbar entry points call the upstream openSecurity(), restored now
+  // that Alarmo is wired up (issue #24). showAlarmNotConfigured() was this
+  // fork's own override for when there was nothing to configure; it's gone.
+  assert.equal(elements.get("security-btn").onclick, "openSecurity()");
+  assert.equal(elements.get("ov3-security-btn").onclick, "openSecurity()");
+  assert.doesNotMatch(source, /showAlarmNotConfigured/);
+});
+
+test("alarmAction() and the Overview C status sync resolve against the same configured entity", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+
+  // The buttons act on CONFIG.alarmEntity (ALARM_ENTITY in config.js).
+  const alarmActionStart = source.indexOf("function alarmAction(service)");
+  const alarmActionEnd = source.indexOf("\n/* ─── SECURITY ACTIONS", alarmActionStart);
+  assert.ok(alarmActionStart > -1 && alarmActionEnd > alarmActionStart, "alarmAction must be found");
+  assert.match(source.slice(alarmActionStart, alarmActionEnd), /entity_id:\s*CONFIG\.alarmEntity/);
+
+  // _refreshOv3's status sync falls back to the same key rather than trusting
+  // CONFIG.alarm.entity to be kept in sync by convention -- the fix this PRD
+  // preferred over just setting both config keys (issue #24).
+  const refreshStart = source.indexOf("function _refreshOv3()");
+  const refreshEnd = source.indexOf("\n/* ─── FONT PICKER", refreshStart);
+  assert.ok(refreshStart > -1 && refreshEnd > refreshStart, "_refreshOv3 must be found");
+  const refreshBody = source.slice(refreshStart, refreshEnd);
+  assert.match(
+    refreshBody,
+    /const alarmEntityId = \(CONFIG\.alarm && CONFIG\.alarm\.entity\) \|\| CONFIG\.alarmEntity;/,
+  );
+  assert.match(refreshBody, /haGetCached\(alarmEntityId\)/);
+});
+
 test("Overview C's dynamic sidebar controls are unfiltered: Climate and Irrigation get buttons too", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const fnStart = source.indexOf("function _buildOv3SidebarControls()");
@@ -2264,12 +2330,15 @@ test("custom safety behavior confirms starts but never stops", () => {
   assert.match(custom.startConfirmationMessage({ label: "East Triangle" }), /East Triangle/);
 });
 
-test("custom layout and placeholder security behavior are explicit", () => {
+test("custom layout helpers", () => {
   const custom = loadCustomizations();
   assert.equal(custom.statColumns(8), 4);
   assert.equal(custom.statColumns(10), 5);
   assert.equal(custom.sensorPanelInteractive({ label: "Solar", interactive: false }), false);
-  assert.equal(custom.securityMessage(), "Alarm Not Configured");
+  // securityMessage() and its "Alarm Not Configured" placeholder were removed
+  // with the rest of showAlarmNotConfigured() once Alarmo was wired up
+  // (issue #24) -- there's no longer a "not configured" state to render.
+  assert.equal(custom.securityMessage, undefined);
 });
 
 test("custom defaults migrate each browser once without clobbering later choices", () => {
