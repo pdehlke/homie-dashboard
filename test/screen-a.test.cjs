@@ -645,7 +645,7 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260908.3");
+  assert.equal(version, "20260910.1");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -1692,13 +1692,36 @@ test("control row and popup mappings match the approved design", () => {
   const lightEntities = config.controls[0].subGroups.flatMap((g) =>
     Array.from(g.subEntities, (s) => s.entity),
   );
-  // 33, not 34, since 2026-09-08: light.outside_home_perimeter removed from
-  // the Outside room. It was never a distinct fixture (folded into
-  // light.entry_door as an alias), so the Lights chip has nothing left to
-  // show for it.
-  assert.equal(lightEntities.length, 33);
-  assert.equal(new Set(lightEntities).size, 33, "a load must not appear in two rooms");
+  // 39, not 33, since 2026-09-10: six Patio-page scene buttons (Path, Night,
+  // Fiesta, Patio All On, Club, Pool) added to Courtyard. Each is one opaque
+  // macro Load in crestron_cip's const.py, not an individually addressable
+  // fixture -- pde confirmed by direct observation that they're real and
+  // combine several fixtures apiece, some of which (the courtyard's four
+  // corners, the patio sconces, the south pathway) never surface on any join
+  // a CIP-only trace can see at all. Outdoor Kitchen (the Patio page's one
+  // ordinary load, d206) was deliberately left out: it's already its own
+  // entity in the Outdoor Kitchen room, and duplicating it into Courtyard
+  // would violate the very invariant this test asserts next.
+  assert.equal(lightEntities.length, 39);
+  assert.equal(new Set(lightEntities).size, 39, "a load must not appear in two rooms");
   assert.ok(lightEntities.every((e) => e.startsWith("light.")));
+
+  assert.deepEqual(
+    Array.from(
+      config.controls[0].subGroups.find((g) => g.label === "Courtyard").subEntities,
+      (entry) => entry.entity,
+    ),
+    [
+      "light.courtyard_patio_north",
+      "light.courtyard_patio_south",
+      "light.courtyard_path",
+      "light.courtyard_night",
+      "light.courtyard_fiesta",
+      "light.courtyard_patio_all_on",
+      "light.courtyard_club",
+      "light.courtyard_pool",
+    ],
+  );
 
   // The four Kitchen loads reached through the MC2E were unmapped and omitted
   // until the identification pass (issue #18, 2026-09-03) found which MC2E

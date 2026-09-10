@@ -257,6 +257,12 @@ const CONFIG = {
           subEntities: [
             { label: "Patio North", entity: "light.courtyard_patio_north" },
             { label: "Patio South", entity: "light.courtyard_patio_south" },
+            { label: "Path", entity: "light.courtyard_path" },
+            { label: "Night", entity: "light.courtyard_night" },
+            { label: "Fiesta", entity: "light.courtyard_fiesta" },
+            { label: "Patio (All On)", entity: "light.courtyard_patio_all_on" },
+            { label: "Club", entity: "light.courtyard_club" },
+            { label: "Pool", entity: "light.courtyard_pool" },
           ],
         },
         {
