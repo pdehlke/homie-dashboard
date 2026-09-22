@@ -616,6 +616,52 @@ const CONFIG = {
               label: "Visitors",
               color: "var(--accent)",
             },
+            {
+              // Two A/V bubbles, and the first pair here that are plain
+              // buttons rather than toggles. `entities: []` is deliberate,
+              // not an omission: sceneIsOn() reads an empty affected list as
+              // off, so togglePopupScene() always takes its activate branch
+              // and every tap runs the script. Neither bubble ever glows and
+              // neither ever calls homeassistant.turn_off.
+              //
+              // That is the honest shape today, because Home Assistant has no
+              // entity representing an audio zone at all. The six zones live
+              // behind one per-slot cursor on the AADS, so only one is
+              // readable at a time and the integration deliberately exposes
+              // services rather than six media_player entities that would
+              // show cached values for five of them. If that entity model
+              // ever lands, these two get a real on-state by filling in
+              // `entities` and nothing else here has to change.
+              //
+              // Pairing them as separate on and off bubbles rather than one
+              // toggle was pde's call, and it suits the asymmetry: turning
+              // every room on is a six-zone walk that takes seconds, while
+              // turning everything off is one press of d40 on the processor.
+              entities: [],
+              activate: "script.all_rooms_airplay",
+              // Hand-authored in the same stroke style as the rest of the
+              // set: a speaker with cast waves. None of the unused
+              // ICONS.scenes entries read as "audio everywhere".
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="10" height="16" rx="2"/><circle cx="8" cy="14" r="2.5"/><circle cx="8" cy="8" r="1"/><path d="M17 9a5 5 0 0 1 0 6"/><path d="M20 6.5a9 9 0 0 1 0 11"/></svg>`,
+              label: "All AirPlay",
+              color: "var(--accent)",
+            },
+            {
+              // The off half of the pair above. One press of d40 powers every
+              // zone off at once, so this is a single service call rather than
+              // a walk, and it returns in about two seconds.
+              //
+              // Worth knowing before wondering why a room comes back silent:
+              // powering a zone off clears its remembered source rather than
+              // only muting it, and there is no join path back to "off but
+              // remembering what it played". Tapping All AirPlay again is the
+              // way back.
+              entities: [],
+              activate: "script.all_av_off",
+              icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="10" height="16" rx="2"/><circle cx="8" cy="14" r="2.5"/><circle cx="8" cy="8" r="1"/><line x1="16" y1="9" x2="21" y2="14"/><line x1="21" y1="9" x2="16" y2="14"/></svg>`,
+              label: "AV Off",
+              color: "var(--accent)",
+            },
           ],
         },
       ],
