@@ -3176,3 +3176,47 @@ test("renders are dropped while the blank screensaver covers the screen", () => 
   h.flush();
   assert.equal(h.renders(), 1);
 });
+
+/* ── Always-running work ────────────────────────────────────────────────────
+ * Every overlay on this dashboard hides itself with opacity, not display:none,
+ * and CSS animations keep running on an opacity:0 element. On a wall panel
+ * that never reboots, anything infinite and ungated runs for the life of the
+ * device. These three guards are easy to regress by accident.
+ */
+
+test("closing the weather screen tears its particles down", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const body = source.match(/function closeWeatherFS\(\)\s*\{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(body, "closeWeatherFS must exist");
+
+  for (const id of ["wfs-rain-wrap", "wfs-snow-wrap", "wfs-fog-wrap", "wfs-stars-wrap",
+                    "wfs-dust-wrap", "wfs-lightning-wrap", "wfs-bg-clouds"]) {
+    assert.match(body, new RegExp(id),
+      `closeWeatherFS must clear #${id} or its particles animate forever`);
+    assert.match(source, new RegExp(`id="${id}"`), `#${id} must exist in the markup`);
+  }
+  assert.match(body, /innerHTML\s*=\s*""/, "the wrappers must actually be emptied");
+});
+
+test("solar flow dots do not animate while the solar screen is closed", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  // stroke-dashoffset cannot be composited, so each frame costs main-thread
+  // SVG geometry plus a re-raster. The markup is static and always present.
+  assert.match(source, /@keyframes sfs-flow-dot[\s\S]*?stroke-dashoffset/,
+    "guard assumes sfs-flow-dot animates stroke-dashoffset");
+  assert.match(source, /#solar-fs-overlay:not\(\.open\)\s+\.sfs-flow-dot\s*\{\s*animation:\s*none/,
+    "closed solar overlay must switch its flow dots off");
+  assert.doesNotMatch(source, /\.sfs-dot-battery/,
+    "dead battery-dot rules match no markup and should stay deleted");
+});
+
+test("no full-viewport backdrop-filter hides behind near-opaque black", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  // Strip comments first: both rules carry a note saying why the property is
+  // absent, and the note names the property.
+  const declarationsOnly = (sel) => cssDeclarations(source, sel).replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(declarationsOnly(".popup-overlay"), /backdrop-filter/,
+    ".popup-overlay is 0.85 black over the blur; 8 of them exist at once");
+  assert.doesNotMatch(declarationsOnly(".daily-header"), /backdrop-filter/,
+    ".daily-header blurs #daily-overlay's flat opaque background, a visual no-op");
+});

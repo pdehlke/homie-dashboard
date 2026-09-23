@@ -686,8 +686,10 @@
     position: fixed;
     inset: 0;
     z-index: 200;
+    /* No backdrop-filter: a full-viewport Gaussian blur is the most expensive
+     * per-frame GPU operation available, and at 0.85 alpha only 15% of it ever
+     * reaches the eye. Eight of these exist in the DOM at once. */
     background: rgba(0,0,0,0.85);
-    backdrop-filter: blur(8px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3186,8 +3188,10 @@
     align-items: center;
     padding: 0.9rem 1.8rem 0.9rem;
     border-bottom: 1px solid var(--ac-15);
+    /* No backdrop-filter: the only thing behind this is #daily-overlay's flat
+     * opaque --bg-overlay, and blurring a flat colour returns the same colour.
+     * It forced a render surface across the full width for zero visible gain. */
     background: rgba(0,0,0,0.7);
-    backdrop-filter: blur(8px);
     min-height: 80px;
   }
   /* Left slot: clock + date (mirrors .top-left) */
@@ -7797,12 +7801,18 @@
   }
   .sfs-dot-solar    { animation: sfs-flow-dot 1.8s linear infinite; }
   .sfs-dot-solar-2  { animation: sfs-flow-dot 1.8s linear infinite 0.9s; }
-  .sfs-dot-battery  { animation: sfs-flow-dot 2.2s linear infinite; }
-  .sfs-dot-battery-2{ animation: sfs-flow-dot 2.2s linear infinite 1.1s; }
   .sfs-dot-grid-exp { animation: sfs-flow-dot 2.6s linear infinite; }
   .sfs-dot-grid-exp-2 { animation: sfs-flow-dot 2.6s linear infinite 1.3s; }
   .sfs-dot-home     { animation: sfs-flow-dot 1.6s linear infinite; }
   .sfs-dot-home-2   { animation: sfs-flow-dot 1.6s linear infinite 0.8s; }
+
+  /* sfs-flow-dot animates stroke-dashoffset, which cannot be composited: each
+   * frame costs main-thread SVG geometry plus a re-raster. The dots are static
+   * markup and #solar-fs-overlay hides itself with opacity rather than
+   * display:none, so without this gate all eight animate from first paint for
+   * the entire uptime of a panel that never reboots — including behind the
+   * screensaver, on a screen nobody has opened. */
+  #solar-fs-overlay:not(.open) .sfs-flow-dot { animation: none; }
   /* Node cards in the SVG are handled inline */
 
   /* ── STATS CARDS ROW ── */
@@ -10214,6 +10224,20 @@ function closeWeatherFS() {
   _wfsOpen = false;
   _wfsLastCondition = null; // force a full bg rebuild on next open
   document.getElementById("weather-fs-overlay").classList.remove("open");
+
+  // Drop the injected particles. The overlay hides itself with opacity rather
+  // than display:none, and CSS animations keep running on an opacity:0
+  // element — so without this, one visit to the weather screen left up to ~190
+  // elements (80 raindrops, 55 snowflakes, 90 stars, 18 dust streaks, clouds)
+  // animating at 60fps behind an invisible layer for the rest of the panel's
+  // uptime. _wfsLastCondition is already nulled above, so the next open
+  // rebuilds all of them.
+  for (const id of ["wfs-rain-wrap", "wfs-snow-wrap", "wfs-fog-wrap",
+                    "wfs-stars-wrap", "wfs-dust-wrap", "wfs-lightning-wrap",
+                    "wfs-bg-clouds"]) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = "";
+  }
 }
 
 /* ─── SOLAR FULLSCREEN ─── */
