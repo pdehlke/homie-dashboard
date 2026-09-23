@@ -682,6 +682,41 @@
   }
 
   /* ─── POPUPS ─── */
+  /* ─── CLOSED OVERLAYS ARE SKIPPED ENTIRELY ──────────────────────────────
+   * Every overlay below hides itself with opacity (or, for the settings
+   * panel, by sliding a child off-screen), which leaves the whole subtree in
+   * the render tree: laid out and style-recalculated on every pass even
+   * though none of it is visible. Roughly 1,100 elements, of which ~480 are
+   * the settings panel alone.
+   *
+   * content-visibility: hidden skips layout and paint of the descendants
+   * while keeping the element's own box, so the fade and slide transitions on
+   * the containers themselves still play. It also stops animations inside a
+   * closed overlay from producing rendering work, which is the same class of
+   * problem the weather-particle and solar-flow-dot fixes address directly.
+   *
+   * #overview2 and #overview3 are deliberately NOT in this list. They are not
+   * .open-gated (they switch on a body class), and they are pre-built at
+   * startup precisely so the first swipe is instant — skipping their layout
+   * is the one case here where this would cost something visible.
+   * ───────────────────────────────────────────────────────────────────── */
+  .popup-overlay:not(.open),
+  .history-overlay:not(.open),
+  .settings-overlay:not(.open),
+  #nowplaying-overlay:not(.open),
+  #daily-overlay:not(.open),
+  #cameras-overlay:not(.open),
+  #cam-fullscreen:not(.open),
+  #photoframe-overlay:not(.open),
+  #screensaver-blank-overlay:not(.open),
+  #weather-fs-overlay:not(.open),
+  #thermostat-overlay:not(.open),
+  #clock-overlay:not(.open),
+  #solar-fs-overlay:not(.open),
+  #doorbell-overlay:not(.open) {
+    content-visibility: hidden;
+  }
+
   .popup-overlay {
     position: fixed;
     inset: 0;

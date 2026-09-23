@@ -3340,3 +3340,25 @@ test("the handshake subscribes to entities and no longer calls get_states", () =
     "a _wsReady guard here deadlocks the seed snapshot");
 });
 
+test("closed overlays are skipped by the renderer", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  // The semicolon matters: the comment above the rule also says
+  // "content-visibility: hidden", and matching that finds the prose, not the CSS.
+  const at = source.indexOf("content-visibility: hidden;");
+  assert.notEqual(at, -1, "a content-visibility rule for closed overlays must exist");
+  // The selector list is everything back to the previous rule's closing brace.
+  const block = source.slice(source.lastIndexOf("}", at) + 1, at);
+  for (const sel of [".popup-overlay", ".settings-overlay", "#daily-overlay",
+                     "#weather-fs-overlay", "#solar-fs-overlay", "#nowplaying-overlay"]) {
+    assert.ok(block.includes(`${sel}:not(.open)`),
+      `${sel} is laid out permanently unless it is in this rule`);
+  }
+  // Deliberately excluded: not .open-gated, and pre-built so the first swipe
+  // is instant. Adding them here would trade a real cost for a visible one.
+  for (const sel of ["#overview2", "#overview3"]) {
+    // Selector form, not the bare id: the comment above the rule names both
+    // of these while explaining why they are excluded.
+    assert.ok(!block.includes(`${sel}:not(.open)`),
+      `${sel} must stay out of the content-visibility rule`);
+  }
+});
