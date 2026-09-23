@@ -649,8 +649,19 @@ test("Homie HTML loads config and helpers with one release token", () => {
   // which trains everyone to ignore a red suite. What matters is that both
   // nested assets are versioned off the one token.
   assert.match(version, /^\d{8}\.\d+$/, "HOMIE_ASSET_VERSION must be YYYYMMDD.N");
-  assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
-  assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
+  // Static <script src> tags, not document.write(): the preload scanner can
+  // discover a literal src while the parser is still in the stylesheet, but
+  // cannot see inside a document.write() string. The version therefore appears
+  // in three places, so assert they agree rather than that a template is used.
+  // Matches the call form (a template literal), not the prose above it, which
+  // explains why document.write() is no longer used here.
+  assert.doesNotMatch(source, /document\.write\(`/,
+    "document.write hides these fetches from the preload scanner");
+  for (const asset of ["config", "homie-custom"]) {
+    const tag = source.match(new RegExp(`<script src="${asset}\\.js\\?v=([^"]+)"></script>`));
+    assert.ok(tag, `${asset}.js must load from a static, versioned tag`);
+    assert.equal(tag[1], version, `${asset}.js ?v= must match HOMIE_ASSET_VERSION`);
+  }
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
 });
 

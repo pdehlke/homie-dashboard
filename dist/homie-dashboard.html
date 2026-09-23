@@ -9080,10 +9080,25 @@ const ICONS = {
       // used the new light.dinner_lights group, but the *bubble's config*
       // (this file's config.js, browser-cached) was still the pre-group
       // ten-light array, so on/off used two different light lists.
-      const HOMIE_ASSET_VERSION = "20260922.2";
-document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
-document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
+      // Kept as the single source of truth for the version, and asserted
+      // against the two src attributes below by the test suite so the three
+      // can never drift apart.
+      const HOMIE_ASSET_VERSION = "20260922.3";
 </script>
+<!-- Static tags, not document.write(). Both files still have to load and run
+     before the main script below (config.js defines CONFIG; homie-custom.js
+     defines HOMIE_CUSTOM), so these are deliberately blocking. The difference
+     is discovery: the browser's preload scanner reads ahead through the raw
+     bytes and can start fetching a literal src the moment the document
+     arrives, but it cannot see inside a document.write() string. Written the
+     old way, these two requests could not even begin until the parser had
+     chewed through ~9,000 lines including a 7,900-line stylesheet, and then
+     ran serially. On the wall tablet that was pure added startup latency.
+
+     They stay HERE rather than moving to <head> because config.js references
+     ICONS, which the inline block just above defines. -->
+<script src="config.js?v=20260922.3"></script>
+<script src="homie-custom.js?v=20260922.3"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
