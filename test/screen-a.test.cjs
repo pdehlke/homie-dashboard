@@ -3220,3 +3220,123 @@ test("no full-viewport backdrop-filter hides behind near-opaque black", () => {
   assert.doesNotMatch(declarationsOnly(".daily-header"), /backdrop-filter/,
     ".daily-header blurs #daily-overlay's flat opaque background, a visual no-op");
 });
+
+/* ── Compressed state wire format ───────────────────────────────────────────
+ * subscribe_entities pushes deltas, not full state objects. Every other call
+ * site in the dashboard expects a full state object, so these two helpers are
+ * the seam. Getting them wrong shows up as a silently wrong dashboard rather
+ * than an error, which is exactly why they are pinned here.
+ *
+ * Verified once against the live instance on 2026-09-22: 764 snapshot
+ * entities expanded with zero mismatches against /api/states, and 55 real
+ * delta merges with no dropped attributes. These fixtures reproduce that
+ * shape offline so the suite stays hermetic.
+ */
+
+function loadWireHelpers(cache) {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("/* ─── COMPRESSED STATE WIRE FORMAT");
+  const endMarker = "function _applyCompressedDiff(entityId, diff) {";
+  assert.ok(start !== -1, "wire-format block must exist");
+  const end = source.indexOf("\n}", source.indexOf(endMarker)) + 2;
+
+  const context = { console, stateCache: { peek: (id) => cache.get(id) } };
+  vm.createContext(context);
+  vm.runInContext(
+    `${source.slice(start, end)}
+     globalThis.__api = { _expandCompressedState, _applyCompressedDiff };`,
+    context,
+  );
+  return context.__api;
+}
+
+test("compressed snapshot expands to a full state object", () => {
+  const { _expandCompressedState } = loadWireHelpers(new Map());
+  const state = _expandCompressedState("light.kitchen_cabinet", {
+    s: "on",
+    a: { brightness: 200, friendly_name: "Cabinet" },
+    lc: 1790133813.7136395,
+    c: "01M364MGEHZT9BHPWYJX4MJP9T",
+  });
+
+  assert.equal(state.entity_id, "light.kitchen_cabinet");
+  assert.equal(state.state, "on");
+  assert.equal(state.attributes.brightness, 200);
+  assert.equal(state.attributes.friendly_name, "Cabinet");
+  // _camMotionPoll() feeds last_changed straight to new Date(). The wire sends
+  // float unix SECONDS; passing that through unconverted dates motion to 1970.
+  assert.ok(!Number.isNaN(new Date(state.last_changed).getTime()),
+    "last_changed must be something new Date() accepts");
+  assert.equal(new Date(state.last_changed).getUTCFullYear(), 2026);
+  // last_updated is omitted on the wire when it equals last_changed.
+  assert.equal(state.last_updated, state.last_changed);
+});
+
+test("an absent attributes map expands to an empty object, never undefined", () => {
+  const { _expandCompressedState } = loadWireHelpers(new Map());
+  const state = _expandCompressedState("sensor.bare", { s: "42" });
+  // Compared by keys, not deepEqual: the block runs in its own vm realm, so
+  // its Object.prototype differs and deepStrictEqual rejects on that alone.
+  assert.ok(state.attributes && typeof state.attributes === "object",
+    "call sites read .attributes?.x without guarding the map");
+  assert.equal(Object.keys(state.attributes).length, 0);
+  assert.equal(state.last_changed, undefined);
+});
+
+test("a delta merges onto cached state instead of replacing it", () => {
+  const cache = new Map([["climate.office", {
+    entity_id: "climate.office",
+    state: "heat",
+    attributes: { temperature: 68, fan_mode: "auto", friendly_name: "Office" },
+    last_changed: "2026-09-22T10:00:00.000Z",
+  }]]);
+  const { _applyCompressedDiff } = loadWireHelpers(cache);
+
+  const merged = _applyCompressedDiff("climate.office", {
+    "+": { s: "cool", a: { temperature: 72 }, lc: 1790133813.7136395 },
+  });
+
+  assert.equal(merged.state, "cool");
+  assert.equal(merged.attributes.temperature, 72, "changed attribute must update");
+  // The wire carries only what changed; rebuilding from the delta alone would
+  // silently drop every attribute that stayed the same.
+  assert.equal(merged.attributes.fan_mode, "auto", "untouched attribute must survive");
+  assert.equal(merged.attributes.friendly_name, "Office");
+  assert.equal(new Date(merged.last_changed).getUTCFullYear(), 2026);
+});
+
+test("a delta can remove attributes and can omit the state", () => {
+  const cache = new Map([["light.lamp", {
+    entity_id: "light.lamp",
+    state: "on",
+    attributes: { brightness: 200, effect: "rainbow" },
+    last_changed: "2026-09-22T10:00:00.000Z",
+    last_updated: "2026-09-22T10:00:00.000Z",
+  }]]);
+  const { _applyCompressedDiff } = loadWireHelpers(cache);
+
+  const merged = _applyCompressedDiff("light.lamp", { "-": { a: ["effect"] } });
+  assert.equal(merged.state, "on", "omitted state must fall back to the cached one");
+  assert.equal("effect" in merged.attributes, false, "removed attribute must be gone");
+  assert.equal(merged.attributes.brightness, 200);
+  assert.equal(merged.last_changed, "2026-09-22T10:00:00.000Z", "unchanged timestamp must survive");
+});
+
+test("a delta for an entity with no cached state returns null rather than guessing", () => {
+  const { _applyCompressedDiff } = loadWireHelpers(new Map());
+  assert.equal(_applyCompressedDiff("sensor.never_seen", { "+": { s: "1" } }), null);
+});
+
+test("the handshake subscribes to entities and no longer calls get_states", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  assert.match(source, /type:\s*"subscribe_entities"/, "must use the entity subscription");
+  assert.doesNotMatch(source, /type:\s*"get_states"/,
+    "the subscription's first message is the snapshot; a get_states round trip is redundant");
+  assert.doesNotMatch(source, /type:\s*"subscribe_events",\s*\n?\s*event_type:\s*"state_changed"/,
+    "state_changed sends full state objects and was the thing being replaced");
+  // The seed arrives AS an event and is what sets _wsReady, so a _wsReady
+  // guard at the top of the event case would block the message it waits for.
+  assert.doesNotMatch(source, /case "event":\s*\n\s*if \(!_wsReady\) break;/,
+    "a _wsReady guard here deadlocks the seed snapshot");
+});
+
