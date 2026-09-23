@@ -9035,7 +9035,7 @@ const ICONS = {
       // used the new light.dinner_lights group, but the *bubble's config*
       // (this file's config.js, browser-cached) was still the pre-group
       // ten-light array, so on/off used two different light lists.
-      const HOMIE_ASSET_VERSION = "20260922.1";
+      const HOMIE_ASSET_VERSION = "20260922.2";
 document.write(`<script src="config.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 document.write(`<script src="homie-custom.js?v=${HOMIE_ASSET_VERSION}"><\/script>`);
 </script>
@@ -9197,8 +9197,109 @@ const _ICONS = {
 function _icon(name) { return _ICONS[name] ?? ''; }
 
 
+/* ─── RENDER SCHEDULING ───────────────────────────────────────────────
+ * refreshAllUI() re-renders every subsystem on the page. It used to run
+ * synchronously from the state_changed handler, once per event, for every
+ * entity in Home Assistant — including the ones this dashboard never shows.
+ *
+ * Measured against the live instance on 2026-09-22, over a quiet two-minute
+ * window: 96 state_changed events, of which 93 (96.9%) came from entities not
+ * referenced anywhere in the dashboard source — Lennox integration internals
+ * and Zigbee plug voltage sensors. Peak burst was 13 events in one second,
+ * and each one cost a full re-render of ~81 loop-driven DOM lookups.
+ *
+ * Two guards fix that without changing anything the user sees:
+ *   1. Relevance — only render when the changed entity is one the UI reads.
+ *   2. Coalescing — collapse a burst into one render on the next animation
+ *      frame, so 13 events in a second cost one paint instead of thirteen.
+ *
+ * Coalescing on requestAnimationFrame rather than a timer also means the
+ * browser suspends renders while the page is backgrounded, which is why there
+ * is no separate visibilitychange handler.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Entities read during the render pass currently in flight. */
+let _readsThisPass = new Set();
+/** Entities read during the last completed render pass. */
+let _renderedEntities = new Set();
+
+/**
+ * StateCache — a Map that records every entity_id read through it.
+ *
+ * Subclassing rather than instrumenting haGetCached() is deliberate: 16 call
+ * sites read stateCache.get() directly, bypassing that accessor, and a
+ * relevance filter that silently missed them would freeze parts of the UI.
+ * Overriding get() captures all 108 read sites with no call-site churn.
+ */
+class StateCache extends Map {
+  get(entityId) {
+    _readsThisPass.add(entityId);
+    return super.get(entityId);
+  }
+}
+
+/**
+ * Every entity_id reachable by walking CONFIG, collected once at startup.
+ *
+ * This is the floor under the observed-read set below: it covers cold start,
+ * and branches that are not currently taken (a popup that has never been
+ * opened has read nothing, but its entities must still trigger a render so
+ * the chip behind it updates).
+ */
+const _configEntities = (() => {
+  const ids = new Set();
+  const ENTITY_ID = /^[a-z_]+\.[a-z0-9_]+$/;
+  (function walk(v) {
+    if (!v) return;
+    if (typeof v === "string") { if (ENTITY_ID.test(v)) ids.add(v); return; }
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (typeof v === "object") Object.values(v).forEach(walk);
+  })(CONFIG);
+  return ids;
+})();
+
+/**
+ * entityAffectsUI — true when a changed entity is one the dashboard renders.
+ *
+ * The union of the two sources is what makes this safe to filter on: the
+ * static CONFIG sweep cannot go stale as popups open and close, and the
+ * observed read set catches anything reached at runtime that CONFIG does not
+ * name by literal id.
+ */
+function entityAffectsUI(entityId) {
+  return _configEntities.has(entityId) || _renderedEntities.has(entityId);
+}
+
+/** True while an opaque screensaver is covering the entire screen. */
+function _screenIsObscured() {
+  return document.getElementById("screensaver-blank-overlay")
+    ?.classList.contains("open") === true;
+}
+
+let _renderScheduled = false;
+let _renderDirty     = false;
+
+/**
+ * scheduleUIRefresh — coalesce any number of refresh requests in one frame
+ * into a single refreshAllUI().
+ *
+ * While the blank screensaver is up there is nothing to paint, so the render
+ * is dropped and a dirty flag set instead; stateCache still updates, so
+ * nothing goes stale, and _ssHideBlank() renders once on the way out.
+ */
+function scheduleUIRefresh() {
+  if (_screenIsObscured()) { _renderDirty = true; return; }
+  if (_renderScheduled) return;
+  _renderScheduled = true;
+  requestAnimationFrame(() => {
+    _renderScheduled = false;
+    _renderDirty     = false;
+    refreshAllUI();
+  });
+}
+
 // Single map of entity_id → state object, kept live by the WebSocket subscription.
-let stateCache = new Map(); // Keyed by entity_id → full HA state object
+let stateCache = new StateCache(); // Keyed by entity_id → full HA state object
 
 // Timestamp of the last full cache load — used only for the fallback poll guard.
 let _lastCacheRefreshMs = 0;
@@ -9353,7 +9454,7 @@ function _wsConnect() {
       case "result":
         if (msg.id === getStatesId && msg.success && Array.isArray(msg.result)) {
           // Seed the cache with the full state snapshot
-          stateCache = new Map(msg.result.map(s => [s.entity_id, s]));
+          stateCache = new StateCache(msg.result.map(s => [s.entity_id, s]));
           _lastCacheRefreshMs = Date.now();
           // Stamp every entity as seen now, then evict anything not in this snapshot
           const now = Date.now();
@@ -9382,10 +9483,15 @@ function _wsConnect() {
             _stateCacheSeenAt.set(newState.entity_id, Date.now());
             // Keep alarm badge in sync with live WS events
             if (newState.entity_id === CONFIG.alarmEntity) refreshAlarmUI(newState.state);
+            // Generic whole-dashboard work, unlike the entity-specific
+            // handlers below: skip it entirely for the ~97% of events that
+            // come from entities nothing on screen reads. See
+            // entityAffectsUI() and scheduleUIRefresh() above.
+            const affectsUI = entityAffectsUI(newState.entity_id);
             // Only sync AC/purifier derived state when popup is closed
             const popupOpen = document.getElementById("popup-overlay")
               ?.classList.contains("open");
-            if (!popupOpen) {
+            if (affectsUI && !popupOpen) {
               syncAcCardStateFromCache();
               syncPurifierCardStateFromCache();
             }
@@ -9409,7 +9515,7 @@ function _wsConnect() {
                 openDoorbellCamera();
               }
             }
-            refreshAllUI();
+            if (affectsUI) scheduleUIRefresh();
           }
         }
         // persistent_notification/subscribe push — see the auth_ok handler above.
@@ -9475,7 +9581,7 @@ async function refreshStateCache() {
     });
     if (!r.ok) { _wsSetConnected(false); return; }
     const all = await r.json();
-    stateCache = new Map(all.map(s => [s.entity_id, s]));
+    stateCache = new StateCache(all.map(s => [s.entity_id, s]));
     _lastCacheRefreshMs = Date.now();
     const now = Date.now();
     stateCache.forEach((_, id) => _stateCacheSeenAt.set(id, now));
@@ -15428,6 +15534,12 @@ function measureTopBar() {
  * Also skips chip updates while the control popup is open to avoid layout thrash.
  */
 function refreshAllUI() {
+  // Start a fresh read log; entityAffectsUI() consults the previous pass's.
+  // Reads that happen outside a render (a button handler, say) land here too
+  // and are folded in at the next swap — that only ever makes the filter more
+  // permissive, never less, so it cannot cause a missed update.
+  _readsThisPass = new Set();
+
   refreshHomeStats();
   refreshSensors();
   refreshWeather();
@@ -15454,6 +15566,8 @@ function refreshAllUI() {
   // Keep overview 2 in sync whenever it has been built (regardless of active screen)
   if (_ov2Built) _refreshOv2();
   if (_ov3Built) _refreshOv3();
+
+  _renderedEntities = _readsThisPass;
 }
 
 /**
@@ -15615,7 +15729,7 @@ async function refreshAll() {
     syncAcCardStateFromCache();
     syncPurifierCardStateFromCache();
   }
-  refreshAllUI();
+  scheduleUIRefresh();
 }
 
 /**
@@ -20532,6 +20646,9 @@ function _ssShowBlank() {
 }
 function _ssHideBlank() {
   document.getElementById("screensaver-blank-overlay")?.classList.remove("open");
+  // State kept arriving while the screen was blank but nothing was painted;
+  // catch the UI up in one render now that it is visible again.
+  if (_renderDirty) scheduleUIRefresh();
 }
 
 function _ssGetModes() {

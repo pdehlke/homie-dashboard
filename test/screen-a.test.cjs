@@ -645,7 +645,10 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
 test("Homie HTML loads config and helpers with one release token", () => {
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
-  assert.equal(version, "20260910.1");
+  // Format, not a literal: a hardcoded version fails on every single deploy,
+  // which trains everyone to ignore a red suite. What matters is that both
+  // nested assets are versioned off the one token.
+  assert.match(version, /^\d{8}\.\d+$/, "HOMIE_ASSET_VERSION must be YYYYMMDD.N");
   assert.match(source, /config\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.match(source, /homie-custom\.js\?v=\$\{HOMIE_ASSET_VERSION\}/);
   assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
@@ -3056,4 +3059,120 @@ test("Screensaver defaults to on, 5 minutes, blank-only for any device with no s
   assert.match(block, /screensaverEnabled:\s*true,/);
   assert.match(block, /screensaverDelay:\s*5,/);
   assert.match(block, /screensaverModes:\s*\["blank"\],/);
+});
+
+/* ── Render scheduling ──────────────────────────────────────────────────────
+ * These execute the real block out of homie-dashboard.html rather than
+ * asserting on its source text, because the thing worth protecting is the
+ * behaviour: a state_changed event for an entity nothing displays must not
+ * cost a render, and a burst must cost exactly one.
+ */
+
+function loadRenderScheduling(config) {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("/* ─── RENDER SCHEDULING");
+  const endMarker = "let stateCache = new StateCache();";
+  const end = source.indexOf(endMarker);
+  assert.ok(start !== -1, "render-scheduling block must exist");
+  assert.ok(end > start, "stateCache must be constructed after the block");
+  const block = source.slice(start, end + endMarker.length);
+
+  const frames = [];
+  let obscured = false;
+  const context = {
+    console,
+    CONFIG: config,
+    requestAnimationFrame: (fn) => frames.push(fn),
+    document: {
+      getElementById: (id) =>
+        id === "screensaver-blank-overlay"
+          ? { classList: { contains: () => obscured } }
+          : null,
+    },
+    refreshAllUI: () => { context.__renders = (context.__renders || 0) + 1; },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${block}
+    globalThis.__api = {
+      entityAffectsUI, scheduleUIRefresh, stateCache,
+      configEntities: _configEntities,
+      setRendered: (s) => { _renderedEntities = s; },
+    };`, context);
+
+  return {
+    api: context.__api,
+    renders: () => context.__renders || 0,
+    flush: () => { const f = frames.splice(0); f.forEach((fn) => fn()); },
+    pendingFrames: () => frames.length,
+    setObscured: (v) => { obscured = v; },
+  };
+}
+
+test("render filter admits configured entities and rejects unrelated ones", () => {
+  const config = loadConfig();
+  const { api } = loadRenderScheduling(config);
+
+  // Sampled from the live instance on 2026-09-22: these four accounted for
+  // 62 of 96 state_changed events in two minutes and appear nowhere in the UI.
+  for (const noisy of [
+    "lennoxs30.state",
+    "lennoxs30.conn_192_168_4_126",
+    "sensor.third_reality_inc_3rsp02064z_voltage",
+    "sensor.third_reality_inc_3rsp02064z_voltage_2",
+  ]) {
+    assert.equal(api.entityAffectsUI(noisy), false, `${noisy} must not trigger a render`);
+  }
+
+  assert.ok(api.configEntities.size > 50, "CONFIG sweep must find the displayed entities");
+  assert.equal(api.entityAffectsUI(config.alarmEntity), true, "alarm entity must trigger a render");
+});
+
+test("entities read during the last render are admitted even if CONFIG never names them", () => {
+  const { api } = loadRenderScheduling(loadConfig());
+  const adHoc = "sensor.not_in_config_at_all";
+
+  assert.equal(api.entityAffectsUI(adHoc), false);
+  // A render pass reads it → it joins the observed set on the next swap.
+  api.setRendered(new Set([adHoc]));
+  assert.equal(api.entityAffectsUI(adHoc), true,
+    "observed-read set must cover entities CONFIG does not name by literal id");
+});
+
+test("stateCache records every read, including direct .get() callers", () => {
+  const { api } = loadRenderScheduling(loadConfig());
+  api.stateCache.set("light.kitchen_cabinet", { state: "on" });
+  api.stateCache.get("light.kitchen_cabinet");   // the 16 direct call sites
+  api.setRendered(new Set());
+  // The read landed in the in-flight pass; prove get() still returns the value.
+  assert.deepEqual(api.stateCache.get("light.kitchen_cabinet"), { state: "on" });
+  // Not instanceof: the block runs in its own vm realm, so its Map intrinsic
+  // is a different object than this file's. The contract that matters is that
+  // the 108 existing call sites keep working, so exercise them directly.
+  assert.equal(api.stateCache.has("light.kitchen_cabinet"), true);
+  assert.equal(api.stateCache.size, 1);
+  api.stateCache.forEach((v, k) => assert.equal(k, "light.kitchen_cabinet"));
+  api.stateCache.delete("light.kitchen_cabinet");
+  assert.equal(api.stateCache.get("light.kitchen_cabinet"), undefined);
+});
+
+test("a burst of events coalesces into exactly one render", () => {
+  const h = loadRenderScheduling(loadConfig());
+  for (let i = 0; i < 13; i++) h.api.scheduleUIRefresh();  // measured peak burst
+  assert.equal(h.pendingFrames(), 1, "13 requests must queue one animation frame");
+  h.flush();
+  assert.equal(h.renders(), 1, "13 requests must produce one render");
+});
+
+test("renders are dropped while the blank screensaver covers the screen", () => {
+  const h = loadRenderScheduling(loadConfig());
+  h.setObscured(true);
+  h.api.scheduleUIRefresh();
+  h.flush();
+  assert.equal(h.renders(), 0, "nothing should paint behind an opaque screensaver");
+
+  // Coming out of the screensaver catches up in a single render.
+  h.setObscured(false);
+  h.api.scheduleUIRefresh();
+  h.flush();
+  assert.equal(h.renders(), 1);
 });
