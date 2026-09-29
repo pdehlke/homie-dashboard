@@ -175,7 +175,7 @@ function loadSceneToggle() {
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
-  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate, allMustBeOn)");
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate, allMustBeOn, activateOnly)");
   const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
@@ -924,6 +924,61 @@ test("togglePopupScene falls back to entities for the on-direction when activate
   assert.deepEqual(Array.from(off.calls[0].data.entity_id), ["scene.bedroom_evening"]);
 });
 
+test("activateOnly keeps a bubble's glow but never lets it fire the off branch", async () => {
+  // The All AirPlay bubble. Before the six audio zones had entities it carried
+  // `entities: []`, which sceneIsOn() reads as off, so every tap activated.
+  // Now that it has real switches to glow from, the off branch would become
+  // live — homeassistant.turn_off on all six PLUS stopPopupMusic()'s
+  // media_stop and Harmony off — and quietly convert a deliberate two-button
+  // pair into a toggle. activateOnly is what stops that.
+  const zones = [
+    "switch.crestron_kitchen_audio",
+    "switch.crestron_outdoor_kitchen_audio",
+    "switch.crestron_master_bed_audio",
+    "switch.crestron_master_bath_audio",
+    "switch.crestron_studio_audio",
+    "switch.crestron_courtyard_audio",
+  ];
+  const scene = loadSceneToggle();
+  for (const zone of zones) scene.setState(zone, "on");
+
+  // Every room on, so allMustBeOn reads this as on and the glow is real.
+  assert.equal(scene.sceneIsOn(zones, true), true, "the bubble should be lit when every room is on");
+
+  await scene.toggle(zones, "psb-Scenes-2", "script.all_rooms_airplay", true, true);
+
+  assert.equal(scene.calls.length, 1, "an activateOnly tap must not turn anything off or stop music");
+  assert.equal(scene.calls[0].service, "turn_on");
+  assert.equal(scene.calls[0].data.entity_id, "script.all_rooms_airplay");
+});
+
+test("activateOnly is what makes the difference, not the entity list", async () => {
+  // The same bubble without the flag: proves the off branch really would fire,
+  // so the flag is load-bearing rather than decorative. Drop activateOnly from
+  // config.js and this is the behaviour that ships.
+  const zones = ["switch.crestron_kitchen_audio", "switch.crestron_studio_audio"];
+  const scene = loadSceneToggle();
+  for (const zone of zones) scene.setState(zone, "on");
+
+  await scene.toggle(zones, "psb-Scenes-2", "script.all_rooms_airplay", true /* no activateOnly */);
+
+  assert.equal(scene.calls[0].service, "turn_off", "without the flag this really does turn the rooms off");
+  assertFullUndoStopsMusic(scene.calls, 1);
+});
+
+test("an activateOnly bubble flips its glow on after a tap, never off", async () => {
+  // The optimistic flip has to follow what the tap did. Reusing the plain
+  // `!wasOn` would show a lit bubble going dark at the moment it re-ran the
+  // six-zone walk, which is the opposite of what happened.
+  const zones = ["switch.crestron_kitchen_audio"];
+  const scene = loadSceneToggle();
+  scene.setState("switch.crestron_kitchen_audio", "on");
+
+  await scene.toggle(zones, "psb-Scenes-2", "script.all_rooms_airplay", true, true);
+
+  assert.ok(scene.classesOf("psb-Scenes-2").has("on"), "an activateOnly bubble went dark after activating");
+});
+
 test("togglePopupScene's allMustBeOn changes which direction a tap fires, not just the glow", async () => {
   // Same shape as Visitors: activate + allMustBeOn, one of two lights off.
   // Under any-on this would read "on" and tap-off would fire; allMustBeOn
@@ -982,7 +1037,7 @@ function loadMusicToggle() {
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
   const helpersEnd = source.indexOf("function irrigationDisabledZones()");
   const helpersSource = source.slice(helpersStart, helpersEnd);
-  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate, allMustBeOn)");
+  const toggleStart = source.indexOf("async function togglePopupScene(entities, bubbleId, activate, allMustBeOn, activateOnly)");
   const toggleEnd = source.indexOf("\nconst DYNAMIC_PLAYLIST_ICON", toggleStart);
   const toggleSource = source.slice(toggleStart, toggleEnd);
   assert.ok(entityIsOnStart > -1 && helpersStart > -1 && helpersEnd > helpersStart && toggleStart > -1 && toggleEnd > toggleStart,
@@ -3372,4 +3427,45 @@ test("closed overlays are skipped by the renderer", () => {
     assert.ok(!block.includes(`${sel}:not(.open)`),
       `${sel} must stay out of the content-visibility rule`);
   }
+});
+
+// The two A/V bubbles gained real entities on 2026-09-29 (issue #30), which
+// makes their configuration load-bearing rather than incidental: the flags below
+// are the difference between a glow and a toggle that stops the Harmony hub.
+
+test("the All AirPlay bubble glows from the six audio switches and never fires the off branch", () => {
+  const config = loadConfig();
+  const scenes = (config.controls || [])
+    .filter(c => c.isSceneChip)
+    .flatMap(c => (c.subGroups || []).flatMap(g => g.scenes || []));
+  const airplay = scenes.find(s => s.activate === "script.all_rooms_airplay");
+  assert.ok(airplay, "the All AirPlay bubble must still be configured");
+
+  // Array.from because config.js is evaluated in its own vm realm, so its
+  // arrays carry a different Array.prototype and deepEqual fails on prototype
+  // identity alone even when every element matches.
+  assert.deepEqual(Array.from(airplay.entities), [
+    "switch.crestron_kitchen_audio",
+    "switch.crestron_outdoor_kitchen_audio",
+    "switch.crestron_master_bed_audio",
+    "switch.crestron_master_bath_audio",
+    "switch.crestron_studio_audio",
+    "switch.crestron_courtyard_audio",
+  ], "all six zones, or the glow speaks for rooms it cannot see");
+  assert.equal(airplay.allMustBeOn, true, "any-on would light this the moment one room played");
+  assert.equal(airplay.activateOnly, true, "without this, a tap while lit turns every room off and stops Harmony");
+});
+
+test("the AV Off bubble keeps an empty affected list on purpose", () => {
+  // sceneIsOn() answers "is any of this on", or with allMustBeOn "is all of it
+  // on". Neither is the question an off button wants, which is "is anything
+  // left to turn off". Listing the six switches here would light this bubble
+  // while the house was making noise, reading as "AV Off is active".
+  const config = loadConfig();
+  const scenes = (config.controls || [])
+    .filter(c => c.isSceneChip)
+    .flatMap(c => (c.subGroups || []).flatMap(g => g.scenes || []));
+  const avOff = scenes.find(s => s.activate === "script.all_av_off");
+  assert.ok(avOff, "the AV Off bubble must still be configured");
+  assert.deepEqual(Array.from(avOff.entities), []);
 });

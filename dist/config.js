@@ -617,27 +617,36 @@ const CONFIG = {
               color: "var(--accent)",
             },
             {
-              // Two A/V bubbles, and the first pair here that are plain
-              // buttons rather than toggles. `entities: []` is deliberate,
-              // not an omission: sceneIsOn() reads an empty affected list as
-              // off, so togglePopupScene() always takes its activate branch
-              // and every tap runs the script. Neither bubble ever glows and
-              // neither ever calls homeassistant.turn_off.
+              // The on half of the A/V pair. The six audio zones got real
+              // entities on 2026-09-29 (crestron_cip switch/select/number/
+              // button, issue #30), so this finally glows from the house
+              // rather than never: allMustBeOn means it lights only when every
+              // one of the six rooms is actually on, which is what this bubble
+              // claims to have done.
               //
-              // That is the honest shape today, because Home Assistant has no
-              // entity representing an audio zone at all. The six zones live
-              // behind one per-slot cursor on the AADS, so only one is
-              // readable at a time and the integration deliberately exposes
-              // services rather than six media_player entities that would
-              // show cached values for five of them. If that entity model
-              // ever lands, these two get a real on-state by filling in
-              // `entities` and nothing else here has to change.
+              // activateOnly is load-bearing and not a style choice. Filling
+              // `entities` in without it would have made sceneIsOn() read true
+              // once every room was on, so the next tap would take
+              // togglePopupScene()'s off branch: homeassistant.turn_off on all
+              // six PLUS stopPopupMusic()'s media_stop and Harmony off. That
+              // would silently convert this into a toggle and make the AV Off
+              // bubble below redundant — a deliberate design decision reversed
+              // by a side effect rather than by anyone deciding it.
               //
               // Pairing them as separate on and off bubbles rather than one
               // toggle was pde's call, and it suits the asymmetry: turning
               // every room on is a six-zone walk that takes seconds, while
               // turning everything off is one press of d40 on the processor.
-              entities: [],
+              entities: [
+                "switch.crestron_kitchen_audio",
+                "switch.crestron_outdoor_kitchen_audio",
+                "switch.crestron_master_bed_audio",
+                "switch.crestron_master_bath_audio",
+                "switch.crestron_studio_audio",
+                "switch.crestron_courtyard_audio",
+              ],
+              allMustBeOn: true,
+              activateOnly: true,
               activate: "script.all_rooms_airplay",
               // Hand-authored in the same stroke style as the rest of the
               // set: a speaker with cast waves. None of the unused
@@ -650,6 +659,16 @@ const CONFIG = {
               // The off half of the pair above. One press of d40 powers every
               // zone off at once, so this is a single service call rather than
               // a walk, and it returns in about two seconds.
+              //
+              // Keeps `entities: []` even though the audio zones now have real
+              // entities, and that is deliberate. sceneIsOn() answers "is any
+              // of this on", or with allMustBeOn "is all of it on". Neither
+              // question is the one an off button wants, which is "is anything
+              // left to turn off": listing the six switches here would light
+              // this bubble whenever a room was playing, reading as "AV Off is
+              // active" while the house was making noise. An empty list reads
+              // as off and takes the activate branch on every tap, which is
+              // exactly right for a button whose whole job is to fire.
               //
               // Worth knowing before wondering why a room comes back silent:
               // powering a zone off clears its remembered source rather than

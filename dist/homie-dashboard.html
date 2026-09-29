@@ -9083,7 +9083,7 @@ const ICONS = {
       // Kept as the single source of truth for the version, and asserted
       // against the two src attributes below by the test suite so the three
       // can never drift apart.
-      const HOMIE_ASSET_VERSION = "20260922.3";
+      const HOMIE_ASSET_VERSION = "20260929.1";
 </script>
 <!-- Static tags, not document.write(). Both files still have to load and run
      before the main script below (config.js defines CONFIG; homie-custom.js
@@ -9097,8 +9097,8 @@ const ICONS = {
 
      They stay HERE rather than moving to <head> because config.js references
      ICONS, which the inline block just above defines. -->
-<script src="config.js?v=20260922.3"></script>
-<script src="homie-custom.js?v=20260922.3"></script>
+<script src="config.js?v=20260929.1"></script>
+<script src="homie-custom.js?v=20260929.1"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -12761,8 +12761,9 @@ async function openPopup(i) {
           const entitiesJs = `[${sc.entities.map(e => `'${escapeHtml(e)}'`).join(",")}]`;
           const activateJs = sc.activate ? `'${escapeHtml(sc.activate)}'` : "null";
           const allMustBeOnJs = sc.allMustBeOn ? "true" : "false";
+          const activateOnlyJs = sc.activateOnly ? "true" : "false";
           sceneHtml += `
-            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}',${activateJs},${allMustBeOnJs})">
+            <div class="popup-scene-bubble" onclick="togglePopupScene(${entitiesJs},'${escapeHtml(bubbleId)}',${activateJs},${allMustBeOnJs},${activateOnlyJs})">
               <div class="popup-scene-icon${on ? " on" : ""}" id="${bubbleId}" style="--scene-color:${sc.color}">${sc.icon}</div>
               <div class="popup-scene-label">${escapeHtml(sc.label)}</div>
             </div>`;
@@ -14525,8 +14526,29 @@ async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx) {
  *                                on `entities` itself
  * @param {boolean}  [allMustBeOn] — passed straight through to sceneIsOn();
  *                                   see its own doc comment
+ * @param {boolean}  [activateOnly] — a bubble that glows from real state but
+ *                                    never takes the off branch: every tap
+ *                                    activates, whatever sceneIsOn() says.
+ *
+ *                                    Exists for the two A/V bubbles, which are
+ *                                    deliberately a separate on and off pair
+ *                                    rather than one toggle, because turning
+ *                                    every room on is a six-zone walk while
+ *                                    turning everything off is one press of
+ *                                    d40 on the processor. Before the audio
+ *                                    zones had entities those two carried
+ *                                    `entities: []`, which made sceneIsOn()
+ *                                    read them as permanently off and so
+ *                                    always take the activate branch. Now that
+ *                                    they have real entities to glow from,
+ *                                    filling that list in would have quietly
+ *                                    made "All AirPlay" a toggle AND dragged
+ *                                    in stopPopupMusic()'s Harmony off — a
+ *                                    design decision reversed by a side
+ *                                    effect. This flag keeps the glow and
+ *                                    drops the off branch, on purpose.
  */
-async function togglePopupScene(entities, bubbleId, activate, allMustBeOn) {
+async function togglePopupScene(entities, bubbleId, activate, allMustBeOn, activateOnly) {
   haptic("heavy");
   const bubble = document.getElementById(bubbleId);
   if (bubble) {
@@ -14536,7 +14558,7 @@ async function togglePopupScene(entities, bubbleId, activate, allMustBeOn) {
     setTimeout(() => bubble.classList.remove("fired"), 700);
   }
   const wasOn = sceneIsOn(entities, allMustBeOn);
-  if (wasOn) {
+  if (wasOn && !activateOnly) {
     const targets = sceneAffectedEntities(entities);
     if (targets.length) await haService("homeassistant", "turn_off", { entity_id: targets });
     const musicChip = (CONFIG.controls || []).find(c => c.isMusicChip);
@@ -14547,7 +14569,12 @@ async function togglePopupScene(entities, bubbleId, activate, allMustBeOn) {
   // Optimistic instant feedback, same as toggleControl()'s chip flip — the
   // WS state_changed subscription reconciles this from real state shortly
   // after, via refreshOpenScenePopup() while this popup stays open.
-  if (bubble) bubble.classList.toggle("on", !wasOn);
+  //
+  // An activateOnly bubble just activated, whatever it read before, so it
+  // flips on rather than away from wasOn. Flipping an already-on one to off
+  // would show the user the opposite of what the tap did until the next
+  // state_changed arrived.
+  if (bubble) bubble.classList.toggle("on", activateOnly ? true : !wasOn);
 }
 
 /**
