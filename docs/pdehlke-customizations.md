@@ -39,7 +39,9 @@ until a real alarm integration replaces it.
 
 - replace Pet Stats with a Lights launcher
 - show the unconfigured alarm state without placeholder alarm controls
-- route A/V to the Music Assistant browser and player selector
+- route A/V to the Music Assistant browser and player selector (until 2026-10-02: its five music
+  categories are now browse rows in the Music chip, and A/V is an empty placeholder chip kept for
+  follow-up work)
 - swap Overview C's Garden and Floors cards while retaining their existing content and behavior
 - replace Overview C's inline AC controls with a Main House thermostat launcher (later removed
   once the floors card's expand button provided the same functionality)

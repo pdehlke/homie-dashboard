@@ -367,8 +367,15 @@ const CONFIG = {
       ],
     },
     {
+      // Emptied 2026-10-02 on purpose and left in the row: pde has follow-up
+      // plans for this chip. It used to be `action: "media_browser"`, the
+      // Music Assistant browser at its root. Its five music categories moved
+      // to the Music chip below as `browse` rows, and everything else the root
+      // listed (Podcasts, Audiobooks, and Home Assistant's own media sources)
+      // was dropped. `action: "av"` opens an empty placeholder; the Now
+      // Playing card's own browse button still opens the full browser.
       label: "A/V",
-      action: "media_browser",
+      action: "av",
     },
     {
       // Bottom-row equivalent of the Scenes chip (isSceneChip / subGroups[].scenes[])
@@ -384,27 +391,38 @@ const CONFIG = {
       // these can ever be "on" at once, so an "N on" badge would only ever
       // read 0 or 1.
       //
-      // Two labeled subGroups render as an accordion (the same
+      // Labeled subGroups render as an accordion (the same
       // toggleRoomAccordion() mechanism the Lights chip uses, generalized in
       // homie-dashboard.html to build a bubble grid instead of Mushroom cards
-      // when the group belongs to a Music chip): "Stations" is Music
-      // Assistant's own radio presets (`library://radio/<n>`); "Playlists" is
-      // MA library playlists (`library://playlist/<n>`) sourced from Jellyfin.
+      // when the group belongs to a Music chip): "Favorites" (called
+      // "Stations" until 2026-10-02) is a hand-picked set of Music Assistant
+      // radio presets (`library://radio/<n>`); "Jellyfin" (called "Playlists"
+      // until 2026-10-02) is MA library playlists (`library://playlist/<n>`)
+      // sourced from Jellyfin.
       // MA ingests a Jellyfin playlist into its regular library exactly like
       // any other playlist, so this needs no bridge to MA's native (non-HA)
       // API. A bubble's `mediaType` selects which `music_assistant.play_media`
       // media_type gets sent; omitted means "radio" (togglePopupMusic's
-      // default), so every existing Station entry below is unchanged. Every
-      // Playlists entry always plays shuffled (togglePopupMusic sets
-      // media_player.shuffle_set accordingly before play_media); Stations
+      // default), so every existing Favorites entry below is unchanged. Every
+      // Jellyfin entry always plays shuffled (togglePopupMusic sets
+      // media_player.shuffle_set accordingly before play_media); Favorites
       // explicitly turn shuffle back off, since it's meaningless for radio
-      // and would otherwise carry over from a previous Playlists tap.
+      // and would otherwise carry over from a previous Jellyfin tap.
+      //
+      // The other five rows are not bubble grids. A subGroup carrying `browse`
+      // instead of `stations` is a Music Assistant library category, moved
+      // here from the A/V chip on 2026-10-02: tapping the row opens the media
+      // browser already drilled into that category, playing through this
+      // chip's `entity`. `browse` is the media_content_id Music Assistant's
+      // browse_media root gives the category. A library of thousands of
+      // artists and tracks cannot be a bubble grid, which is why these rows
+      // open the list browser rather than expanding in place.
       label: "Music",
       isMusicChip: true,
       entity: "media_player.crestron",
       subGroups: [
         {
-          label: "Stations",
+          label: "Favorites",
           stations: [
             {
               uri: "library://radio/1",
@@ -443,6 +461,8 @@ const CONFIG = {
             },
           ],
         },
+        { label: "Playlists", browse: "playlists" },
+        { label: "Radio Stations", browse: "radio" },
         {
           // Populated at runtime, not here. This used to be a hand-maintained
           // list (one entry, "Alternative", library://playlist/10) that
@@ -453,9 +473,16 @@ const CONFIG = {
           // refreshes periodically. See
           // docs/homie-dashboard/homie-dynamic-playlists.md in the
           // pdehlke/homeassistant repo for the full design.
-          label: "Playlists",
+          // `dynamicPlaylists` is how that sync finds this group. It used to
+          // match on the label, which is how renaming "Playlists" to
+          // "Jellyfin" would have silently emptied the row.
+          label: "Jellyfin",
+          dynamicPlaylists: true,
           stations: [],
         },
+        { label: "Artists", browse: "artists" },
+        { label: "Albums", browse: "albums" },
+        { label: "Tracks", browse: "tracks" },
       ],
     },
     {

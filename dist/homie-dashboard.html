@@ -1566,7 +1566,7 @@
   }
 
   /* Music chip's "All Off" row — a one-shot action appended after the
-   * Stations/Playlists rows, not another expandable category, so it borrows
+   * Favorites/Jellyfin rows, not another expandable category, so it borrows
    * the same muted-red "stop" tint .tv-action-btn--off uses for Harmony's
    * own PowerOff button instead of the accent color the expandable rows
    * use, and gets no chevron. */
@@ -1631,7 +1631,7 @@
    * .popup-room-panel's own flex-direction:column (base rule above) would
    * stack bubbles one per line; this overrides back to the same wrapping
    * row .popup-scenes-grid uses everywhere else, so a Music accordion panel
-   * looks like the Stations/Playlists bubble grid, not a list. */
+   * looks like the Favorites/Jellyfin bubble grid, not a list. */
   .popup-room-panel.music-grid {
     display: flex;
     flex-direction: row;
@@ -9083,7 +9083,7 @@ const ICONS = {
       // Kept as the single source of truth for the version, and asserted
       // against the two src attributes below by the test suite so the three
       // can never drift apart.
-      const HOMIE_ASSET_VERSION = "20260929.1";
+      const HOMIE_ASSET_VERSION = "20261002.1";
 </script>
 <!-- Static tags, not document.write(). Both files still have to load and run
      before the main script below (config.js defines CONFIG; homie-custom.js
@@ -9097,8 +9097,8 @@ const ICONS = {
 
      They stay HERE rather than moving to <head> because config.js references
      ICONS, which the inline block just above defines. -->
-<script src="config.js?v=20260929.1"></script>
-<script src="homie-custom.js?v=20260929.1"></script>
+<script src="config.js?v=20261002.1"></script>
+<script src="homie-custom.js?v=20261002.1"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -11681,10 +11681,10 @@ const _lastPlaylistStarted = new Map();
 /**
  * musicStationIsOn — a Music chip bubble reads "on" only when its target
  * media_player is actually mid-playback of that exact bubble's URI, not
- * merely powered on. For a Stations bubble (radio) this is a live check
+ * merely powered on. For a Favorites bubble (radio) this is a live check
  * against media_content_id, same discipline sceneIsOn() follows for Scenes:
  * a media_player's own state already says everything needed, no separate
- * affected-entities step required. For a Playlists bubble it falls back to
+ * affected-entities step required. For a Jellyfin bubble it falls back to
  * _lastPlaylistStarted above, since media_content_id itself can't answer the
  * question once a playlist starts playing actual tracks.
  * Shared by the popup bubble ring, the chip glow (via musicChipIsOn()), and
@@ -12777,8 +12777,9 @@ async function openPopup(i) {
     return;
   }
 
-  // ── Music chip: no early return. Its two subGroups ("Stations",
-  // "Playlists") fall through into the generic accordion below, the same
+  // ── Music chip: no early return. Its subGroups ("Favorites", "Jellyfin",
+  // and the `browse` library categories) fall through into the generic
+  // accordion below, the same
   // path the Lights chip uses, so bubble rendering is a card-type branch
   // inside toggleRoomAccordion() rather than a bespoke flat grid here. See
   // the isMusicControl branch there and the accordion block just below.
@@ -12855,8 +12856,14 @@ async function openPopup(i) {
 
     let accordionHtml = groupMeta.map(({ label, startIdx, count, gIdx }) => {
       const rid = roomIdOf(label);
+      // A Music `browse` group has no items of its own to expand: its row
+      // opens the media browser on that library category instead. Same row
+      // markup and chevron either way, so the list reads as one set.
+      const rowClick = c.subGroups[gIdx].browse
+        ? `openMusicBrowse(${i},${gIdx})`
+        : `toggleRoomAccordion('${rid}',${i},${startIdx},${count},${gIdx})`;
       return `
-        <div class="popup-room-row" id="room-row-${rid}" onclick="toggleRoomAccordion('${rid}',${i},${startIdx},${count},${gIdx})">
+        <div class="popup-room-row" id="room-row-${rid}" onclick="${rowClick}">
           <div class="popup-room-row-left">
             <span class="popup-room-name">${escapeHtml(label)}</span>
             <span class="popup-room-badge" id="room-badge-${rid}"></span>
@@ -12869,7 +12876,7 @@ async function openPopup(i) {
     }).join('');
 
     // Music-only: a one-shot "stop whatever is playing" row appended after
-    // the Stations/Playlists category rows, not a category of its own — no
+    // the Favorites/Jellyfin category rows, not a category of its own — no
     // chevron, no expanding panel, and it never appears for Lights/Climate/
     // Covers/Purifier, whose accordions have nothing analogous to stop.
     // Reuses the same red tint and power icon the TV control overlay's own
@@ -14594,8 +14601,8 @@ async function stopPopupMusic(entity) {
 }
 
 /**
- * togglePopupMusic — plays or stops a Music chip bubble (a Stations radio
- * preset or a Playlists library playlist) on its target media_player.
+ * togglePopupMusic — plays or stops a Music chip bubble (a Favorites radio
+ * preset or a Jellyfin library playlist) on its target media_player.
  *
  * Off is an explicit media_player.media_stop followed by turning off the
  * Harmony Hub's Airplay activity, not pause — pde chose a clean stop over a
@@ -14613,8 +14620,8 @@ async function stopPopupMusic(entity) {
  * @param {string} uri       — this bubble's URI (library://radio/n or library://playlist/n)
  * @param {string} bubbleId  — DOM id of the bubble element for animation
  * @param {string} [mediaType="radio"] — music_assistant.play_media's media_type
- *                            for this bubble. Every Stations entry omits it
- *                            (defaults to "radio"); Playlists entries set
+ *                            for this bubble. Every Favorites entry omits it
+ *                            (defaults to "radio"); Jellyfin entries set
  *                            "playlist" explicitly via config.js's `mediaType`
  *                            field.
  */
@@ -14653,12 +14660,12 @@ async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
     if (!wasPlaying) {
       await haService("media_player", "volume_set", { entity_id: entity, volume_level: 0.4 });
     }
-    // Playlists always shuffle; radio has no meaningful shuffle concept, and
+    // Jellyfin always shuffle; radio has no meaningful shuffle concept, and
     // shuffle is a player-level setting that otherwise carries over from
     // whatever last set it (checked live 2026-08-26: shuffle_set(true) while
     // idle survived into the next play_media call, even changing which track
-    // played first), so a Stations tap must explicitly clear it rather than
-    // leave a stale "on" from an earlier Playlists tap. Set before play_media,
+    // played first), so a Favorites tap must explicitly clear it rather than
+    // leave a stale "on" from an earlier Jellyfin tap. Set before play_media,
     // not after: verified live that shuffling only the queue after the fact
     // still plays its original first track, while setting it first shuffles
     // that choice too.
@@ -14668,7 +14675,7 @@ async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
     // See _lastPlaylistStarted's own comment above musicStationIsOn: a
     // playlist's media_content_id stops matching its own URI the moment
     // playback starts, so this is the only record of "this bubble is the one
-    // that's on" for a Playlists entry. A Stations tap clears any stale
+    // that's on" for a Jellyfin entry. A Favorites tap clears any stale
     // playlist marker for this entity, since switching to a station is
     // exactly the kind of "something else took over the player" this must
     // not miss.
@@ -14683,9 +14690,9 @@ async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
 
 /**
  * stopAllMusic — the Music chip's "All Off" row, appended below the
- * Stations/Playlists accordion rows (see the isMusicControl branch of
+ * Favorites/Jellyfin accordion rows (see the isMusicControl branch of
  * openPopup's accordion block). Stops whatever bubble happens to be
- * playing without pde needing to know which Stations or Playlists entry it
+ * playing without pde needing to know which Favorites or Jellyfin entry it
  * is: the same stopPopupMusic() sequence togglePopupMusic's own off branch
  * runs, just triggered without a specific bubble/URI in hand.
  *
@@ -14714,8 +14721,9 @@ async function stopAllMusic(entity) {
 const DYNAMIC_PLAYLIST_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 6H3"/><path d="M16 12H3"/><path d="M12 18H3"/></svg>`;
 
 /**
- * syncDynamicPlaylistsFromHA — replaces config.js's Playlists subGroup
- * (previously a hand-maintained array: adding a Jellyfin playlist meant
+ * syncDynamicPlaylistsFromHA — replaces config.js's `dynamicPlaylists`
+ * subGroup (labeled "Jellyfin"; "Playlists" until 2026-10-02), previously a
+ * hand-maintained array (adding a Jellyfin playlist meant
  * editing config.js and redeploying) with whatever
  * sensor.homie_dynamic_playlists currently lists. That sensor is written by
  * an external script, not by this dashboard or any HA automation — see
@@ -14728,12 +14736,12 @@ const DYNAMIC_PLAYLIST_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" f
  * to was "refreshed periodically", not "live every time the chip opens", so
  * one fetch here is enough to have the current list in place well before a
  * user could tap into the Music chip. A failed fetch (HA unreachable, sensor
- * missing) just leaves the Playlists row empty rather than throwing; Stations
+ * missing) just leaves the Jellyfin row empty rather than throwing; Favorites
  * is entirely unaffected either way.
  */
 async function syncDynamicPlaylistsFromHA() {
   const musicChip = (CONFIG.controls || []).find(c => c.isMusicChip);
-  const playlistsGroup = musicChip?.subGroups?.find(g => g.label === "Playlists");
+  const playlistsGroup = musicChip?.subGroups?.find(g => g.dynamicPlaylists);
   if (!playlistsGroup) return;
   try {
     const r = await fetch(`${BASE}/api/states/sensor.homie_dynamic_playlists`, { headers: _haHeaders() });
@@ -14746,7 +14754,7 @@ async function syncDynamicPlaylistsFromHA() {
       mediaType: "playlist",
       icon: DYNAMIC_PLAYLIST_ICON,
     }));
-  } catch { /* leave the Playlists row empty; Stations is unaffected */ }
+  } catch { /* leave the Jellyfin row empty; Favorites is unaffected */ }
 }
 document.addEventListener("DOMContentLoaded", () => { syncDynamicPlaylistsFromHA(); });
 
@@ -15240,20 +15248,76 @@ function securityAction(domain, service) {
 let _mb = {
   stack:     [], // navigation stack: [{title, media_content_id, media_content_type}]
   rootTitle: "Media Library", // overridden on open
+  entity:    null, // player this browse session targets, fixed on open
+  base:      null, // {id, type} when opened on a category instead of the root
 };
 
-function openMediaBrowser() {
+/**
+ * openMediaBrowser — opens the media browser overlay.
+ *
+ * With no argument it browses the active Now Playing source from the library
+ * root, which is what the Now Playing card's browse button does.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.entity]      — media_player to browse and play on,
+ *                                      instead of the active Now Playing source
+ * @param {string} [opts.contentId]   — open on this browse_media node rather
+ *                                      than the root. That node becomes the top
+ *                                      of this session: Back never climbs above it.
+ * @param {string} [opts.contentType] — that node's media_content_type
+ * @param {string} [opts.title]       — title to show at the top level
+ */
+function openMediaBrowser(opts = {}) {
   haptic("light");
   _mb.stack = [];
-  const entity = _activeMusicEntity || _musicEntities()[0];
+  const entity = opts.entity || _activeMusicEntity || _musicEntities()[0];
+  _mb.entity = entity;
+  _mb.base = opts.contentId ? { id: opts.contentId, type: opts.contentType } : null;
   const isSpotify = entity.includes("spotify");
   const playerLabel = isSpotify ? "Spotify" : "Music Assistant";
-  _mb.rootTitle = isSpotify ? "Browse Media" : "Media Library";
+  _mb.rootTitle = opts.title || (isSpotify ? "Browse Media" : "Media Library");
   document.getElementById("mb-player-label").textContent = playerLabel;
   document.getElementById("mb-back-btn").style.display = "none";
   document.getElementById("mb-title").textContent = _mb.rootTitle;
   document.getElementById("media-browser-overlay").classList.add("open");
-  _mbLoad(entity, null, null);
+  _mbLoad(entity, _mb.base?.id ?? null, _mb.base?.type ?? null);
+}
+
+/**
+ * openMusicBrowse — a Music chip `browse` row: opens the media browser on one
+ * Music Assistant library category (Artists, Albums, ...), playing through the
+ * chip's own entity, the same player its Favorites and Jellyfin bubbles use.
+ *
+ * @param {number} ctrlIdx — index into activeControls
+ * @param {number} gIdx    — the browse group's index within c.subGroups
+ */
+function openMusicBrowse(ctrlIdx, gIdx) {
+  const c = activeControls[ctrlIdx];
+  const group = c?.subGroups?.[gIdx];
+  if (!group?.browse) return;
+  openMediaBrowser({
+    entity: c.entity,
+    contentId: group.browse,
+    contentType: "music_assistant",
+    title: group.label,
+  });
+}
+
+/**
+ * openAvPlaceholder — the A/V chip, emptied 2026-10-02 and kept in the row
+ * for pde's follow-up plans (see its entry in config.js). Shows the media
+ * browser's own frame with nothing in it, so the chip still answers a tap.
+ */
+function openAvPlaceholder() {
+  haptic("light");
+  _mb.stack = [];
+  _mb.entity = null;
+  _mb.base = null;
+  document.getElementById("mb-player-label").textContent = "";
+  document.getElementById("mb-back-btn").style.display = "none";
+  document.getElementById("mb-title").textContent = "A/V";
+  document.getElementById("mb-list").innerHTML = '<div class="mb-loading">Nothing here</div>';
+  document.getElementById("media-browser-overlay").classList.add("open");
 }
 
 function closeMediaBrowser(e) {
@@ -15266,7 +15330,7 @@ function mediaBrowserBack() {
   haptic("light");
   _mb.stack.pop(); // remove current
   const prev = _mb.stack.pop(); // remove previous (will be re-pushed by _mbLoad)
-  const entity = _activeMusicEntity || _musicEntities()[0];
+  const entity = _mb.entity || _activeMusicEntity || _musicEntities()[0];
   if (!prev) {
     document.getElementById("mb-back-btn").style.display = "none";
     document.getElementById("mb-title").textContent = _mb.rootTitle;
@@ -15303,9 +15367,16 @@ async function _mbLoad(entity, mediaContentId, mediaContentType, title) {
     const result = msg.result;
 
     if (isDrill) {
-      // Drilling into a sub-folder
-      _mb.stack.push({ title: result?.title || title || "Browse", media_content_id: result?.media_content_id ?? mediaContentId, media_content_type: result?.media_content_type ?? mediaContentType });
-      document.getElementById("mb-title").textContent = result?.title || title || "Browse Media";
+      // Drilling into a sub-folder. An empty stack here means this is the
+      // category the browser was opened on (openMusicBrowse), which keeps the
+      // caller's title and its own id: Music Assistant titles that node itself
+      // ("Radio stations") and need not echo back the id it was asked for.
+      const atBase = !!_mb.base && _mb.stack.length === 0;
+      const shownTitle = atBase ? _mb.rootTitle : (result?.title || title || "Browse Media");
+      _mb.stack.push(atBase
+        ? { title: _mb.rootTitle, media_content_id: mediaContentId, media_content_type: mediaContentType }
+        : { title: result?.title || title || "Browse", media_content_id: result?.media_content_id ?? mediaContentId, media_content_type: result?.media_content_type ?? mediaContentType });
+      document.getElementById("mb-title").textContent = shownTitle;
       document.getElementById("mb-back-btn").style.display = _mb.stack.length > 1 ? "" : "none";
       _mbRender(entity, result?.children || []);
     } else {
@@ -19344,7 +19415,7 @@ function _buildOv3SidebarControls() {
 
   /* Domain → sidebar icon SVG (18×18) */
   function _sbIcon(ctrl) {
-    if (ctrl.action === "media_browser") {
+    if (ctrl.action === "media_browser" || ctrl.action === "av") {
       return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>`;
     }
     if (ctrl.action === "harmony") {

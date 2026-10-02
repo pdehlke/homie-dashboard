@@ -1,31 +1,51 @@
 # Music chip
 
-Two accordion categories (same `toggleRoomAccordion()` mechanism the Lights
-chip uses: tap a row to expand it in place, only one open at a time):
-**Stations**, seven radio-preset bubbles (Jazz: Hiromi, 80s/90s, Dinner Party,
-The Jam, 1st Wave, Blues, AltNation), and **Playlists**, MA library playlists
-sourced from Jellyfin (currently one: Alternative). Everything plays through
+Seven rows since 2026-10-02, top to bottom: Favorites, Playlists, Radio
+Stations, Jellyfin, Artists, Albums, Tracks. Two of them are accordion
+categories (same `toggleRoomAccordion()` mechanism the Lights chip uses: tap a
+row to expand it in place, only one open at a time): **Favorites** (called
+"Stations" until 2026-10-02), seven radio-preset bubbles (Jazz: Hiromi,
+80s/90s, Dinner Party, The Jam, 1st Wave, Blues, AltNation), and **Jellyfin**
+(called "Playlists" until 2026-10-02), MA library playlists sourced from
+Jellyfin and filled at page load from `sensor.homie_dynamic_playlists`. The
+row is empty whenever that sensor does not exist.
+
+The other five are **browse rows**, moved here from the A/V chip. They do not
+expand. Tapping one calls `openMusicBrowse()`, which opens the media browser
+overlay (`#media-browser-overlay`) already inside that Music Assistant library
+category, with Back stopping at the category. An item's play button calls
+`media_player.play_media` on `media_player.crestron` and nothing else: unlike
+a bubble tap it does not start Harmony's Airplay activity, set a volume, or
+set shuffle. Music Assistant returns at most 500 items per category. Note the
+name collision when reading older notes: "Playlists" is now a browse row, and
+the bubble grid that used to carry that name is "Jellyfin".
+
+Everything below describes the two bubble categories. Everything plays through
 Music Assistant on `media_player.crestron`. A tap starts Harmony Hub's Airplay
 activity, sets the Crestron player to its idle-start volume, sets shuffle
-(always on for Playlists, always off for Stations), then plays the bubble's
-URI with its configured `media_type` (`"radio"` for Stations, `"playlist"`
-for Playlists; a Stations entry omits the config field entirely and
+(always on for Jellyfin, always off for Favorites), then plays the bubble's
+URI with its configured `media_type` (`"radio"` for Favorites, `"playlist"`
+for Jellyfin; a Favorites entry omits the config field entirely and
 `togglePopupMusic` defaults it). Tapping the active bubble again stops Music
 Assistant and turns Harmony off. On-state is derived live from the player's
-real `state` for Stations (`musicStationIsOn()` matching `media_content_id`
-against the bubble's own URI), but tracked in-memory for Playlists, since MA
+real `state` for Favorites (`musicStationIsOn()` matching `media_content_id`
+against the bubble's own URI), but tracked in-memory for Jellyfin, since MA
 rewrites `media_content_id` to the currently-playing *track's* URI the moment
 a playlist starts, never the playlist's own URI again; kept live while the
 popup is open by `refreshOpenMusicPopup()` regardless of which accordion row
-is currently expanded. Below both category rows sits a third, non-expanding
+is currently expanded. Below all seven rows sits a last, non-expanding
 row, **All Off** (`stopAllMusic()`): the same stop sequence as tapping the
-active bubble, but without needing to know which Station or Playlist it is.
+active bubble, but without needing to know which bubble it is.
 This is a **mutating** feature: driving it starts real audio and moves a real
 receiver.
 
 ## Sub-features
 
-- `music-category-switch` — tapping "Stations" or "Playlists" expands that
+- `music-browse-row` — tapping Playlists, Radio Stations, Artists, Albums or
+  Tracks opens the media browser on that category, titled with the row's own
+  label, Back hidden at the category level, `_mb.entity` set to
+  `media_player.crestron`. Read-only to verify as long as nothing is played.
+- `music-category-switch` — tapping "Favorites" or "Jellyfin" expands that
   row's bubble grid in place and collapses whichever row was open before;
   only one category is ever expanded at once.
 - `music-all-off` — tapping the "All Off" row stops whatever bubble is
@@ -54,8 +74,8 @@ receiver.
 
 - Bottom chip row, "MUSIC" chip, on any Overview screen.
 - Tap the chip to expand its popup (a compact category list, not bubbles
-  yet); tap "Stations" or "Playlists" to expand that category's bubbles; tap
-  a bubble to play/stop it. The red "All Off" row sits below both categories
+  yet); tap "Favorites" or "Jellyfin" to expand that category's bubbles; tap
+  a bubble to play/stop it. The red "All Off" row sits below every row
   at all times, no expansion needed.
 
 ## Driving it with playwright-cli
@@ -95,14 +115,14 @@ Preconditions:
   ```bash
   playwright-cli snapshot
   playwright-cli click <ref-for-Music-chip>
-  playwright-cli snapshot                      # shows "Stations" / "Playlists" rows only
-  playwright-cli click <ref-for-"Stations"-row>
+  playwright-cli snapshot                      # shows the seven rows, no bubbles
+  playwright-cli click <ref-for-"Favorites"-row>
   playwright-cli snapshot                      # now the 7 station bubbles exist
   playwright-cli click <ref-for-"Jazz: Hiromi"-bubble>
   # give it a few seconds for Harmony's activity switch + MA to start streaming
   ```
 
-  For a Playlists bubble, click the "Playlists" row instead of "Stations" at
+  For a Jellyfin bubble, click the "Jellyfin" row instead of "Favorites" at
   the expand step; everything else (proof, restore, cleanup) is identical.
 
 - **Proof.** Screenshot the bubble showing its on state (glow + popup ring),
@@ -139,13 +159,13 @@ Preconditions:
   through the tap for: proving `music-unavailable` means forcing the
   client-side cached state to `unavailable` via `eval`/`run-code` (no real
   device touched), not waiting for a real outage.
-- Only one accordion row is expanded at a time: tapping "Playlists" while
-  "Stations" is open collapses Stations first. A collapsed row's bubbles stay
+- Only one accordion row is expanded at a time: tapping "Jellyfin" while
+  "Favorites" is open collapses Favorites first. A collapsed row's bubbles stay
   in the DOM (just visually hidden), so `eval`-based checks against a bubble
   by id work even when its row isn't the currently-expanded one; a `click`
   on it won't, since it isn't visible/interactable until expanded.
 - Stop-not-pause is deliberate. Do not report the lack of a paused state as
   a bug.
 - "All Off" is one row, not per-category: there is exactly one
-  `#music-all-off-row` in the popup, not one under Stations and another
-  under Playlists.
+  `#music-all-off-row` in the popup, not one under Favorites and another
+  under Jellyfin.

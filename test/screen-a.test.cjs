@@ -1176,8 +1176,11 @@ function musicChipWithEmptyPlaylists() {
     isMusicChip: true,
     entity: "media_player.crestron",
     subGroups: [
-      { label: "Stations", stations: [{ uri: "library://radio/1", label: "Jazz: Hiromi" }] },
-      { label: "Playlists", stations: [] },
+      { label: "Favorites", stations: [{ uri: "library://radio/1", label: "Jazz: Hiromi" }] },
+      // A browse row that carries the label the dynamic group used to have:
+      // the sync must find its group by flag and leave this one alone.
+      { label: "Playlists", browse: "playlists" },
+      { label: "Jellyfin", dynamicPlaylists: true, stations: [] },
     ],
   };
 }
@@ -1197,20 +1200,22 @@ test("syncDynamicPlaylistsFromHA replaces the Playlists subGroup with the sensor
   // inside the vm context, so they carry that realm's Object prototype —
   // deepEqual against a plain literal needs both sides normalized first,
   // same as the CONFIG.uiDefaults comparison above.
-  const playlistsGroup = chip.subGroups.find(g => g.label === "Playlists");
+  const playlistsGroup = chip.subGroups.find(g => g.label === "Jellyfin");
   assert.deepEqual(JSON.parse(JSON.stringify(playlistsGroup.stations)), [
     { uri: "library://playlist/10", label: "Alternative", mediaType: "playlist", icon: sync.icon },
     { uri: "library://playlist/12", label: "Focus", mediaType: "playlist", icon: sync.icon },
   ]);
-  // Stations is untouched by a Playlists-only sync.
-  assert.deepEqual(chip.subGroups.find(g => g.label === "Stations").stations,
+  // Favorites is untouched by a Jellyfin-only sync, and so is the browse
+  // row now labeled "Playlists", which must not grow a stations list.
+  assert.deepEqual(chip.subGroups.find(g => g.label === "Favorites").stations,
     [{ uri: "library://radio/1", label: "Jazz: Hiromi" }]);
+  assert.equal(chip.subGroups.find(g => g.label === "Playlists").stations, undefined);
 });
 
 test("syncDynamicPlaylistsFromHA leaves Playlists alone when the sensor fetch fails", async () => {
   const sync = loadDynamicPlaylistsSync();
   const chip = musicChipWithEmptyPlaylists();
-  const playlistsGroup = chip.subGroups.find(g => g.label === "Playlists");
+  const playlistsGroup = chip.subGroups.find(g => g.label === "Jellyfin");
   playlistsGroup.stations = [{ uri: "library://playlist/10", label: "Alternative", mediaType: "playlist", icon: "old-icon" }];
   sync.setConfig({ controls: [chip] });
   sync.setResponse(false, {}); // 404, sensor doesn't exist yet
@@ -1228,7 +1233,7 @@ test("syncDynamicPlaylistsFromHA swallows a network error instead of throwing", 
   sync.setFetchError(new Error("network unreachable"));
 
   await assert.doesNotReject(sync.sync());
-  assert.deepEqual(chip.subGroups.find(g => g.label === "Playlists").stations, []);
+  assert.deepEqual(chip.subGroups.find(g => g.label === "Jellyfin").stations, []);
 });
 
 test("syncDynamicPlaylistsFromHA no-ops when CONFIG has no Music chip", async () => {
@@ -1243,9 +1248,146 @@ test("config.js no longer hand-maintains the Playlists list — it's populated a
   const config = loadConfig();
   const musicChip = config.controls.find(c => c.isMusicChip);
   assert.ok(musicChip, "a Music chip must exist in CONFIG.controls");
-  const playlistsGroup = musicChip.subGroups.find(g => g.label === "Playlists");
-  assert.ok(playlistsGroup, "a Playlists subGroup must exist");
+  const playlistsGroup = musicChip.subGroups.find(g => g.dynamicPlaylists);
+  assert.ok(playlistsGroup, "a dynamicPlaylists subGroup must exist");
+  assert.equal(playlistsGroup.label, "Jellyfin");
   assert.equal(playlistsGroup.stations.length, 0);
+});
+
+// loadMediaBrowser: the real media browser block (open, back, load, and the
+// two entry points added 2026-10-02) against a fake socket and a fake DOM.
+// `reply` answers the most recent browse_media request.
+function loadMediaBrowser() {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("let _mb = {");
+  const end = source.indexOf("function _mbRender(", start);
+  assert.ok(start > -1 && end > start, "the media browser block must be found");
+
+  const els = {};
+  const el = (id) => (els[id] ||= {
+    textContent: "", innerHTML: "", style: {},
+    classList: { _set: new Set(), add(c) { this._set.add(c); }, remove(c) { this._set.delete(c); } },
+  });
+  const sent = [];
+  const listeners = new Set();
+  const ws = {
+    readyState: 1,
+    send: (raw) => sent.push(JSON.parse(raw)),
+    addEventListener: (_type, fn) => listeners.add(fn),
+    removeEventListener: (_type, fn) => listeners.delete(fn),
+  };
+  let nextId = 0;
+  const rendered = [];
+  const context = {
+    WebSocket: { OPEN: 1 },
+    _ws: ws,
+    _wsNextId: () => ++nextId,
+    _activeMusicEntity: null,
+    _musicEntities: () => ["media_player.carol_2"],
+    activeControls: [],
+    document: { getElementById: el },
+    haptic: () => {},
+    fmtLoading: () => "Loading",
+    _mbRender: (entity, items) => rendered.push({ entity, items }),
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${source.slice(start, end)}\n` +
+      `globalThis.__api = { openMediaBrowser, openMusicBrowse, openAvPlaceholder, mediaBrowserBack, _mbLoad };`,
+    context,
+  );
+  return {
+    ...context.__api,
+    context, sent, rendered, el,
+    reply: (result) => {
+      const msg = { data: JSON.stringify({ id: sent.at(-1).id, success: true, result }) };
+      for (const fn of [...listeners]) fn(msg);
+    },
+  };
+}
+
+const MUSIC_CHIP_FOR_BROWSE = {
+  isMusicChip: true,
+  entity: "media_player.crestron",
+  subGroups: [
+    { label: "Favorites", stations: [] },
+    { label: "Radio Stations", browse: "radio" },
+  ],
+};
+
+test("a Music chip browse row opens the media browser on its category, on the chip's own player", () => {
+  const mb = loadMediaBrowser();
+  mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+
+  mb.openMusicBrowse(0, 1);
+
+  assert.equal(mb.sent.length, 1);
+  assert.equal(mb.sent[0].type, "media_player/browse_media");
+  // The chip's entity, not the Now Playing source the browser defaults to.
+  assert.equal(mb.sent[0].entity_id, "media_player.crestron");
+  assert.equal(mb.sent[0].media_content_id, "radio");
+  assert.equal(mb.sent[0].media_content_type, "music_assistant");
+
+  // Music Assistant titles this node "Radio stations"; the row said
+  // "Radio Stations", and the browser has to agree with the row.
+  mb.reply({ title: "Radio stations", media_content_id: "", media_content_type: "music_assistant", children: [{ title: "Blues" }] });
+  assert.equal(mb.el("mb-title").textContent, "Radio Stations");
+  assert.equal(mb.el("mb-back-btn").style.display, "none", "the category is the top of this session");
+  assert.equal(mb.rendered.at(-1).entity, "media_player.crestron");
+  assert.equal(mb.rendered.at(-1).items.length, 1);
+});
+
+test("a Music chip row that is a bubble grid does not open the media browser", () => {
+  const mb = loadMediaBrowser();
+  mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+  mb.openMusicBrowse(0, 0);
+  mb.openMusicBrowse(0, 9);
+  assert.equal(mb.sent.length, 0);
+});
+
+test("Back from inside a browse category returns to the category, never to the library root", () => {
+  const mb = loadMediaBrowser();
+  mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+  mb.openMusicBrowse(0, 1);
+  // The reply deliberately echoes back an empty id, as a root would: Back has
+  // to re-request the id that was asked for, not the one that came back.
+  mb.reply({ title: "Radio stations", media_content_id: "", media_content_type: "music_assistant", children: [] });
+
+  mb._mbLoad("media_player.crestron", "library://radio/39", "radio", "Blues");
+  mb.reply({ title: "Blues", media_content_id: "library://radio/39", media_content_type: "radio", children: [] });
+  assert.equal(mb.el("mb-title").textContent, "Blues");
+  assert.equal(mb.el("mb-back-btn").style.display, "");
+
+  mb.mediaBrowserBack();
+
+  assert.equal(mb.sent.at(-1).entity_id, "media_player.crestron");
+  assert.equal(mb.sent.at(-1).media_content_id, "radio");
+  assert.equal(mb.sent.at(-1).media_content_type, "music_assistant");
+  mb.reply({ title: "Radio stations", media_content_id: "", media_content_type: "music_assistant", children: [] });
+  assert.equal(mb.el("mb-title").textContent, "Radio Stations");
+  assert.equal(mb.el("mb-back-btn").style.display, "none");
+});
+
+test("openMediaBrowser with no argument still browses the Now Playing source from the root", () => {
+  const mb = loadMediaBrowser();
+  mb.openMediaBrowser();
+  assert.equal(mb.sent.length, 1);
+  assert.equal(mb.sent[0].entity_id, "media_player.carol_2");
+  assert.equal("media_content_id" in mb.sent[0], false);
+  mb.reply({ title: "Music Assistant", children: [{ title: "Artists" }, { title: "Camera" }] });
+  assert.equal(mb.el("mb-title").textContent, "Media Library");
+  assert.equal(mb.rendered.at(-1).items.length, 2, "the Now Playing browser keeps its full root");
+});
+
+test("the emptied A/V chip opens an empty frame and asks Home Assistant for nothing", () => {
+  const mb = loadMediaBrowser();
+  mb.openAvPlaceholder();
+  assert.equal(mb.sent.length, 0);
+  assert.equal(mb.el("mb-title").textContent, "A/V");
+  assert.match(mb.el("mb-list").innerHTML, /Nothing here/);
+  assert.ok(mb.el("media-browser-overlay").classList._set.has("open"));
 });
 
 test("togglePopupMusic plays and resets volume to 40% when the player was idle", async () => {
@@ -1726,7 +1868,10 @@ test("control row and popup mappings match the approved design", () => {
     ["Lights", "Climate", "A/V", "Music", "TV", "Irrigation", "Scenes", "NAS"],
   );
   assert.equal(config.controls[1].action, "thermostat");
-  assert.equal(config.controls[2].action, "media_browser");
+  // A/V: emptied 2026-10-02 and kept in the row. Its music categories moved
+  // to the Music chip; it carries nothing but its label and placeholder action.
+  assert.deepEqual(Object.keys(config.controls[2]).sort(), ["action", "label"]);
+  assert.equal(config.controls[2].action, "av");
   assert.equal(config.controls[4].action, "harmony");
   assert.equal(config.controls[5].confirmStart, true);
   assert.equal(config.controls[7].action, "nas");
@@ -1875,9 +2020,26 @@ test("control row and popup mappings match the approved design", () => {
   assert.equal(config.controls[3].isMusicChip, true);
   assert.equal(config.controls[3].entity, "media_player.crestron");
   assert.equal(config.controls[3].showCount, undefined);
-  assert.equal(config.controls[3].subGroups.length, 2);
-  assert.equal(config.controls[3].subGroups[0].label, "Stations");
-  assert.equal(config.controls[3].subGroups[1].label, "Playlists");
+  // Seven rows since 2026-10-02, in pde's order. Favorites ("Stations"
+  // before) and Jellyfin ("Playlists" before) are bubble grids; the other
+  // five are Music Assistant library categories moved from the A/V chip,
+  // each carrying the browse_media id its row opens the media browser on.
+  assert.deepEqual(
+    Array.from(config.controls[3].subGroups, (group) => [group.label, group.browse]),
+    [
+      ["Favorites", undefined],
+      ["Playlists", "playlists"],
+      ["Radio Stations", "radio"],
+      ["Jellyfin", undefined],
+      ["Artists", "artists"],
+      ["Albums", "albums"],
+      ["Tracks", "tracks"],
+    ],
+  );
+  for (const group of config.controls[3].subGroups) {
+    assert.equal(!!group.browse, group.stations === undefined,
+      `${group.label} is either a browse row or a bubble grid, never both`);
+  }
   assert.deepEqual(
     Array.from(config.controls[3].subGroups[0].stations, (station) => [station.uri, station.label]),
     [
@@ -1894,7 +2056,7 @@ test("control row and popup mappings match the approved design", () => {
     assert.match(station.uri, /^library:\/\/radio\/\d+$/);
     assert.equal(station.mediaType, undefined, "Stations entries omit mediaType; togglePopupMusic defaults to radio");
   }
-  assert.equal(config.controls[3].subGroups[1].stations.length, 0);
+  assert.equal(config.controls[3].subGroups[3].stations.length, 0);
   // Scenes: emptied 2026-09-03 (issue #16), refilled the same day with the
   // first real scene, "Dinner" — script-backed (script.scene_dinner), not a
   // scene.* snapshot, since it needs a conditional plus a service-call
@@ -2049,6 +2211,7 @@ test("custom actions route Climate and A/V without generic toggles", () => {
   const custom = loadCustomizations();
   assert.equal(custom.controlOnClick({ action: "thermostat" }, 1), "openThermostat()");
   assert.equal(custom.controlOnClick({ action: "media_browser" }, 2), "openMediaBrowser()");
+  assert.equal(custom.controlOnClick({ action: "av" }, 2), "openAvPlaceholder()");
   assert.equal(custom.controlOnClick({ subEntities: [{}] }, 1), "openPopup(1)");
   assert.equal(custom.controlIndex([{ label: "Climate" }, { label: "Lights" }], "Lights"), 1);
 });
