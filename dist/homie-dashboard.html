@@ -9083,7 +9083,7 @@ const ICONS = {
       // Kept as the single source of truth for the version, and asserted
       // against the two src attributes below by the test suite so the three
       // can never drift apart.
-      const HOMIE_ASSET_VERSION = "20261002.1";
+      const HOMIE_ASSET_VERSION = "20261002.2";
 </script>
 <!-- Static tags, not document.write(). Both files still have to load and run
      before the main script below (config.js defines CONFIG; homie-custom.js
@@ -9097,8 +9097,8 @@ const ICONS = {
 
      They stay HERE rather than moving to <head> because config.js references
      ICONS, which the inline block just above defines. -->
-<script src="config.js?v=20261002.1"></script>
-<script src="homie-custom.js?v=20261002.1"></script>
+<script src="config.js?v=20261002.2"></script>
+<script src="homie-custom.js?v=20261002.2"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -14601,6 +14601,27 @@ async function stopPopupMusic(entity) {
 }
 
 /**
+ * startPopupMusicPlayer — what has to happen before the Music chip plays
+ * anything: start the Harmony Hub's Airplay activity, and reset the volume to
+ * 40% unless the player is already mid-playback (see togglePopupMusic for why
+ * it is conditional). Shared by a bubble tap and by a play from one of the
+ * chip's browse rows (_mbPlay), so the two cannot drift into one that is
+ * audible and one that is not.
+ *
+ * @param {string} entity — target media_player entity_id (chip-level)
+ */
+async function startPopupMusicPlayer(entity) {
+  await haService("remote", "turn_on", {
+    entity_id: "remote.harmony_hub",
+    activity: "Airplay",
+  });
+  const wasPlaying = haGetCached(entity)?.state === "playing";
+  if (!wasPlaying) {
+    await haService("media_player", "volume_set", { entity_id: entity, volume_level: 0.4 });
+  }
+}
+
+/**
  * togglePopupMusic — plays or stops a Music chip bubble (a Favorites radio
  * preset or a Jellyfin library playlist) on its target media_player.
  *
@@ -14652,14 +14673,7 @@ async function togglePopupMusic(entity, uri, bubbleId, mediaType = "radio") {
   if (wasOn) {
     await stopPopupMusic(entity);
   } else {
-    await haService("remote", "turn_on", {
-      entity_id: "remote.harmony_hub",
-      activity: "Airplay",
-    });
-    const wasPlaying = haGetCached(entity)?.state === "playing";
-    if (!wasPlaying) {
-      await haService("media_player", "volume_set", { entity_id: entity, volume_level: 0.4 });
-    }
+    await startPopupMusicPlayer(entity);
     // Jellyfin always shuffle; radio has no meaningful shuffle concept, and
     // shuffle is a player-level setting that otherwise carries over from
     // whatever last set it (checked live 2026-08-26: shuffle_set(true) while
@@ -15249,6 +15263,7 @@ let _mb = {
   stack:     [], // navigation stack: [{title, media_content_id, media_content_type}]
   rootTitle: "Media Library", // overridden on open
   entity:    null, // player this browse session targets, fixed on open
+  musicChip: false, // opened from a Music chip browse row: play starts Harmony first
   base:      null, // {id, type} when opened on a category instead of the root
 };
 
@@ -15266,12 +15281,15 @@ let _mb = {
  *                                      of this session: Back never climbs above it.
  * @param {string} [opts.contentType] — that node's media_content_type
  * @param {string} [opts.title]       — title to show at the top level
+ * @param {boolean} [opts.musicChip]  — play runs the Music chip's start
+ *                                      sequence first (see _mbPlay)
  */
 function openMediaBrowser(opts = {}) {
   haptic("light");
   _mb.stack = [];
   const entity = opts.entity || _activeMusicEntity || _musicEntities()[0];
   _mb.entity = entity;
+  _mb.musicChip = !!opts.musicChip;
   _mb.base = opts.contentId ? { id: opts.contentId, type: opts.contentType } : null;
   const isSpotify = entity.includes("spotify");
   const playerLabel = isSpotify ? "Spotify" : "Music Assistant";
@@ -15300,6 +15318,7 @@ function openMusicBrowse(ctrlIdx, gIdx) {
     contentId: group.browse,
     contentType: "music_assistant",
     title: group.label,
+    musicChip: true,
   });
 }
 
@@ -15312,6 +15331,7 @@ function openAvPlaceholder() {
   haptic("light");
   _mb.stack = [];
   _mb.entity = null;
+  _mb.musicChip = false;
   _mb.base = null;
   document.getElementById("mb-player-label").textContent = "";
   document.getElementById("mb-back-btn").style.display = "none";
@@ -15435,9 +15455,36 @@ function _mbDrill(entity, contentId, contentType, title) {
   _mbLoad(entity, contentId, contentType, title);
 }
 
+/**
+ * _mbPlay — plays one media browser item on `entity`.
+ *
+ * Opened from a Music chip browse row, it first runs what a bubble tap runs:
+ * Harmony's Airplay activity and the idle-start volume. Without that a play
+ * from Artists or Albums reaches the player and nothing reaches a speaker.
+ * It also turns shuffle off, because shuffle is a player-level setting that
+ * a Jellyfin bubble leaves on and an album should not inherit, and clears the
+ * playlist on-marker, since whatever plays next is not that playlist.
+ *
+ * Opened from the Now Playing card it does none of that: that browser targets
+ * whichever player is the active source, most of which are not behind Harmony.
+ */
 async function _mbPlay(entity, contentId, contentType) {
+  if (!_ws || _ws.readyState !== WebSocket.OPEN) { haptic("medium"); return; }
+  if (_mb.musicChip) {
+    // Same guard, for the same reason, as togglePopupMusic's.
+    const liveState = haGetCached(entity)?.state;
+    if (!liveState || liveState === "unavailable") { haptic("light"); return; }
+  }
   haptic("medium");
-  if (!_ws || _ws.readyState !== WebSocket.OPEN) return;
+  // Close before the start sequence, not after: Harmony's activity switch
+  // takes seconds, and the list sitting there invites a second tap.
+  document.getElementById("media-browser-overlay").classList.remove("open");
+  if (_mb.musicChip) {
+    await startPopupMusicPlayer(entity);
+    await haService("media_player", "shuffle_set", { entity_id: entity, shuffle: false });
+    _lastPlaylistStarted.delete(entity);
+  }
+  if (_ws.readyState !== WebSocket.OPEN) return;
   const msgId = _wsNextId();
   _ws.send(JSON.stringify({
     id: msgId,
@@ -15446,7 +15493,6 @@ async function _mbPlay(entity, contentId, contentType) {
     service: "play_media",
     service_data: { entity_id: entity, media_content_id: contentId, media_content_type: contentType },
   }));
-  document.getElementById("media-browser-overlay").classList.remove("open");
   setTimeout(() => { refreshStateCache().then(refreshMusic); }, 800);
 }
 

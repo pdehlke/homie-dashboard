@@ -13,10 +13,13 @@ row is empty whenever that sensor does not exist.
 The other five are **browse rows**, moved here from the A/V chip. They do not
 expand. Tapping one calls `openMusicBrowse()`, which opens the media browser
 overlay (`#media-browser-overlay`) already inside that Music Assistant library
-category, with Back stopping at the category. An item's play button calls
-`media_player.play_media` on `media_player.crestron` and nothing else: unlike
-a bubble tap it does not start Harmony's Airplay activity, set a volume, or
-set shuffle. Music Assistant returns at most 500 items per category. Note the
+category, with Back stopping at the category. An item's play button runs the
+same start a bubble tap runs (`startPopupMusicPlayer()`: Harmony's Airplay
+activity, then 40% volume unless already playing), turns shuffle off, clears
+the Jellyfin on-marker, and then calls `media_player.play_media` on
+`media_player.crestron`. Playing from a browse row is therefore **mutating**,
+exactly like a bubble: restore with All Off. Music Assistant returns at most
+500 items per category. Note the
 name collision when reading older notes: "Playlists" is now a browse row, and
 the bubble grid that used to carry that name is "Jellyfin".
 
@@ -45,6 +48,13 @@ receiver.
   Tracks opens the media browser on that category, titled with the row's own
   label, Back hidden at the category level, `_mb.entity` set to
   `media_player.crestron`. Read-only to verify as long as nothing is played.
+- `music-browse-play` — an item's play button starts Harmony's Airplay
+  activity before playing. Prove it against `remote.harmony_hub`
+  (`current_activity: Airplay`) and `media_player.crestron` (`playing`, with
+  the album or track expected), allowing about 15 seconds, then All Off and
+  confirm `PowerOff` and `idle`. One of four live plays on 2026-10-02 left the
+  player idle with Harmony on and did not reproduce; if it recurs, capture the
+  `call_service` result for the play before retrying.
 - `music-category-switch` — tapping "Favorites" or "Jellyfin" expands that
   row's bubble grid in place and collapses whichever row was open before;
   only one category is ever expanded at once.

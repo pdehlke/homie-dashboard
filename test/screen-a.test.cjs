@@ -1269,10 +1269,19 @@ function loadMediaBrowser() {
     classList: { _set: new Set(), add(c) { this._set.add(c); }, remove(c) { this._set.delete(c); } },
   });
   const sent = [];
+  const calls = []; // haService calls, in order, interleaved with nothing: see `order`
+  const order = []; // "service:<domain>.<service>" and "ws:<type>" in the order they happened
+  const stateCache = new Map();
+  const playlistStarted = new Map();
+  const playStart = source.indexOf("async function _mbPlay(");
+  const playEnd = source.indexOf("\n}\n", playStart) + 3;
+  const prepStart = source.indexOf("async function startPopupMusicPlayer(");
+  const prepEnd = source.indexOf("\n}\n", prepStart) + 3;
+  assert.ok(playStart > -1 && prepStart > -1, "_mbPlay and startPopupMusicPlayer must be found");
   const listeners = new Set();
   const ws = {
     readyState: 1,
-    send: (raw) => sent.push(JSON.parse(raw)),
+    send: (raw) => { const m = JSON.parse(raw); sent.push(m); order.push(`ws:${m.service || m.type}`); },
     addEventListener: (_type, fn) => listeners.add(fn),
     removeEventListener: (_type, fn) => listeners.delete(fn),
   };
@@ -1291,16 +1300,20 @@ function loadMediaBrowser() {
     _mbRender: (entity, items) => rendered.push({ entity, items }),
     setTimeout: () => 0,
     clearTimeout: () => {},
+    haGetCached: (id) => stateCache.get(id) ?? null,
+    haService: async (domain, service, data) => { calls.push({ domain, service, data }); order.push(`service:${domain}.${service}`); },
+    _lastPlaylistStarted: playlistStarted,
   };
   vm.createContext(context);
   vm.runInContext(
-    `${source.slice(start, end)}\n` +
-      `globalThis.__api = { openMediaBrowser, openMusicBrowse, openAvPlaceholder, mediaBrowserBack, _mbLoad };`,
+    `${source.slice(start, end)}\n${source.slice(prepStart, prepEnd)}\n${source.slice(playStart, playEnd)}\n` +
+      `globalThis.__api = { openMediaBrowser, openMusicBrowse, openAvPlaceholder, mediaBrowserBack, _mbLoad, _mbPlay };`,
     context,
   );
   return {
     ...context.__api,
-    context, sent, rendered, el,
+    context, sent, rendered, el, calls, order, playlistStarted,
+    setState: (id, state) => stateCache.set(id, { state, attributes: {} }),
     reply: (result) => {
       const msg = { data: JSON.stringify({ id: sent.at(-1).id, success: true, result }) };
       for (const fn of [...listeners]) fn(msg);
@@ -1388,6 +1401,68 @@ test("the emptied A/V chip opens an empty frame and asks Home Assistant for noth
   assert.equal(mb.el("mb-title").textContent, "A/V");
   assert.match(mb.el("mb-list").innerHTML, /Nothing here/);
   assert.ok(mb.el("media-browser-overlay").classList._set.has("open"));
+});
+
+test("playing from a Music chip browse row starts Harmony and the idle volume before it plays", async () => {
+  const mb = loadMediaBrowser();
+  mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+  mb.setState("media_player.crestron", "idle");
+  // A Jellyfin bubble played earlier: its marker must not survive an album.
+  mb.playlistStarted.set("media_player.crestron", "library://playlist/10");
+  mb.openMusicBrowse(0, 1);
+  mb.order.length = 0;
+
+  await mb._mbPlay("media_player.crestron", "library://album/7", "album");
+
+  assert.deepEqual(mb.order, [
+    "service:remote.turn_on",
+    "service:media_player.volume_set",
+    "service:media_player.shuffle_set",
+    "ws:play_media",
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(mb.calls)), [
+    { domain: "remote", service: "turn_on", data: { entity_id: "remote.harmony_hub", activity: "Airplay" } },
+    { domain: "media_player", service: "volume_set", data: { entity_id: "media_player.crestron", volume_level: 0.4 } },
+    { domain: "media_player", service: "shuffle_set", data: { entity_id: "media_player.crestron", shuffle: false } },
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(mb.sent.at(-1).service_data)),
+    { entity_id: "media_player.crestron", media_content_id: "library://album/7", media_content_type: "album" });
+  assert.equal(mb.playlistStarted.has("media_player.crestron"), false);
+  assert.equal(mb.el("media-browser-overlay").classList._set.has("open"), false);
+});
+
+test("playing from a browse row leaves the volume alone when the player is already playing", async () => {
+  const mb = loadMediaBrowser();
+  mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+  mb.setState("media_player.crestron", "playing");
+  mb.openMusicBrowse(0, 1);
+  await mb._mbPlay("media_player.crestron", "library://album/7", "album");
+  assert.deepEqual(mb.calls.map(c => c.service), ["turn_on", "shuffle_set"]);
+});
+
+test("playing from a browse row does nothing at all when the player is unavailable", async () => {
+  for (const state of ["unavailable", null]) {
+    const mb = loadMediaBrowser();
+    mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+    if (state) mb.setState("media_player.crestron", state);
+    mb.openMusicBrowse(0, 1);
+    const before = mb.sent.length;
+    await mb._mbPlay("media_player.crestron", "library://album/7", "album");
+    assert.equal(mb.calls.length, 0, "Harmony must not start for a play that cannot happen");
+    assert.equal(mb.sent.length, before);
+  }
+});
+
+test("playing from the Now Playing browser never touches Harmony, volume or shuffle", async () => {
+  const mb = loadMediaBrowser();
+  mb.context.activeControls.push(MUSIC_CHIP_FOR_BROWSE);
+  // Open from the chip first, then from Now Playing: the flag must not stick.
+  mb.openMusicBrowse(0, 1);
+  mb.openMediaBrowser();
+  await mb._mbPlay("media_player.carol_2", "library://album/7", "album");
+  assert.equal(mb.calls.length, 0);
+  assert.equal(mb.sent.at(-1).service, "play_media");
+  assert.equal(mb.sent.at(-1).service_data.entity_id, "media_player.carol_2");
 });
 
 test("togglePopupMusic plays and resets volume to 40% when the player was idle", async () => {
