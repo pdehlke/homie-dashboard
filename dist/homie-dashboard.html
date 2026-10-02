@@ -2758,6 +2758,71 @@
     background: rgba(255,255,255,0.14);
   }
 
+  /* ─── A/V PANEL ─── */
+  #av-overlay { z-index: 400; }
+  .popup--av { max-width: 900px; width: 94%; max-height: 92vh; overflow-y: auto; }
+  .av-link { font-size: 8px; opacity: 0.5; letter-spacing: 0.15em; }
+  .av-link.down { color: #ff4d57; opacity: 1; }
+  .av-actions { display: flex; gap: 10px; }
+  .av-action {
+    flex: 1;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .av-action:hover { background: rgba(255,255,255,0.1); }
+  .av-action.busy { opacity: 0.4; pointer-events: none; }
+  .av-fresh {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    line-height: 1.5;
+    opacity: 0.45;
+    margin: 10px 2px 14px;
+  }
+  .av-zones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 720px) { .av-zones { grid-template-columns: 1fr; } }
+  .av-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: border-color 0.2s, opacity 0.2s;
+  }
+  .av-zone.on { border-color: var(--ac-5); }
+  .av-zone.busy { opacity: 0.45; pointer-events: none; }
+  .av-zone-head { display: flex; align-items: center; justify-content: space-between; }
+  .av-zone-name { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: #fff; }
+  .av-zone .mush-icon-btn { color: rgba(255,255,255,0.6); padding: 0; }
+  .av-zone .mush-icon-btn.active { color: var(--accent-hi); }
+  .av-zone .mush-icon-btn:disabled { opacity: 0.3; cursor: default; }
+  .av-source {
+    height: 34px;
+    border-radius: 10px;
+    padding: 0 10px;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #fff;
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .av-source:disabled { opacity: 0.3; }
+  .av-source option { background: #1a1a1a; color: #fff; }
+  .av-vol-row { display: flex; align-items: center; gap: 10px; }
+  .av-vol-row:has(input:disabled) .mush-brightness-track { opacity: 0.35; }
+  .av-vol-label { width: 34px; text-align: right; font-size: 10px; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); }
   /* ─── MEDIA BROWSER ─── */
   .popup--media-browser { max-width: 420px; max-height: 70vh; display: flex; flex-direction: column; }
   .popup--media-browser .popup-list { overflow-y: auto; flex: 1; padding: 0; }
@@ -9083,7 +9148,7 @@ const ICONS = {
       // Kept as the single source of truth for the version, and asserted
       // against the two src attributes below by the test suite so the three
       // can never drift apart.
-      const HOMIE_ASSET_VERSION = "20261002.2";
+      const HOMIE_ASSET_VERSION = "20261002.3";
 </script>
 <!-- Static tags, not document.write(). Both files still have to load and run
      before the main script below (config.js defines CONFIG; homie-custom.js
@@ -9097,8 +9162,8 @@ const ICONS = {
 
      They stay HERE rather than moving to <head> because config.js references
      ICONS, which the inline block just above defines. -->
-<script src="config.js?v=20261002.2"></script>
-<script src="homie-custom.js?v=20261002.2"></script>
+<script src="config.js?v=20261002.3"></script>
+<script src="homie-custom.js?v=20261002.3"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -11966,6 +12031,10 @@ function refreshControls() {
       // itself reuses musicChipIsOn(), the same shared helper the popup
       // bubble ring and the Overview C sidebar dot read.
       isOn = musicChipIsOn(c);
+    } else if (c.av) {
+      // A/V chip: lit while any of the six rooms is on. Its zones live in
+      // c.av.zones rather than subEntities, so allSubs is empty for it.
+      isOn = c.av.zones.some(zn => haGetCached(zn.power)?.state === "on");
     } else if (c.isNasChip) {
       // NAS chip's glow means "needs attention," not "is active" — see
       // nasChipNeedsAttention() above and homie-nas-chip.md for why this is
@@ -15255,6 +15324,218 @@ function securityAction(domain, service) {
   setTimeout(() => { _ws.removeEventListener("message", handler); }, 10000);
 }
 
+/* ─── A/V PANEL ─────────────────────────────────────────────────────────────
+ * The A/V chip: the six Crestron audio zones, with the same controls as Home
+ * Assistant's Speakers dashboard. Entities come from the chip's `av` block in
+ * config.js; source options and the volume range come from the entities.
+ *
+ * Nothing here is optimistic. A zone command takes seconds, because the
+ * bridge has to take the panel slot and walk its cursor to the room, and the
+ * REST call does not return until that is done. So a control is marked busy
+ * for the life of its call and the card repaints from the state Home
+ * Assistant then reports, rather than from what was tapped.
+ * ─────────────────────────────────────────────────────────────────────────── */
+let _avFreshTimer = null;
+const _avDragging = new Set(); // zone indexes whose volume slider is mid-drag
+
+function _avConfig() {
+  return activeControls.find(c => c.action === "av")?.av || null;
+}
+
+function _avZoneHtml(zone, z) {
+  return `
+    <div class="av-zone" id="av-zone-${z}">
+      <div class="av-zone-head">
+        <span class="av-zone-name">${escapeHtml(zone.label)}</span>
+        <button class="mush-icon-btn av-power" id="av-power-${z}" title="Power" onclick="avTogglePower(${z})">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        </button>
+      </div>
+      <select class="av-source" id="av-source-${z}" onchange="avSelectSource(${z},this.value)"></select>
+      <div class="av-vol-row">
+        <button class="mush-icon-btn av-mute" id="av-mute-${z}" title="Mute" onclick="avToggleMute(${z})">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+        </button>
+        <div class="mush-brightness-track">
+          <div class="mush-brightness-fill" id="av-vol-fill-${z}" style="width:0%"></div>
+          <input type="range" class="mush-brightness-input" id="av-vol-${z}"
+            oninput="avVolumeInput(${z},this.value)"
+            onchange="avSetVolume(${z},this.value)">
+        </div>
+        <span class="av-vol-label" id="av-vol-label-${z}">–</span>
+      </div>
+    </div>`;
+}
+
+function openAvPanel() {
+  const av = _avConfig();
+  if (!av) return;
+  haptic("light");
+  _avDragging.clear();
+  document.getElementById("av-zones").innerHTML = av.zones.map(_avZoneHtml).join("");
+  document.getElementById("av-overlay").classList.add("open");
+  refreshOpenAvPanel();
+  // The freshness line is an age, so it moves without any state changing.
+  clearInterval(_avFreshTimer);
+  _avFreshTimer = setInterval(_avRenderFreshness, 30000);
+}
+
+function closeAvPanel(e) {
+  const overlay = document.getElementById("av-overlay");
+  if (e && e.target !== overlay) return;
+  haptic("light");
+  overlay.classList.remove("open");
+  clearInterval(_avFreshTimer);
+  _avFreshTimer = null;
+}
+
+function _avRenderFreshness() {
+  const av = _avConfig();
+  const el = document.getElementById("av-fresh");
+  if (!av || !el) return;
+  const oldest = haGetCached(av.refresh)?.attributes?.oldest_read;
+  el.textContent = HOMIE_CUSTOM.avFreshnessText(oldest, Date.now()) +
+    " A wall panel can change a room without Home Assistant noticing, so tap Refresh.";
+}
+
+function _avPaintVolume(z, value) {
+  const slider = document.getElementById(`av-vol-${z}`);
+  const min = parseFloat(slider.min), max = parseFloat(slider.max);
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  document.getElementById(`av-vol-fill-${z}`).style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  document.getElementById(`av-vol-label-${z}`).textContent = `${Math.round(value)}%`;
+}
+
+/**
+ * refreshOpenAvPanel — repaints the open A/V panel from the state cache, in
+ * place. It never rebuilds the cards: a rebuild would close an open source
+ * picker and yank a slider out from under a finger.
+ *
+ * A zone that is off, or that has not been read since Home Assistant
+ * started, reports its volume and mute as unavailable and its power and
+ * source as unknown. Volume and mute are disabled then; power and source
+ * stay live, because either one is how the room gets switched on.
+ */
+function refreshOpenAvPanel() {
+  const overlay = document.getElementById("av-overlay");
+  if (!overlay?.classList.contains("open")) return;
+  const av = _avConfig();
+  if (!av) return;
+
+  const link = haGetCached(av.link)?.state;
+  const linkEl = document.getElementById("av-link");
+  linkEl.textContent = link === "on" ? "AADS connected" : link === "off" ? "AADS disconnected" : "AADS unknown";
+  linkEl.classList.toggle("down", link !== "on");
+
+  av.zones.forEach((zone, z) => {
+    const on = haGetCached(zone.power)?.state === "on";
+    document.getElementById(`av-zone-${z}`).classList.toggle("on", on);
+    document.getElementById(`av-power-${z}`).classList.toggle("active", on);
+
+    const src = haGetCached(zone.source);
+    const options = src?.attributes?.options || [];
+    const sel = document.getElementById(`av-source-${z}`);
+    const key = options.join("|");
+    if (sel.dataset.options !== key) {
+      sel.innerHTML = `<option value="" disabled hidden>Source</option>` +
+        options.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
+      sel.dataset.options = key;
+    }
+    if (document.activeElement !== sel) sel.value = options.includes(src?.state) ? src.state : "";
+    sel.disabled = !src || src.state === "unavailable";
+
+    const vol = haGetCached(zone.volume);
+    const slider = document.getElementById(`av-vol-${z}`);
+    if (vol?.attributes?.max != null) {
+      slider.min = vol.attributes.min;
+      slider.max = vol.attributes.max;
+      slider.step = vol.attributes.step;
+    }
+    const level = parseFloat(vol?.state);
+    slider.disabled = !Number.isFinite(level);
+    if (!Number.isFinite(level)) {
+      document.getElementById(`av-vol-fill-${z}`).style.width = "0%";
+      document.getElementById(`av-vol-label-${z}`).textContent = "–";
+    } else if (!_avDragging.has(z)) {
+      slider.value = level;
+      _avPaintVolume(z, level);
+    }
+
+    const mute = haGetCached(zone.mute)?.state;
+    const muteBtn = document.getElementById(`av-mute-${z}`);
+    muteBtn.classList.toggle("active", mute === "on");
+    muteBtn.disabled = mute !== "on" && mute !== "off";
+  });
+
+  _avRenderFreshness();
+}
+
+/** Marks `el` busy for the life of one service call, then repaints. */
+async function _avCall(el, domain, service, data) {
+  haptic("medium");
+  el?.classList.add("busy");
+  try {
+    await haService(domain, service, data);
+  } finally {
+    el?.classList.remove("busy");
+    refreshOpenAvPanel();
+  }
+}
+
+function avTogglePower(z) {
+  const zone = _avConfig()?.zones[z];
+  if (!zone) return;
+  const on = haGetCached(zone.power)?.state === "on";
+  return _avCall(document.getElementById(`av-zone-${z}`), "switch", on ? "turn_off" : "turn_on", { entity_id: zone.power });
+}
+
+function avSelectSource(z, option) {
+  const zone = _avConfig()?.zones[z];
+  if (!zone || !option) return;
+  return _avCall(document.getElementById(`av-zone-${z}`), "select", "select_option", { entity_id: zone.source, option });
+}
+
+function avVolumeInput(z, value) {
+  _avDragging.add(z);
+  _avPaintVolume(z, parseFloat(value));
+}
+
+function avSetVolume(z, value) {
+  const zone = _avConfig()?.zones[z];
+  _avDragging.delete(z);
+  if (!zone) return;
+  return _avCall(document.getElementById(`av-zone-${z}`), "number", "set_value", { entity_id: zone.volume, value: parseFloat(value) });
+}
+
+function avToggleMute(z) {
+  const zone = _avConfig()?.zones[z];
+  if (!zone) return;
+  const state = haGetCached(zone.mute)?.state;
+  if (state !== "on" && state !== "off") return;
+  return _avCall(document.getElementById(`av-zone-${z}`), "switch", state === "on" ? "turn_off" : "turn_on", { entity_id: zone.mute });
+}
+
+/**
+ * avRunAll — All AirPlay, All Off and Refresh.
+ *
+ * The two scripts are called as script.<name> rather than through
+ * script.turn_on. turn_on returns as soon as the script has started; calling
+ * the script as a service returns when it has finished, which is what lets
+ * the button stay busy for the ten seconds a six-room walk takes.
+ *
+ * @param {"allOn"|"allOff"|"refresh"} which — key in the chip's `av` block
+ */
+function avRunAll(which) {
+  const entity = _avConfig()?.[which];
+  if (!entity) return;
+  const el = document.getElementById(`av-btn-${which}`);
+  if (el?.classList.contains("busy")) return;
+  const [domain, name] = entity.split(".");
+  return domain === "script"
+    ? _avCall(el, "script", name, {})
+    : _avCall(el, domain, "press", { entity_id: entity });
+}
+
 /* ─── MEDIA BROWSER ─────────────────────────────────────────────────────────
  * Browses HA media library for the active music player via WebSocket.
  * Supports drilling into folders and playing items directly.
@@ -15320,24 +15601,6 @@ function openMusicBrowse(ctrlIdx, gIdx) {
     title: group.label,
     musicChip: true,
   });
-}
-
-/**
- * openAvPlaceholder — the A/V chip, emptied 2026-10-02 and kept in the row
- * for pde's follow-up plans (see its entry in config.js). Shows the media
- * browser's own frame with nothing in it, so the chip still answers a tap.
- */
-function openAvPlaceholder() {
-  haptic("light");
-  _mb.stack = [];
-  _mb.entity = null;
-  _mb.musicChip = false;
-  _mb.base = null;
-  document.getElementById("mb-player-label").textContent = "";
-  document.getElementById("mb-back-btn").style.display = "none";
-  document.getElementById("mb-title").textContent = "A/V";
-  document.getElementById("mb-list").innerHTML = '<div class="mb-loading">Nothing here</div>';
-  document.getElementById("media-browser-overlay").classList.add("open");
 }
 
 function closeMediaBrowser(e) {
@@ -15885,6 +16148,7 @@ function refreshAllUI() {
     refreshOpenMusicPopup();
   }
   refreshMusic();
+  refreshOpenAvPanel(); // its own overlay, outside the popup stack; no-op while closed
   // Keep overview 2 in sync whenever it has been built (regardless of active screen)
   if (_ov2Built) _refreshOv2();
   if (_ov3Built) _refreshOv3();
@@ -18477,6 +18741,7 @@ document.addEventListener('keydown', e => {
   if (document.getElementById("photoframe-overlay")?.classList.contains("open"))  closePhotoFrame();
   if (document.getElementById("clock-overlay")?.classList.contains("open"))       closeClock();
   if (document.getElementById("media-browser-overlay")?.classList.contains("open")) closeMediaBrowser();
+  if (document.getElementById("av-overlay")?.classList.contains("open"))          closeAvPanel();
   if (document.getElementById("pet-overlay")?.classList.contains("open"))         closePetStats();
   if (document.getElementById("alert-overlay")?.classList.contains("open"))       closeAlertOverlay();
   if (document.getElementById("security-overlay")?.classList.contains("open"))    closeSecurityOverlay();
@@ -21639,6 +21904,23 @@ applyAllSettings();
 _ssResetIdleTimer(); // start screensaver idle countdown
 _applyDailyI18n();
 </script>
+<!-- ─── A/V PANEL OVERLAY ─── -->
+<div class="popup-overlay" id="av-overlay" onclick="closeAvPanel(event)">
+  <div class="popup popup--av">
+    <div class="popup-title popup-title--spread">
+      <span>A/V</span>
+      <span id="av-link" class="av-link"></span>
+    </div>
+    <div class="av-actions">
+      <button class="av-action" id="av-btn-allOn" onclick="avRunAll('allOn')">All AirPlay</button>
+      <button class="av-action" id="av-btn-allOff" onclick="avRunAll('allOff')">All Off</button>
+      <button class="av-action" id="av-btn-refresh" onclick="avRunAll('refresh')">Refresh</button>
+    </div>
+    <div class="av-fresh" id="av-fresh"></div>
+    <div class="av-zones" id="av-zones"></div>
+  </div>
+</div>
+
 <!-- ─── MEDIA BROWSER OVERLAY ─── -->
 <div class="popup-overlay" id="media-browser-overlay" onclick="closeMediaBrowser(event)">
   <div class="popup popup--media-browser">

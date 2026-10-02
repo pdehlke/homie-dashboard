@@ -1307,7 +1307,7 @@ function loadMediaBrowser() {
   vm.createContext(context);
   vm.runInContext(
     `${source.slice(start, end)}\n${source.slice(prepStart, prepEnd)}\n${source.slice(playStart, playEnd)}\n` +
-      `globalThis.__api = { openMediaBrowser, openMusicBrowse, openAvPlaceholder, mediaBrowserBack, _mbLoad, _mbPlay };`,
+      `globalThis.__api = { openMediaBrowser, openMusicBrowse, mediaBrowserBack, _mbLoad, _mbPlay };`,
     context,
   );
   return {
@@ -1394,13 +1394,198 @@ test("openMediaBrowser with no argument still browses the Now Playing source fro
   assert.equal(mb.rendered.at(-1).items.length, 2, "the Now Playing browser keeps its full root");
 });
 
-test("the emptied A/V chip opens an empty frame and asks Home Assistant for nothing", () => {
-  const mb = loadMediaBrowser();
-  mb.openAvPlaceholder();
-  assert.equal(mb.sent.length, 0);
-  assert.equal(mb.el("mb-title").textContent, "A/V");
-  assert.match(mb.el("mb-list").innerHTML, /Nothing here/);
-  assert.ok(mb.el("media-browser-overlay").classList._set.has("open"));
+// loadAvPanel: the real A/V panel block against a fake DOM and a fake
+// haService. Elements are created on first lookup, so a card's children exist
+// as soon as the code asks for them.
+function loadAvPanel() {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("let _avFreshTimer = null;");
+  const end = source.indexOf("/* ─── MEDIA BROWSER ───", start);
+  assert.ok(start > -1 && end > start, "the A/V panel block must be found");
+
+  const els = {};
+  const el = (id) => (els[id] ||= {
+    textContent: "", innerHTML: "", style: {}, dataset: {}, value: "", disabled: false,
+    classList: {
+      _set: new Set(),
+      add(c) { this._set.add(c); }, remove(c) { this._set.delete(c); },
+      contains(c) { return this._set.has(c); },
+      toggle(c, on) { on ? this._set.add(c) : this._set.delete(c); },
+    },
+  });
+  const calls = [];
+  const stateCache = new Map();
+  let release = null; // set `hold` to keep a service call open
+  const api = { hold: false };
+  const context = {
+    activeControls: [{ label: "Lights" }, loadConfig().controls.find(c => c.action === "av")],
+    document: { getElementById: el, activeElement: null },
+    haptic: () => {},
+    escapeHtml: (v) => String(v),
+    HOMIE_CUSTOM: loadCustomizations(),
+    haGetCached: (id) => stateCache.get(id) ?? null,
+    haService: (domain, service, data) => {
+      calls.push({ domain, service, data });
+      return api.hold ? new Promise((r) => { release = r; }) : Promise.resolve();
+    },
+    setInterval: () => 1,
+    clearInterval: () => {},
+    Date,
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${source.slice(start, end)}\n` +
+      `globalThis.__api = { openAvPanel, closeAvPanel, refreshOpenAvPanel, avTogglePower, avSelectSource, avVolumeInput, avSetVolume, avToggleMute, avRunAll };`,
+    context,
+  );
+  return Object.assign(api, context.__api, {
+    el, calls, context,
+    release: () => release(),
+    has: (id, cls) => el(id).classList._set.has(cls),
+    set: (id, state, attributes = {}) => stateCache.set(id, { state, attributes }),
+    // Zone 5 (Courtyard) on and read; every other zone as it is after a restart.
+    seed() {
+      for (const k of ["kitchen", "outdoor_kitchen", "master_bed", "master_bath", "studio", "courtyard"]) {
+        const on = k === "courtyard";
+        this.set(`switch.crestron_${k}_audio`, on ? "on" : "unknown");
+        this.set(`select.crestron_${k}_source`, on ? "AirPlay" : "unknown", { options: ["iPod", "AirPlay", "Tuner 1"] });
+        this.set(`number.crestron_${k}_volume`, on ? "85.0" : "unavailable", { min: 70, max: 100, step: 5 });
+        this.set(`switch.crestron_${k}_mute`, on ? "off" : "unavailable");
+      }
+      this.set("binary_sensor.crestron_link_aads", "on");
+      this.set("button.crestron_audio_refresh", "x", { oldest_read: null });
+    },
+  });
+}
+
+test("the A/V chip names the six audio zones and the Speakers dashboard's three actions", () => {
+  const av = loadConfig().controls.find(c => c.action === "av").av;
+  assert.deepEqual(
+    Array.from(av.zones, z => z.label),
+    ["Kitchen", "Outdoor Kitchen", "Master Bed", "Master Bath", "Studio", "Courtyard"],
+  );
+  for (const z of av.zones) {
+    assert.match(z.power, /^switch\.crestron_\w+_audio$/);
+    assert.match(z.source, /^select\.crestron_\w+_source$/);
+    assert.match(z.volume, /^number\.crestron_\w+_volume$/);
+    assert.match(z.mute, /^switch\.crestron_\w+_mute$/);
+  }
+  assert.equal(av.allOn, "script.all_rooms_airplay");
+  assert.equal(av.allOff, "script.all_av_off");
+  assert.equal(av.refresh, "button.crestron_audio_refresh");
+  assert.equal(av.link, "binary_sensor.crestron_link_aads");
+});
+
+test("the A/V freshness line matches the Speakers dashboard's wording and thresholds", () => {
+  const { avFreshnessText } = loadCustomizations();
+  const now = Date.parse("2026-10-02T12:00:00Z");
+  assert.equal(avFreshnessText(null, now), "Not all rooms have been read yet.");
+  assert.equal(avFreshnessText("garbage", now), "Not all rooms have been read yet.");
+  assert.equal(avFreshnessText("2026-10-02T11:59:00+00:00", now), "Read just now.");
+  assert.equal(avFreshnessText("2026-10-02T11:50:00+00:00", now), "Oldest room read 10 min ago.");
+  assert.equal(avFreshnessText("2026-10-02T09:30:00+00:00", now), "Oldest room read 2.5 h ago.");
+});
+
+test("the A/V panel opens with six cards painted from live state", () => {
+  const av = loadAvPanel();
+  av.seed();
+  av.openAvPanel();
+  assert.ok(av.has("av-overlay", "open"));
+  assert.equal((av.el("av-zones").innerHTML.match(/class="av-zone"/g) || []).length, 6);
+  assert.match(av.el("av-zones").innerHTML, /Outdoor Kitchen/);
+  assert.equal(av.calls.length, 0, "opening the panel must not call a service");
+  assert.equal(av.el("av-link").textContent, "AADS connected");
+  assert.match(av.el("av-fresh").textContent, /^Not all rooms have been read yet\./);
+
+  // Courtyard: on, AirPlay, 85%, not muted.
+  assert.ok(av.has("av-zone-5", "on"));
+  assert.ok(av.has("av-power-5", "active"));
+  assert.equal(av.el("av-source-5").value, "AirPlay");
+  assert.match(av.el("av-source-5").innerHTML, /Tuner 1/);
+  assert.equal(av.el("av-vol-5").value, 85);
+  assert.equal(av.el("av-vol-5").min, 70);
+  assert.equal(av.el("av-vol-fill-5").style.width, "50%");
+  assert.equal(av.el("av-vol-label-5").textContent, "85%");
+  assert.equal(av.el("av-vol-5").disabled, false);
+  assert.equal(av.el("av-mute-5").disabled, false);
+
+  // Kitchen: unread. Volume and mute are dead, power and source stay live.
+  assert.ok(!av.has("av-zone-0", "on"));
+  assert.equal(av.el("av-source-0").value, "");
+  assert.equal(av.el("av-source-0").disabled, false);
+  assert.equal(av.el("av-vol-0").disabled, true);
+  assert.equal(av.el("av-mute-0").disabled, true);
+});
+
+test("the A/V panel reports a dropped AADS link", () => {
+  const av = loadAvPanel();
+  av.seed();
+  av.set("binary_sensor.crestron_link_aads", "off");
+  av.openAvPanel();
+  assert.equal(av.el("av-link").textContent, "AADS disconnected");
+  assert.ok(av.has("av-link", "down"));
+});
+
+test("a closed A/V panel is not repainted", () => {
+  const av = loadAvPanel();
+  av.seed();
+  av.refreshOpenAvPanel();
+  assert.equal(av.el("av-link").textContent, "");
+});
+
+test("A/V zone controls call the entity services the Speakers dashboard does", async () => {
+  const av = loadAvPanel();
+  av.seed();
+  av.openAvPanel();
+  await av.avTogglePower(5);
+  await av.avTogglePower(0);
+  await av.avSelectSource(0, "Tuner 1");
+  await av.avSetVolume(5, "90");
+  await av.avToggleMute(5);
+  await av.avToggleMute(0); // unavailable: must send nothing
+  assert.deepEqual(JSON.parse(JSON.stringify(av.calls)), [
+    { domain: "switch", service: "turn_off", data: { entity_id: "switch.crestron_courtyard_audio" } },
+    { domain: "switch", service: "turn_on", data: { entity_id: "switch.crestron_kitchen_audio" } },
+    { domain: "select", service: "select_option", data: { entity_id: "select.crestron_kitchen_source", option: "Tuner 1" } },
+    { domain: "number", service: "set_value", data: { entity_id: "number.crestron_courtyard_volume", value: 90 } },
+    { domain: "switch", service: "turn_on", data: { entity_id: "switch.crestron_courtyard_mute" } },
+  ]);
+});
+
+test("All AirPlay, All Off and Refresh wait for the work to finish", async () => {
+  const av = loadAvPanel();
+  av.seed();
+  av.openAvPanel();
+  av.hold = true;
+  const running = av.avRunAll("allOn");
+  assert.ok(av.has("av-btn-allOn", "busy"));
+  av.avRunAll("allOn"); // a second tap while busy sends nothing
+  assert.equal(av.calls.length, 1);
+  av.release();
+  await running;
+  assert.ok(!av.has("av-btn-allOn", "busy"));
+  av.hold = false;
+  await av.avRunAll("allOff");
+  await av.avRunAll("refresh");
+  assert.deepEqual(JSON.parse(JSON.stringify(av.calls)), [
+    { domain: "script", service: "all_rooms_airplay", data: {} },
+    { domain: "script", service: "all_av_off", data: {} },
+    { domain: "button", service: "press", data: { entity_id: "button.crestron_audio_refresh" } },
+  ]);
+});
+
+test("a state update does not move a volume slider that is being dragged", async () => {
+  const av = loadAvPanel();
+  av.seed();
+  av.openAvPanel();
+  av.el("av-vol-5").value = 95;
+  av.avVolumeInput(5, "95");
+  assert.equal(av.el("av-vol-label-5").textContent, "95%");
+  av.refreshOpenAvPanel(); // cache still says 85
+  assert.equal(av.el("av-vol-5").value, 95);
+  assert.equal(av.el("av-vol-label-5").textContent, "95%");
+  await av.avSetVolume(5, "95");
+  assert.equal(av.el("av-vol-5").value, 85, "after release the slider follows Home Assistant again");
 });
 
 test("playing from a Music chip browse row starts Harmony and the idle volume before it plays", async () => {
@@ -1943,9 +2128,7 @@ test("control row and popup mappings match the approved design", () => {
     ["Lights", "Climate", "A/V", "Music", "TV", "Irrigation", "Scenes", "NAS"],
   );
   assert.equal(config.controls[1].action, "thermostat");
-  // A/V: emptied 2026-10-02 and kept in the row. Its music categories moved
-  // to the Music chip; it carries nothing but its label and placeholder action.
-  assert.deepEqual(Object.keys(config.controls[2]).sort(), ["action", "label"]);
+  assert.deepEqual(Object.keys(config.controls[2]).sort(), ["action", "av", "label"]);
   assert.equal(config.controls[2].action, "av");
   assert.equal(config.controls[4].action, "harmony");
   assert.equal(config.controls[5].confirmStart, true);
@@ -2286,7 +2469,7 @@ test("custom actions route Climate and A/V without generic toggles", () => {
   const custom = loadCustomizations();
   assert.equal(custom.controlOnClick({ action: "thermostat" }, 1), "openThermostat()");
   assert.equal(custom.controlOnClick({ action: "media_browser" }, 2), "openMediaBrowser()");
-  assert.equal(custom.controlOnClick({ action: "av" }, 2), "openAvPlaceholder()");
+  assert.equal(custom.controlOnClick({ action: "av" }, 2), "openAvPanel()");
   assert.equal(custom.controlOnClick({ subEntities: [{}] }, 1), "openPopup(1)");
   assert.equal(custom.controlIndex([{ label: "Climate" }, { label: "Lights" }], "Lights"), 1);
 });

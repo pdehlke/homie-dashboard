@@ -54,6 +54,8 @@ behavior, then exactly four H2 sections: `Sub-features`,
 - [Overview A status grid](overview-a-status-grid.md) — the home screen's
   live status grid and Solar pill. No login required to prove; safest
   starting point, read-only throughout.
+- [A/V chip](av-chip.md) — the six Crestron audio zones: power, source, volume
+  and mute per room, plus All AirPlay, All Off and Refresh. Mutating.
 - [Music chip](music-chip.md) — six Music Assistant radio presets on the
   Crestron player, routed through Harmony. Mutating: starts real audio.
 - [Climate chip](climate-chip.md) — opens Home Assistant's real native

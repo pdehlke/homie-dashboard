@@ -367,15 +367,72 @@ const CONFIG = {
       ],
     },
     {
-      // Emptied 2026-10-02 on purpose and left in the row: pde has follow-up
-      // plans for this chip. It used to be `action: "media_browser"`, the
-      // Music Assistant browser at its root. Its five music categories moved
-      // to the Music chip below as `browse` rows, and everything else the root
-      // listed (Podcasts, Audiobooks, and Home Assistant's own media sources)
-      // was dropped. `action: "av"` opens an empty placeholder; the Now
-      // Playing card's own browse button still opens the full browser.
+      // The six Crestron audio zones, the same controls as Home Assistant's
+      // Speakers dashboard: per room a power switch, a source select, a
+      // volume number and a mute switch, plus All AirPlay, All Off and
+      // Refresh. `action: "av"` opens the A/V panel (openAvPanel()).
+      //
+      // This chip was the Music Assistant browser until 2026-10-02, when its
+      // music categories moved to the Music chip below as `browse` rows.
+      //
+      // Zone labels are the Crestron names, not Home Assistant area names:
+      // the wall panels are the competing interface for these six rooms and
+      // the label should agree with the panel three feet away.
+      //
+      // Source options and the volume range are read from the entities at
+      // render time rather than repeated here, so they cannot drift.
       label: "A/V",
       action: "av",
+      av: {
+        link: "binary_sensor.crestron_link_aads",
+        refresh: "button.crestron_audio_refresh",
+        allOn: "script.all_rooms_airplay",
+        allOff: "script.all_av_off",
+        zones: [
+          {
+            label: "Kitchen",
+            power: "switch.crestron_kitchen_audio",
+            source: "select.crestron_kitchen_source",
+            volume: "number.crestron_kitchen_volume",
+            mute: "switch.crestron_kitchen_mute",
+          },
+          {
+            label: "Outdoor Kitchen",
+            power: "switch.crestron_outdoor_kitchen_audio",
+            source: "select.crestron_outdoor_kitchen_source",
+            volume: "number.crestron_outdoor_kitchen_volume",
+            mute: "switch.crestron_outdoor_kitchen_mute",
+          },
+          {
+            label: "Master Bed",
+            power: "switch.crestron_master_bed_audio",
+            source: "select.crestron_master_bed_source",
+            volume: "number.crestron_master_bed_volume",
+            mute: "switch.crestron_master_bed_mute",
+          },
+          {
+            label: "Master Bath",
+            power: "switch.crestron_master_bath_audio",
+            source: "select.crestron_master_bath_source",
+            volume: "number.crestron_master_bath_volume",
+            mute: "switch.crestron_master_bath_mute",
+          },
+          {
+            label: "Studio",
+            power: "switch.crestron_studio_audio",
+            source: "select.crestron_studio_source",
+            volume: "number.crestron_studio_volume",
+            mute: "switch.crestron_studio_mute",
+          },
+          {
+            label: "Courtyard",
+            power: "switch.crestron_courtyard_audio",
+            source: "select.crestron_courtyard_source",
+            volume: "number.crestron_courtyard_volume",
+            mute: "switch.crestron_courtyard_mute",
+          },
+        ],
+      },
     },
     {
       // Bottom-row equivalent of the Scenes chip (isSceneChip / subGroups[].scenes[])

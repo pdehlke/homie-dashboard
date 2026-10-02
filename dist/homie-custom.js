@@ -15,7 +15,7 @@
       return "openMediaBrowser()";
     }
     if (control && control.action === "av") {
-      return "openAvPlaceholder()";
+      return "openAvPanel()";
     }
     if (control && control.action === "harmony") {
       return "openTVControl()";
@@ -27,6 +27,20 @@
       return `openPopup(${index})`;
     }
     return `toggleControl(${index})`;
+  }
+
+  // The A/V panel's one line of page-level freshness, from
+  // button.crestron_audio_refresh's oldest_read attribute. Same wording and
+  // thresholds as the Speakers dashboard's markdown card. A missing or
+  // unparseable value means some room has never been read, which is what the
+  // integration reports as null until every zone has been.
+  function avFreshnessText(oldestRead, nowMs) {
+    const readMs = oldestRead ? Date.parse(oldestRead) : NaN;
+    if (!Number.isFinite(readMs)) return "Not all rooms have been read yet.";
+    const age = (nowMs - readMs) / 1000;
+    if (age < 90) return "Read just now.";
+    if (age < 3600) return `Oldest room read ${Math.round(age / 60)} min ago.`;
+    return `Oldest room read ${(age / 3600).toFixed(1)} h ago.`;
   }
 
   function controlIndex(controls, label) {
@@ -404,6 +418,7 @@
     aqiPollutantView,
     chartHistoryMessage,
     controlIndex,
+    avFreshnessText,
     controlOnClick,
     filterThermostats,
     floorTargetText,
