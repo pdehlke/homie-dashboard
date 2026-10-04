@@ -3890,3 +3890,349 @@ test("the AV Off bubble keeps an empty affected list on purpose", () => {
   assert.ok(avOff, "the AV Off bubble must still be configured");
   assert.deepEqual(Array.from(avOff.entities), []);
 });
+
+// ── TV chip: Samsung section ────────────────────────────────────────────
+
+test("the TV chip names the Samsung screen entities, not the Music Assistant speaker", () => {
+  const chip = loadConfig().controls.find(c => c.action === "harmony");
+  assert.equal(chip.entity, "remote.harmony_hub");
+  assert.equal(chip.tv.player, "media_player.living_room_tv");
+  assert.equal(chip.tv.remote, "remote.living_room_tv");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(chip.tv.pad)),
+    {
+      up: "KEY_UP", down: "KEY_DOWN", left: "KEY_LEFT", right: "KEY_RIGHT",
+      ok: "KEY_ENTER", back: "KEY_RETURN", home: "KEY_HOME", menu: "KEY_MENU",
+    },
+  );
+  assert.ok(Array.isArray(chip.tv.shortcuts));
+  for (const s of chip.tv.shortcuts) {
+    assert.ok(s.label && s.value);
+    assert.ok(["key", "source", "app"].includes(s.kind));
+  }
+});
+
+test("the TV state line tells on, off and unreachable apart, and never reads as an error", () => {
+  const { tvStateLine, tvIsOn } = loadCustomizations();
+  assert.equal(tvStateLine("on").text, "TV on");
+  assert.equal(tvStateLine("on").on, true);
+  assert.equal(tvStateLine("off").text, "TV off");
+  assert.equal(tvStateLine("off").on, false);
+  for (const s of ["unavailable", "unknown", undefined, null]) {
+    assert.equal(tvStateLine(s).text, "TV off or unreachable");
+    assert.equal(tvStateLine(s).on, false);
+    assert.equal(tvIsOn(s), false);
+  }
+  assert.equal(tvIsOn("playing"), true);
+  assert.equal(tvIsOn("off"), false);
+});
+
+test("the TV chip glows for a lit screen or a running Harmony Activity, and for nothing else", () => {
+  const { tvChipIsOn } = loadCustomizations();
+  assert.equal(tvChipIsOn("on", "off"), true, "screen on from its own remote, Harmony idle");
+  assert.equal(tvChipIsOn("off", "on"), true, "Activity running, screen not yet reporting");
+  assert.equal(tvChipIsOn("unavailable", "on"), true);
+  assert.equal(tvChipIsOn("on", undefined), true);
+  assert.equal(tvChipIsOn("off", "off"), false);
+  assert.equal(tvChipIsOn("unavailable", "off"), false);
+  assert.equal(tvChipIsOn(undefined, undefined), false);
+});
+
+test("a shortcut resolves to the service call for its kind", () => {
+  const { tvShortcutCall } = loadCustomizations();
+  const tv = { player: "media_player.x", remote: "remote.x" };
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepEqual(plain(tvShortcutCall({ label: "A", kind: "key", value: "KEY_HDMI1" }, tv)), {
+    domain: "remote", service: "send_command", data: { entity_id: "remote.x", command: "KEY_HDMI1" },
+  });
+  assert.deepEqual(plain(tvShortcutCall({ label: "B", kind: "source", value: "HDMI" }, tv)), {
+    domain: "media_player", service: "select_source", data: { entity_id: "media_player.x", source: "HDMI" },
+  });
+  assert.deepEqual(plain(tvShortcutCall({ label: "C", kind: "app", value: "abc" }, tv)), {
+    domain: "media_player", service: "play_media",
+    data: { entity_id: "media_player.x", media_content_type: "app", media_content_id: "abc" },
+  });
+  assert.equal(tvShortcutCall({ label: "D", kind: "nonsense", value: "x" }, tv), null);
+  assert.equal(tvShortcutCall({ label: "E", kind: "key" }, tv), null);
+  assert.equal(tvShortcutCall(null, tv), null);
+});
+
+// loadTvPanel: the real Samsung block against a fake DOM, a fake state cache
+// and a recording haService, the way loadAvPanel does it.
+function loadTvPanel({ shortcuts } = {}) {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("const TV_POWER_TIMEOUT_MS");
+  const end = source.indexOf("/* ─── END TV CONTROL (Samsung) ─── */", start);
+  assert.ok(start > -1 && end > start, "the Samsung TV block must be found");
+
+  const els = {};
+  const el = (id) => (els[id] ||= {
+    textContent: "", innerHTML: "", disabled: false, hidden: false, className: "",
+    classList: {
+      _set: new Set(),
+      add(c) { this._set.add(c); }, remove(c) { this._set.delete(c); },
+      contains(c) { return this._set.has(c); },
+      toggle(c, on) { on ? this._set.add(c) : this._set.delete(c); },
+    },
+  });
+  const chip = JSON.parse(JSON.stringify(loadConfig().controls.find(c => c.action === "harmony")));
+  if (shortcuts) chip.tv.shortcuts = shortcuts;
+  const calls = [];
+  const feedback = [];
+  const timers = [];
+  const stateCache = new Map();
+  let release = null;
+  const api = { hold: false, result: true };
+  const context = {
+    activeControls: [{ label: "Lights" }, chip],
+    document: { getElementById: el },
+    haptic: () => {},
+    escapeHtml: (v) => String(v),
+    HOMIE_CUSTOM: loadCustomizations(),
+    haGetCached: (id) => stateCache.get(id) ?? null,
+    haService: (domain, service, data) => {
+      calls.push({ domain, service, data });
+      return api.hold ? new Promise((r) => { release = () => r(api.result); }) : Promise.resolve(api.result);
+    },
+    setTVFeedback: (msg, cls) => feedback.push({ msg, cls }),
+    setTimeout: (fn, ms) => { timers.push({ fn, ms, cleared: false }); return timers.length; },
+    clearTimeout: (id) => { if (id) timers[id - 1].cleared = true; },
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${source.slice(start, end)}\n` +
+      `globalThis.__api = { tvChipIsOn, refreshOpenTVControl, tvPadPress, tvShortcut, tvPowerToggle, _tvBuildShortcuts, _tvClearPowerPending };`,
+    context,
+  );
+  return Object.assign(api, context.__api, {
+    el, calls, feedback, timers, chip,
+    release: () => release(),
+    has: (id, cls) => el(id).classList._set.has(cls),
+    set: (id, state) => stateCache.set(id, { state, attributes: {} }),
+    open() { el("tv-control-overlay").classList.add("open"); this._tvBuildShortcuts(); this.refreshOpenTVControl(); },
+  });
+}
+
+const TV_PAD_IDS = ["up", "down", "left", "right", "ok", "back", "home", "menu"];
+
+test("the TV overlay has a pad button for every configured key, in the existing button style", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const elements = dashboardElementsById(source);
+  const pad = loadConfig().controls.find(c => c.action === "harmony").tv.pad;
+  assert.deepEqual(Object.keys(pad).sort(), [...TV_PAD_IDS].sort());
+  for (const id of TV_PAD_IDS) {
+    const btn = elements.get(`tv-pad-${id}`);
+    assert.ok(btn, `pad button ${id} must exist`);
+    assert.equal(btn.className, "tv-action-btn");
+    assert.equal(btn.onclick, `tvPadPress('${id}')`);
+  }
+  assert.equal(elements.get("tv-action-power").onclick, "tvPowerToggle()");
+});
+
+test("the Samsung section paints real state, and disables the pad while the TV is off or unreachable", () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "off");
+  tv.open();
+  assert.equal(tv.el("tv-state").textContent, "TV off");
+  assert.equal(tv.has("tv-action-power", "active"), false);
+  assert.equal(tv.el("tv-power-label").textContent, "TV ON");
+  for (const id of TV_PAD_IDS) assert.equal(tv.el(`tv-pad-${id}`).disabled, true, id);
+
+  tv.set("media_player.living_room_tv", "on");
+  tv.refreshOpenTVControl();
+  assert.equal(tv.el("tv-state").textContent, "TV on");
+  assert.equal(tv.has("tv-state", "on"), true);
+  assert.equal(tv.has("tv-action-power", "active"), true);
+  assert.equal(tv.el("tv-power-label").textContent, "TV OFF");
+  for (const id of TV_PAD_IDS) assert.equal(tv.el(`tv-pad-${id}`).disabled, false, id);
+
+  tv.set("media_player.living_room_tv", "unavailable");
+  tv.refreshOpenTVControl();
+  assert.equal(tv.el("tv-state").textContent, "TV off or unreachable");
+  for (const id of TV_PAD_IDS) assert.equal(tv.el(`tv-pad-${id}`).disabled, true, id);
+});
+
+test("the Samsung section does not paint while the overlay is closed", () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "on");
+  tv.refreshOpenTVControl();
+  assert.equal(tv.el("tv-state").textContent, "");
+});
+
+test("each pad press sends exactly one key to the Samsung remote entity", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "on");
+  tv.open();
+  const expected = {
+    up: "KEY_UP", down: "KEY_DOWN", left: "KEY_LEFT", right: "KEY_RIGHT",
+    ok: "KEY_ENTER", back: "KEY_RETURN", home: "KEY_HOME", menu: "KEY_MENU",
+  };
+  for (const id of TV_PAD_IDS) await tv.tvPadPress(id);
+  assert.equal(tv.calls.length, TV_PAD_IDS.length);
+  TV_PAD_IDS.forEach((id, n) => {
+    assert.equal(tv.calls[n].domain, "remote");
+    assert.equal(tv.calls[n].service, "send_command");
+    assert.equal(tv.calls[n].data.entity_id, "remote.living_room_tv");
+    assert.equal(tv.calls[n].data.command, expected[id]);
+  });
+  assert.equal(tv.feedback.length, 0, "a press that worked says nothing");
+});
+
+test("a second pad press goes out while the first is still in flight, and the pad stays enabled", () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "on");
+  tv.open();
+  tv.hold = true;
+  tv.tvPadPress("down");
+  tv.tvPadPress("down");
+  tv.refreshOpenTVControl();
+  assert.equal(tv.calls.length, 2);
+  assert.equal(tv.el("tv-pad-down").disabled, false);
+});
+
+test("a pad press does nothing while the TV is off, and an unknown pad id sends nothing", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "off");
+  tv.open();
+  await tv.tvPadPress("up");
+  tv.set("media_player.living_room_tv", "on");
+  await tv.tvPadPress("volume");
+  assert.equal(tv.calls.length, 0);
+});
+
+test("a pad press whose call failed says so", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "on");
+  tv.open();
+  tv.result = false;
+  await tv.tvPadPress("up");
+  assert.equal(tv.feedback.at(-1).cls, "error");
+});
+
+test("an empty shortcut list renders no shortcut area", () => {
+  const tv = loadTvPanel({ shortcuts: [] });
+  tv.set("media_player.living_room_tv", "on");
+  tv.open();
+  assert.equal(tv.el("tv-shortcuts").hidden, true);
+  assert.equal(tv.el("tv-shortcuts").innerHTML, "");
+});
+
+test("shortcuts render from config, call their service, and report a failure", async () => {
+  const tv = loadTvPanel({ shortcuts: [
+    { label: "Cable", kind: "key", value: "KEY_HDMI1" },
+    { label: "Films", kind: "app", value: "app-id" },
+    { label: "Broken", kind: "nonsense", value: "x" },
+  ] });
+  tv.set("media_player.living_room_tv", "on");
+  tv.open();
+  assert.equal(tv.el("tv-shortcuts").hidden, false);
+  assert.match(tv.el("tv-shortcuts").innerHTML, /tvShortcut\(0\).*Cable.*tvShortcut\(1\).*Films/s);
+  assert.equal(tv.el("tv-shortcut-0").disabled, false);
+
+  await tv.tvShortcut(0);
+  assert.equal(tv.calls[0].service, "send_command");
+  assert.equal(tv.calls[0].data.command, "KEY_HDMI1");
+  assert.equal(tv.feedback.at(-1).cls, "success");
+
+  tv.result = false;
+  await tv.tvShortcut(1);
+  assert.equal(tv.calls[1].service, "play_media");
+  assert.equal(tv.calls[1].data.media_content_id, "app-id");
+  assert.equal(tv.feedback.at(-1).msg, "Films failed");
+  assert.equal(tv.feedback.at(-1).cls, "error");
+
+  await tv.tvShortcut(2);
+  assert.equal(tv.calls.length, 2, "a shortcut of an unknown kind calls nothing");
+  assert.equal(tv.feedback.at(-1).cls, "error");
+
+  tv.set("media_player.living_room_tv", "off");
+  tv.refreshOpenTVControl();
+  assert.equal(tv.el("tv-shortcut-0").disabled, true);
+  await tv.tvShortcut(0);
+  assert.equal(tv.calls.length, 2, "shortcuts send nothing while the TV is off");
+});
+
+test("TV power turns the screen on alone and stays busy until the set reports on", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "off");
+  tv.set("remote.harmony_hub", "off");
+  tv.open();
+  await tv.tvPowerToggle();
+  assert.equal(tv.calls.length, 1);
+  assert.equal(tv.calls[0].domain, "media_player");
+  assert.equal(tv.calls[0].service, "turn_on");
+  assert.equal(tv.calls[0].data.entity_id, "media_player.living_room_tv");
+  assert.equal(tv.has("tv-action-power", "busy"), true, "not optimistic: busy until real state arrives");
+  assert.equal(tv.has("tv-action-power", "active"), false);
+  assert.equal(tv.el("tv-state").textContent, "TV off");
+
+  await tv.tvPowerToggle();
+  assert.equal(tv.calls.length, 1, "a second tap while pending sends nothing");
+
+  tv.set("media_player.living_room_tv", "on");
+  tv.refreshOpenTVControl();
+  assert.equal(tv.has("tv-action-power", "busy"), false);
+  assert.equal(tv.has("tv-action-power", "active"), true);
+  assert.equal(tv.timers[0].cleared, true);
+});
+
+test("TV power turns the screen off through the media player, not Harmony", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "on");
+  tv.open();
+  await tv.tvPowerToggle();
+  assert.equal(tv.calls.length, 1);
+  assert.equal(tv.calls[0].domain, "media_player");
+  assert.equal(tv.calls[0].service, "turn_off");
+  assert.equal(tv.calls[0].data.entity_id, "media_player.living_room_tv");
+});
+
+test("TV power gives the button back and says so when the set never reports the new state", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "off");
+  tv.open();
+  await tv.tvPowerToggle();
+  assert.equal(tv.timers[0].ms, 30000);
+  tv.timers[0].fn();
+  assert.equal(tv.has("tv-action-power", "busy"), false);
+  assert.equal(tv.feedback.at(-1).cls, "error");
+});
+
+test("TV power reports a failed call at once instead of waiting out the timeout", async () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "off");
+  tv.open();
+  tv.result = false;
+  await tv.tvPowerToggle();
+  assert.equal(tv.has("tv-action-power", "busy"), false);
+  assert.equal(tv.feedback.at(-1).cls, "error");
+  assert.equal(tv.timers[0].cleared, true);
+});
+
+test("the TV chip's glow reads the Samsung screen as well as Harmony", () => {
+  const tv = loadTvPanel();
+  tv.set("media_player.living_room_tv", "on");
+  tv.set("remote.harmony_hub", "off");
+  assert.equal(tv.tvChipIsOn(tv.chip), true);
+  tv.set("media_player.living_room_tv", "off");
+  assert.equal(tv.tvChipIsOn(tv.chip), false);
+  tv.set("remote.harmony_hub", "on");
+  assert.equal(tv.tvChipIsOn(tv.chip), true);
+
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const chips = source.slice(source.indexOf("function refreshControls()"), source.indexOf("function refreshNotifications()"));
+  assert.match(chips, /else if \(c\.tv\) \{\s*isOn = tvChipIsOn\(c\);/);
+});
+
+test("both Samsung entities are reachable by the relevance filter's static CONFIG sweep", () => {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("const _configEntities = (() => {");
+  const end = source.indexOf("/**", start);
+  assert.ok(start > -1 && end > start);
+  const context = { CONFIG: loadConfig() };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.__ids = _configEntities;`, context);
+  assert.equal(context.__ids.has("media_player.living_room_tv"), true);
+  assert.equal(context.__ids.has("remote.living_room_tv"), true);
+  assert.equal(context.__ids.has("remote.harmony_hub"), true);
+});

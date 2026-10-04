@@ -58,6 +58,9 @@ behavior, then exactly four H2 sections: `Sub-features`,
   and mute per room, plus All AirPlay, All Off and Refresh. Mutating.
 - [Music chip](music-chip.md) — six Music Assistant radio presets on the
   Crestron player, routed through Harmony. Mutating: starts real audio.
+- [TV chip](tv-chip.md) — Harmony Activities and receiver volume, plus the
+  Samsung screen's real state, power and a remote pad. Mutating: switches the
+  television on and off.
 - [Climate chip](climate-chip.md) — opens Home Assistant's real native
   climate dialog for the Lennox thermostats via cross-frame same-origin
   dispatch. Read path is non-mutating; the dialog's own controls do move

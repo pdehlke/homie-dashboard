@@ -552,6 +552,30 @@ const CONFIG = {
       // hvac_action check is, since this entity's own state is already
       // exactly the right signal.
       entity: HARMONY_ENTITY,
+      // The Samsung section of the overlay. `player` is the Samsung Smart TV
+      // integration's entity for the screen, not media_player.samsung_qn90ba_85,
+      // which is the same set as a Music Assistant speaker and has no power,
+      // source or key control. The chip now glows when the screen is on or a
+      // Harmony Activity is running; see tvChipIsOn() in homie-custom.js.
+      tv: {
+        player: "media_player.living_room_tv",
+        remote: "remote.living_room_tv",
+        // Key names the Samsung integration takes through remote.send_command.
+        pad: {
+          up: "KEY_UP",
+          down: "KEY_DOWN",
+          left: "KEY_LEFT",
+          right: "KEY_RIGHT",
+          ok: "KEY_ENTER",
+          back: "KEY_RETURN",
+          home: "KEY_HOME",
+          menu: "KEY_MENU",
+        },
+        // { label, kind, value }. kind is "key" (a KEY_ name), "source" (a
+        // source_list entry) or "app" (a Tizen app id). An empty list renders
+        // no shortcut area.
+        shortcuts: [],
+      },
     },
     {
       label: "Irrigation",

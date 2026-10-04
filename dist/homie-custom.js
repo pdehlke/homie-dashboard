@@ -413,6 +413,53 @@
     return true;
   }
 
+  // The Samsung integration reports the living room set as "on" or "off".
+  // Anything else a media_player can report while powered counts as on, so a
+  // later integration change that starts reporting "playing" does not dim
+  // the chip.
+  const TV_ON_STATES = ["on", "playing", "paused", "idle", "buffering"];
+
+  function tvIsOn(playerState) {
+    return TV_ON_STATES.includes(playerState);
+  }
+
+  // The Samsung section's one line of state. "unavailable" is not an error:
+  // a set that has dropped off the network reads that way, and so does a
+  // missing entity, so both say "off or unreachable".
+  function tvStateLine(playerState) {
+    if (tvIsOn(playerState)) return { text: "TV on", on: true };
+    if (playerState === "off") return { text: "TV off", on: false };
+    return { text: "TV off or unreachable", on: false };
+  }
+
+  // Chip glow: lit when the screen itself is on, or when a Harmony Activity
+  // is running. Samsung state alone would leave the chip dark for the ~12 s
+  // the set takes to report on after an Activity starts, and dark for good
+  // if the Samsung entity ever went unavailable with the screen lit.
+  function tvChipIsOn(playerState, harmonyState) {
+    return tvIsOn(playerState) || harmonyState === "on";
+  }
+
+  // The service call a shortcut resolves to, or null for one this build does
+  // not understand. `tv` is the TV chip's config block.
+  function tvShortcutCall(shortcut, tv) {
+    if (!shortcut || !tv || !shortcut.value) return null;
+    if (shortcut.kind === "key") {
+      return { domain: "remote", service: "send_command", data: { entity_id: tv.remote, command: shortcut.value } };
+    }
+    if (shortcut.kind === "source") {
+      return { domain: "media_player", service: "select_source", data: { entity_id: tv.player, source: shortcut.value } };
+    }
+    if (shortcut.kind === "app") {
+      return {
+        domain: "media_player",
+        service: "play_media",
+        data: { entity_id: tv.player, media_content_type: "app", media_content_id: shortcut.value },
+      };
+    }
+    return null;
+  }
+
   return {
     aqiBandForValue,
     aqiPollutantView,
@@ -445,6 +492,10 @@
     thermostatFromFahrenheit,
     todayCo2Intensity,
     todayGreenPercentage,
+    tvChipIsOn,
+    tvIsOn,
+    tvShortcutCall,
+    tvStateLine,
     weatherUvValue,
   };
 });

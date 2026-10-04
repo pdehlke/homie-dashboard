@@ -1008,6 +1008,23 @@
    * :disabled rather than a .disabled class, since these are real <button>s. */
   .tv-action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+  /* Samsung section: the same rows and buttons as the Harmony ones above. */
+  .popup--tv { max-height: 94vh; overflow-y: auto; }
+  .tv-samsung-head { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 14px; }
+  .tv-state {
+    grid-column: span 2;
+    align-self: center;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.55);
+  }
+  .tv-state.on { color: var(--accent-hi); }
+  .tv-pad { margin-bottom: 8px; }
+  .tv-action-btn.busy { opacity: 0.5; pointer-events: none; }
+  .tv-shortcuts[hidden] { display: none; }
+  .tv-shortcuts .tv-action-btn { justify-content: center; min-height: 40px; }
+
   .tv-feedback {
     min-height: 20px;
     text-align: center;
@@ -8929,6 +8946,51 @@
       </button>
     </div>
 
+    <div class="tv-action-row tv-samsung-head">
+      <div class="tv-state" id="tv-state"></div>
+      <button class="tv-action-btn" id="tv-action-power" onclick="tvPowerToggle()">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        <span id="tv-power-label">TV POWER</span>
+      </button>
+    </div>
+
+    <div class="tv-action-row tv-pad">
+      <button class="tv-action-btn" id="tv-pad-back" onclick="tvPadPress('back')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+        <span>BACK</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-up" onclick="tvPadPress('up')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+        <span>UP</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-home" onclick="tvPadPress('home')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>HOME</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-left" onclick="tvPadPress('left')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>LEFT</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-ok" onclick="tvPadPress('ok')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg>
+        <span>OK</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-right" onclick="tvPadPress('right')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        <span>RIGHT</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-menu" onclick="tvPadPress('menu')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <span>MENU</span>
+      </button>
+      <button class="tv-action-btn" id="tv-pad-down" onclick="tvPadPress('down')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <span>DOWN</span>
+      </button>
+    </div>
+
+    <div class="tv-action-row tv-shortcuts" id="tv-shortcuts" hidden></div>
+
     <div id="tv-feedback" class="tv-feedback"></div>
   </div>
 </div>
@@ -9148,7 +9210,7 @@ const ICONS = {
       // Kept as the single source of truth for the version, and asserted
       // against the two src attributes below by the test suite so the three
       // can never drift apart.
-      const HOMIE_ASSET_VERSION = "20261002.3";
+      const HOMIE_ASSET_VERSION = "20261004.1";
 </script>
 <!-- Static tags, not document.write(). Both files still have to load and run
      before the main script below (config.js defines CONFIG; homie-custom.js
@@ -9162,8 +9224,8 @@ const ICONS = {
 
      They stay HERE rather than moving to <head> because config.js references
      ICONS, which the inline block just above defines. -->
-<script src="config.js?v=20261002.3"></script>
-<script src="homie-custom.js?v=20261002.3"></script>
+<script src="config.js?v=20261004.1"></script>
+<script src="homie-custom.js?v=20261004.1"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -9871,13 +9933,16 @@ async function haService(domain, service, data) {
   const body = (typeof data === "string") ? { entity_id: data } : data;
   if (!body) return;
   try {
-    await fetch(`${BASE}/api/services/${domain}/${service}`, {
+    const r = await fetch(`${BASE}/api/services/${domain}/${service}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${HA_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
     // State update arrives via the WS state_changed subscription automatically.
-  } catch {}
+    // The return value is for the few callers that report a failed call; most
+    // ignore it.
+    return r.ok;
+  } catch { return false; }
 }
 
 /* ─── HAPTIC FEEDBACK ───────────────────────────────────────────────────────
@@ -12035,6 +12100,8 @@ function refreshControls() {
       // A/V chip: lit while any of the six rooms is on. Its zones live in
       // c.av.zones rather than subEntities, so allSubs is empty for it.
       isOn = c.av.zones.some(zn => haGetCached(zn.power)?.state === "on");
+    } else if (c.tv) {
+      isOn = tvChipIsOn(c);
     } else if (c.isNasChip) {
       // NAS chip's glow means "needs attention," not "is active" — see
       // nasChipNeedsAttention() above and homie-nas-chip.md for why this is
@@ -15023,13 +15090,16 @@ async function openTVControl() {
     );
     setTVFeedback("Entity not found — check HARMONY_ENTITY in config.js", "error");
   }
+  _tvBuildShortcuts();
   document.getElementById("tv-control-overlay").classList.add("open");
+  refreshOpenTVControl();
 }
 
 function closeTVControlOverlay(e) {
   if (e && e.target !== document.getElementById("tv-control-overlay")) return;
   haptic("light");
   document.getElementById("tv-control-overlay").classList.remove("open");
+  _tvClearPowerPending();
 }
 
 /**
@@ -15186,6 +15256,150 @@ function setTVFeedback(msg, cls, timed = false) {
     }, TV_FEEDBACK_MIN_MS);
   }
 }
+
+/* ─── TV CONTROL (Samsung) ────────────────────────────────────────────────
+ * The section below the Harmony rows: a state line, a power button for the
+ * screen alone, a remote pad and config-driven shortcuts. Entities, pad keys
+ * and shortcuts come from the TV chip's `tv` block in config.js; the
+ * decisions are pure functions in homie-custom.js.
+ *
+ * Unlike the Harmony badge above, this section paints from the state cache
+ * and repaints in place on every render pass, because the Samsung entity
+ * reports real state. Nothing here is optimistic.
+ *
+ * A pad press is not awaited and never disables the pad. Measured on the set
+ * on 2026-10-04, remote.send_command returns about 1.0 s after the press
+ * whatever the key, and four presses sent together all returned in 1.05 s,
+ * so waiting on one press before allowing the next would cap navigation at
+ * one step a second for no reason.
+ *
+ * Home Assistant answers 200 for a key name the set does not know, so a
+ * failure reported here means the call itself failed, not that the set
+ * ignored the key.
+ * ────────────────────────────────────────────────────────────────────────── */
+const TV_POWER_TIMEOUT_MS = 30000; // the set took 11.7 s to report on from cold
+let _tvPowerPending = null; // { want: "on" | "off", timer }
+
+function _tvConfig() {
+  return activeControls.find(c => c.action === "harmony")?.tv || null;
+}
+
+/** Chip and sidebar glow for the TV chip; see HOMIE_CUSTOM.tvChipIsOn(). */
+function tvChipIsOn(c) {
+  return HOMIE_CUSTOM.tvChipIsOn(haGetCached(c.tv.player)?.state, haGetCached(c.entity)?.state);
+}
+
+function _tvClearPowerPending() {
+  clearTimeout(_tvPowerPending?.timer);
+  _tvPowerPending = null;
+}
+
+/** Fills the shortcut row from config. Runs on open only, never on repaint. */
+function _tvBuildShortcuts() {
+  const row = document.getElementById("tv-shortcuts");
+  if (!row) return;
+  const shortcuts = _tvConfig()?.shortcuts || [];
+  row.innerHTML = shortcuts.map((s, i) =>
+    `<button class="tv-action-btn" id="tv-shortcut-${i}" onclick="tvShortcut(${i})"><span>${escapeHtml(s.label)}</span></button>`
+  ).join("");
+  row.hidden = shortcuts.length === 0;
+}
+
+/**
+ * refreshOpenTVControl — repaints the Samsung section from the state cache,
+ * in place. It never rebuilds a button, so a state update arriving in the
+ * middle of a run of pad presses cannot swallow a tap.
+ */
+function refreshOpenTVControl() {
+  const overlay = document.getElementById("tv-control-overlay");
+  if (!overlay?.classList.contains("open")) return;
+  const tv = _tvConfig();
+  if (!tv) return;
+
+  const state = haGetCached(tv.player)?.state;
+  const line = HOMIE_CUSTOM.tvStateLine(state);
+  const on = line.on;
+
+  if (_tvPowerPending && on === (_tvPowerPending.want === "on")) {
+    _tvClearPowerPending();
+    setTVFeedback("", "");
+  }
+
+  const stateEl = document.getElementById("tv-state");
+  stateEl.textContent = line.text;
+  stateEl.classList.toggle("on", on);
+
+  const power = document.getElementById("tv-action-power");
+  power.classList.toggle("active", on);
+  power.classList.toggle("busy", !!_tvPowerPending);
+  document.getElementById("tv-power-label").textContent = on ? "TV OFF" : "TV ON";
+
+  Object.keys(tv.pad || {}).forEach(id => {
+    const btn = document.getElementById(`tv-pad-${id}`);
+    if (btn) btn.disabled = !on;
+  });
+  (tv.shortcuts || []).forEach((_, i) => {
+    const btn = document.getElementById(`tv-shortcut-${i}`);
+    if (btn) btn.disabled = !on;
+  });
+}
+
+/** One key per tap. Not awaited by the caller; see the block comment. */
+async function tvPadPress(id) {
+  const tv = _tvConfig();
+  const key = tv?.pad?.[id];
+  if (!key || !HOMIE_CUSTOM.tvIsOn(haGetCached(tv.player)?.state)) return;
+  haptic("light");
+  const ok = await haService("remote", "send_command", { entity_id: tv.remote, command: key });
+  if (ok === false) setTVFeedback("Key not sent", "error", true);
+}
+
+async function tvShortcut(i) {
+  const tv = _tvConfig();
+  const shortcut = tv?.shortcuts?.[i];
+  if (!shortcut || !HOMIE_CUSTOM.tvIsOn(haGetCached(tv.player)?.state)) return;
+  haptic("medium");
+  const call = HOMIE_CUSTOM.tvShortcutCall(shortcut, tv);
+  if (!call) {
+    setTVFeedback(`${shortcut.label} is not set up`, "error", true);
+    return;
+  }
+  setTVFeedback("Sending…", "");
+  const ok = await haService(call.domain, call.service, call.data);
+  if (ok === false) setTVFeedback(`${shortcut.label} failed`, "error", true);
+  else setTVFeedback("Done", "success", true);
+}
+
+/**
+ * tvPowerToggle — power for the screen alone, independent of any Harmony
+ * Activity. The button stays busy until the Samsung entity reports the new
+ * state, which is what clears it in refreshOpenTVControl(); waking the set
+ * over Wake-on-LAN takes several seconds. If the state never arrives the
+ * button comes back and the feedback line says so.
+ */
+async function tvPowerToggle() {
+  const tv = _tvConfig();
+  if (!tv || _tvPowerPending) return;
+  haptic("medium");
+  const want = HOMIE_CUSTOM.tvIsOn(haGetCached(tv.player)?.state) ? "off" : "on";
+  _tvPowerPending = {
+    want,
+    timer: setTimeout(() => {
+      _tvPowerPending = null;
+      refreshOpenTVControl();
+      setTVFeedback("TV did not respond", "error", true);
+    }, TV_POWER_TIMEOUT_MS),
+  };
+  setTVFeedback(want === "on" ? "Waking TV…" : "Turning TV off…", "");
+  refreshOpenTVControl();
+  const ok = await haService("media_player", want === "on" ? "turn_on" : "turn_off", { entity_id: tv.player });
+  if (ok === false) {
+    _tvClearPowerPending();
+    refreshOpenTVControl();
+    setTVFeedback("TV power failed", "error", true);
+  }
+}
+/* ─── END TV CONTROL (Samsung) ─── */
 
 // Module-level references for the active alarm WS handler and its safety
 // timeout. Stored here so a second alarmAction() call can cancel the first
@@ -16149,6 +16363,7 @@ function refreshAllUI() {
   }
   refreshMusic();
   refreshOpenAvPanel(); // its own overlay, outside the popup stack; no-op while closed
+  refreshOpenTVControl(); // likewise
   // Keep overview 2 in sync whenever it has been built (regardless of active screen)
   if (_ov2Built) _refreshOv2();
   if (_ov3Built) _refreshOv3();
@@ -19823,6 +20038,8 @@ function _refreshOv3SidebarControls() {
         ? musicChipIsOn(c)
         : c.isNasChip
           ? nasChipNeedsAttention()
+          : c.tv
+          ? tvChipIsOn(c)
           : subs.length
             ? subs.some(s => entityIsActive(s.entity))
             : entityIsActive(c.entity);
