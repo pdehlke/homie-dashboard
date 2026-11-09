@@ -1,24 +1,18 @@
 /* Homie Dashboard configuration for pde's Home Assistant.
  * Derived from the installed Homie Dashboard v4.1.1 schema on 2026-08-07.
- * This file contains a long-lived HA token and must never enter Git.
+ *
+ * Since v5 nothing reads this file at runtime. The dashboard's configuration
+ * lives in Home Assistant (.storage/homie_dashboard.config) and is loaded
+ * there by the integration's Setup wizard: Import from v4 → Choose
+ * config.js… → this file → Save. The file stays here as the reviewed,
+ * commented source of that configuration; re-import it after every change.
+ *
+ * It holds no token and no server address. v5 signs in with the logged-in
+ * Home Assistant session and derives the WebSocket URL from the page's own
+ * origin, so HA_TOKEN, WS_URL and BASE are gone. The wizard reads only
+ * CONFIG, ALARM_CODE and PHOTO_FRAME_INTERVAL; the other constants exist so
+ * CONFIG can refer to them.
  */
-
-const HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN";
-// hass.ehlke.net resolves via real DNS (not mDNS), so it works everywhere:
-// the Fire HD tablet included, whose FireOS has no mDNS resolver and could
-// never reach homeassistant.local. Replaces the literal-IP workaround this
-// file used from 2026-08-10 to 2026-08-11; see homie-dashboard-install-plan.md.
-// Port dropped 2026-08-24: HA moved behind a Caddy reverse proxy as part of
-// the Pi-to-Proxmox migration; :8123 no longer works at all. Scheme flipped
-// to wss:// the same day when Caddy's automatic HTTPS went live (real Let's
-// Encrypt certificate; plain HTTP now redirects). A browser refuses to open
-// a plain ws:// connection from a page loaded over https, so this was not
-// optional: see docs/networking/caddy-reverse-proxy.md in pdehlke/homeassistant.
-const WS_URL = "wss://hass.ehlke.net/api/websocket";
-const BASE = WS_URL
-  .replace(/^wss:\/\//, "https://")
-  .replace(/^ws:\/\//, "http://")
-  .replace(/\/api\/websocket$/, "");
 
 const ALARM_CODE = "";
 // Alarmo (nielsfaber/alarmo via HACS), installed 2026-09-08. A virtual,
@@ -32,14 +26,11 @@ const ALARM_ENTITY = "alarm_control_panel.alarmo";
 // the physical hub right now. See docs/harmony-hub/harmony-hub-integration.md
 // in the pdehlke/homeassistant repo for the full integration inventory.
 const HARMONY_ENTITY = "remote.harmony_hub";
-const PHOTO_FRAME_IMAGES = [];
 const PHOTO_FRAME_INTERVAL = 20;
-const BACKGROUND_IMAGES = [];
 
 const CONFIG = {
   brandName: "HOME",
   showPetButton: false,
-  backgroundImages: BACKGROUND_IMAGES,
   uiDefaults: {
     startupMode: "overview1",
     clockFormat: "12h",
@@ -63,7 +54,6 @@ const CONFIG = {
     return this.greetingSlots[this.greetingSlots.length - 1].label;
   },
 
-  wsUrl: WS_URL,
   alarmEntity: ALARM_ENTITY,
   alarm: { entity: "" },
   security: [],

@@ -1,14 +1,14 @@
 # HOME Screen A Customizations
 
 This fork tracks the accepted HOME tablet dashboard derived from upstream
-Homie Dashboard v4.1.1.
+Homie Dashboard v4.1.1, merged with upstream v5.0.0's Home Assistant integration
+(see [Upstream v5.0.0 Integration](#upstream-v500-integration)).
 
 ## Configuration
 
-`dist/config.js` contains the house-specific entity mapping but deliberately
-retains `YOUR_LONG_LIVED_ACCESS_TOKEN`. Never commit a populated Home Assistant
-token. Deployment must replace the placeholder only in the copy installed on
-Home Assistant.
+`config/config.js` contains the house-specific entity mapping. Since v5 it holds
+no token and no server address, and nothing serves it: it is the source that the
+Setup wizard imports into Home Assistant's storage.
 
 The accepted Screen A configuration provides:
 
@@ -437,6 +437,49 @@ Fork adaptations, each because the upstream code would misbehave against this ho
 upstream defect left as is: `securityAction("siren", …)` looks up `siren.turn_on` /
 `siren.turn_off` in `CONFIG.security` rather than using `alarmUi.sirenEntity`, so a configured
 siren entity would show state but not switch. Fix it if a siren is ever added.
+
+## Upstream v5.0.0 Integration
+
+Upstream v5.0.0 turned Homie into a Home Assistant integration
+(`custom_components/homie_dashboard`): a sidebar panel that hosts the dashboard in an iframe, signs
+it in with the logged-in HA session (no long-lived token anywhere), derives the WebSocket URL from
+the page's origin, and stores the configuration in `.storage/homie_dashboard.config`, edited
+through a Setup wizard. `config.js`, the `/local/` deployment and the Lovelace resource are gone.
+
+The merge (`merge/v5.0.0`) takes all of that and keeps this fork's dashboard:
+
+- `custom_components/` is upstream's, unchanged except one fix in `setup.html` (below).
+- `frontend/index.html` is this fork's `homie-dashboard.html` plus only upstream's v4.3.0 → v5.0.0
+  changes to that file, applied as a three-way merge with v4.3.0 as the base: the session-token
+  WebSocket auth with retry, the v5 runtime scripts in place of `config.js`, wizard and photo-folder
+  wording in hints, a null guard in `openMediaBrowser()`, scene-bubble color/icon fallbacks, and a
+  Setup wizard button in Settings. The v4.2.0 redesign that git's own merge would have pulled in
+  (Dashboards launcher, Favorites, new Settings, Calendar, Pet Stats page, WebRTC cameras) was left
+  out, as it was for v4.3.0; the Alarm screen had already been ported by hand.
+- `homie-custom.js` moved next to `index.html` and still loads with `?v=HOMIE_ASSET_VERSION`.
+  Its static path is registered without cache headers, so the 31-day `/local/` cache problem is
+  gone, but heuristic caching remains, so the token stays.
+- `config/config.js` is the old `dist/config.js` without `HA_TOKEN`, `WS_URL`, `BASE`,
+  `PHOTO_FRAME_IMAGES`, `BACKGROUND_IMAGES`, `wsUrl` and `backgroundImages`. Photos are now found by
+  scanning `/config/homie_dashboard/photos/` and `photos/background/`.
+
+Loading it: Settings → Devices & services → Homie Dashboard → open the panel → Setup wizard →
+"Choose config.js…" → `config/config.js` → Save. The import evaluates the file, keeps only
+plain data (functions and getters are dropped; `welcomeText` is redefined by `config-runtime.js`),
+and strips `YOUR_*` placeholders. `config-runtime.js` then deep-merges the result over
+`homie-defaults.js`. For this house that adds only keys the fork's dashboard never reads
+(`solar.dailyChart`, `calendarDashboard`, camera stream options, `petStats.desiccantMaxDays`), so
+the dashboard gets the same `CONFIG` as before. The test suite's `loadConfig()` now runs this same
+pipeline instead of evaluating `config.js` directly.
+
+**Wizard fix.** Every wizard save rebuilds any control whose label matches one of the picker's
+kinds (Lights, Scenes, Air Con, Purifiers, Blinds, Switches), keying each item by its `entity`.
+This fork's Scenes chip uses `entities`/`activate` instead, so a save collapsed every scene into a
+single item with no entity. `parseChip()` now hands a chip back as a custom chip, stored unchanged,
+unless every item has a unique string `entity` and every group holds only a label and its items.
+Lights passes that test and stays wizard-managed; Scenes, Climate, A/V, Music, TV, Irrigation and
+NAS are kept as they are. Checked in a browser: importing `config/config.js` and saving stores this
+config exactly, plus `calendarDashboard`, which the wizard always writes.
 
 ## Temperature Display Convention
 

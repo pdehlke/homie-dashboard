@@ -12,6 +12,13 @@ description: >
 
 # Verify Homie Dashboard
 
+> **Stale after the v5 cutover.** The `merge/v5.0.0` branch moves the dashboard into the
+> `homie_dashboard` integration (`custom_components/homie_dashboard/frontend/`), removes
+> `config.js` and its token, and serves the page from `/homie_dashboard_static/` inside an HA
+> sidebar panel. Everything below about `dist/`, SFTP to `/config/www/community/`, the token in
+> the live `config.js` and the direct-file route describes the v4 deployment. Rewrite this skill
+> once the v5 deployment is live; until then it applies only to the v4 install still running.
+
 Homie Dashboard has no dev server and no build step. It is one static HTML
 file (`dist/homie-dashboard.html`) plus `dist/config.js` and
 `dist/homie-custom.js`, hand-deployed by SFTP to

@@ -4,17 +4,43 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const workDir = path.resolve(__dirname, "../dist");
+const workDir = path.resolve(__dirname, "../custom_components/homie_dashboard/frontend");
+const configPath = path.resolve(__dirname, "../config/config.js");
 
-function loadConfig() {
-  const source = fs.readFileSync(path.join(workDir, "config.js"), "utf8");
+// Runs config/config.js through the same path the v5 integration does: the
+// Setup wizard's "Import from v4" (parseOldConfig in setup.html: evaluate,
+// serialize, sanitize), Home Assistant's JSON storage, then config-runtime.js
+// (deep-merge over homie-defaults.js and resolve), so the suite tests the
+// CONFIG the dashboard actually gets rather than the source file's literal.
+function loadV5Config() {
   const context = { console };
+  context.window = context;
   vm.createContext(context);
+  for (const helper of ["homie-common.js", "homie-defaults.js"]) {
+    vm.runInContext(fs.readFileSync(path.join(workDir, helper), "utf8"), context);
+  }
+  const source = fs.readFileSync(configPath, "utf8");
   vm.runInContext(
-    `${source}\nglobalThis.__config = CONFIG; globalThis.__backgrounds = BACKGROUND_IMAGES;`,
+    `(function (ICONS) {\n${source}\n;globalThis.__imported = { CONFIG, code: ALARM_CODE, interval: PHOTO_FRAME_INTERVAL };\n})(HomieCommon.makeIconProxy());`,
     context,
   );
-  return context.__config;
+  vm.runInContext(
+    `{
+      const C = HomieCommon;
+      let d = C.serialize(__imported.CONFIG);
+      delete d.wsUrl; delete d.welcomeText;
+      d = C.sanitize(d) || {};
+      const stored = JSON.parse(JSON.stringify(d));
+      globalThis.__stored = stored;
+      globalThis.__config = Object.assign({}, C.resolve(C.deepMerge(window.HOMIE_DEFAULTS, stored), {}));
+    }`,
+    context,
+  );
+  return context;
+}
+
+function loadConfig() {
+  return loadV5Config().__config;
 }
 
 function loadCustomizations() {
@@ -84,7 +110,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 // the "can't reach the parent frame" test below, sharing the real sliced source rather than
 // a hand-copied duplicate that could drift from it.
 function loadThermostatOverlay({ withParentFrame = true } = {}) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const thermostatSource = source.slice(
     source.indexOf("let _thermEntities"),
     source.indexOf("/** _buildThermTabs"),
@@ -169,7 +195,7 @@ function loadThermostatOverlay({ withParentFrame = true } = {}) {
 // stateCache and a fake bubble element, the same slice-real-source approach as
 // loadThermostatOverlay above rather than a hand-copied duplicate that could drift.
 function loadSceneToggle() {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const entityIsOnStart = source.indexOf("function entityIsOn(state, entity)");
   const entityIsOnSource = source.slice(entityIsOnStart, source.indexOf("}", entityIsOnStart) + 1);
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
@@ -257,7 +283,7 @@ test("Screen A has the agreed balanced status grid", () => {
 });
 
 test("Overview B inherits Overview A's four-column center grid", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.match(cssDeclarations(source, ".hero-stats"), /grid-template-columns:\s*repeat\(4,\s*1fr\)/);
   assert.doesNotMatch(cssDeclarations(source, ".ov2-stats"), /grid-template-columns/);
 });
@@ -514,7 +540,7 @@ test("hourly power averages convert both Sense series from W to kW", () => {
 });
 
 test("full-screen solar markup removes battery and exposes accepted readings", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.doesNotMatch(source, /id="sfs-node-bat-val"|id="sfs-stat-battery"|id="sfs-lbl-charge"/);
   assert.match(source, />Low Carbon</);
   assert.match(source, />CO2 Intensity</);
@@ -539,7 +565,7 @@ test("full-screen solar markup removes battery and exposes accepted readings", (
 });
 
 test("customization docs make Fahrenheit permanent for every temperature display", () => {
-  const source = fs.readFileSync(path.join(workDir, "..", "docs", "pdehlke-customizations.md"), "utf8");
+  const source = fs.readFileSync(path.resolve(__dirname, "../docs/pdehlke-customizations.md"), "utf8");
   assert.match(source, /all temperature-related displays[^.]*Fahrenheit/i);
   assert.match(source, /future[^.]*convert[^.]*Fahrenheit/i);
 });
@@ -593,7 +619,7 @@ test("empty configured AQI bands fall back to dashboard defaults", () => {
 });
 
 test("Overview C and expanded Weather use tested forecast and AQI helpers", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const expandedWeather = source.slice(
     source.indexOf("function _refreshWeatherFS()"),
     source.indexOf("function openWeatherFS()"),
@@ -642,31 +668,35 @@ test("WAQI pollutant sub-indices stay unitless and preserve zero", () => {
   );
 });
 
-test("Homie HTML loads config and helpers with one release token", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+test("Homie HTML loads the v5 runtime config and the fork helpers with one release token", () => {
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const version = source.match(/const HOMIE_ASSET_VERSION = "([^"]+)";/)?.[1];
   // Format, not a literal: a hardcoded version fails on every single deploy,
   // which trains everyone to ignore a red suite. What matters is that both
-  // nested assets are versioned off the one token.
+  // fork's nested asset is versioned off the one token.
   assert.match(version, /^\d{8}\.\d+$/, "HOMIE_ASSET_VERSION must be YYYYMMDD.N");
   // Static <script src> tags, not document.write(): the preload scanner can
   // discover a literal src while the parser is still in the stylesheet, but
   // cannot see inside a document.write() string. The version therefore appears
-  // in three places, so assert they agree rather than that a template is used.
+  // in two places, so assert they agree rather than that a template is used.
   // Matches the call form (a template literal), not the prose above it, which
   // explains why document.write() is no longer used here.
   assert.doesNotMatch(source, /document\.write\(`/,
     "document.write hides these fetches from the preload scanner");
-  for (const asset of ["config", "homie-custom"]) {
-    const tag = source.match(new RegExp(`<script src="${asset}\\.js\\?v=([^"]+)"></script>`));
-    assert.ok(tag, `${asset}.js must load from a static, versioned tag`);
-    assert.equal(tag[1], version, `${asset}.js ?v= must match HOMIE_ASSET_VERSION`);
-  }
-  assert.doesNotMatch(source, /<script src="(?:config|homie-custom)\.js"><\/script>/);
+  const tag = source.match(/<script src="homie-custom\.js\?v=([^"]+)"><\/script>/);
+  assert.ok(tag, "homie-custom.js must load from a static, versioned tag");
+  assert.equal(tag[1], version, "homie-custom.js ?v= must match HOMIE_ASSET_VERSION");
+  // v5: no config.js. Upstream's three runtime scripts build CONFIG, in
+  // order, before homie-custom.js and the installDefaults() call that reads it.
+  assert.doesNotMatch(source, /<script src="config\.js/);
+  const order = ["homie-common.js", "homie-defaults.js", "config-runtime.js", "homie-custom.js?v=", "HOMIE_CUSTOM.installDefaults("]
+    .map((needle) => source.indexOf(needle.startsWith("HOMIE") ? needle : `<script src="${needle}`));
+  assert.ok(order.every((at) => at > -1), "every runtime script must be present");
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "runtime scripts must load in dependency order");
 });
 
 test("Bladerunner (Goudy Bookletter 1911) is registered as the default font", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Catalogue entry: single weight (400 only — Goudy Bookletter 1911 has no
   // light/thin variant), serif generic fallback.
@@ -689,7 +719,7 @@ test("Bladerunner (Goudy Bookletter 1911) is registered as the default font", ()
 });
 
 test("Overview C sidebar's Irrigation icon uses material-symbols:sprinkler-rounded, not the generic switch icon", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function _sbIcon(ctrl)");
   const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
   assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
@@ -705,7 +735,7 @@ test("Overview C sidebar's Irrigation icon uses material-symbols:sprinkler-round
 });
 
 test("Overview C sidebar's Scenes icon uses the existing icons.scene star, not the domain fallback", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function _sbIcon(ctrl)");
   const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
   assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
@@ -995,7 +1025,7 @@ test("togglePopupScene's allMustBeOn changes which direction a tap fires, not ju
 });
 
 test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Popup bubble render.
   const openStart = source.indexOf("async function openPopup(i)");
@@ -1031,7 +1061,7 @@ test("scene on-state (sceneIsOn) is shared by the popup bubble, refreshControls,
 // helper/toggle functions sit adjacent in the real file — and just exposes the
 // Music-specific globals instead.
 function loadMusicToggle() {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const entityIsOnStart = source.indexOf("function entityIsOn(state, entity)");
   const entityIsOnSource = source.slice(entityIsOnStart, source.indexOf("}", entityIsOnStart) + 1);
   const helpersStart = source.indexOf("function sceneAffectedEntities(entities)");
@@ -1087,7 +1117,7 @@ function loadMusicToggle() {
 }
 
 test("Overview C sidebar's Music icon uses the explicit icons.music override, not the media_player domain fallback", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function _sbIcon(ctrl)");
   const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
   assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
@@ -1139,7 +1169,7 @@ test("musicChipIsOn is on only when the target player is mid-playback of one of 
 // and a fake fetch, the same slice-real-source approach as loadMusicToggle
 // above.
 function loadDynamicPlaylistsSync() {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("const DYNAMIC_PLAYLIST_ICON");
   const end = source.indexOf('document.addEventListener("DOMContentLoaded", () => { syncDynamicPlaylistsFromHA(); });');
   assert.ok(start > -1 && end > start, "DYNAMIC_PLAYLIST_ICON/syncDynamicPlaylistsFromHA must be found");
@@ -1258,7 +1288,7 @@ test("config.js no longer hand-maintains the Playlists list — it's populated a
 // two entry points added 2026-10-02) against a fake socket and a fake DOM.
 // `reply` answers the most recent browse_media request.
 function loadMediaBrowser() {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("let _mb = {");
   const end = source.indexOf("function _mbRender(", start);
   assert.ok(start > -1 && end > start, "the media browser block must be found");
@@ -1398,7 +1428,7 @@ test("openMediaBrowser with no argument still browses the Now Playing source fro
 // haService. Elements are created on first lookup, so a card's children exist
 // as soon as the code asks for them.
 function loadAvPanel() {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("let _avFreshTimer = null;");
   const end = source.indexOf("/* ─── MEDIA BROWSER ───", start);
   assert.ok(start > -1 && end > start, "the A/V panel block must be found");
@@ -1850,7 +1880,7 @@ test("stopAllMusic treats a never-cached target the same as unavailable (no call
 });
 
 test("refreshOpenMusicPopup marks a station's bubble disabled, and never on, while its player is unavailable", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const ropStart = source.indexOf("function refreshOpenMusicPopup()");
   const ropEnd = source.indexOf("\n/**\n * isPopupOpen", ropStart);
   assert.ok(ropStart > -1 && ropEnd > ropStart, "refreshOpenMusicPopup must be found");
@@ -1860,7 +1890,7 @@ test("refreshOpenMusicPopup marks a station's bubble disabled, and never on, whi
 });
 
 test("the Music chip's initial bubble render also marks a station disabled at build time, not just on the next refresh tick", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   // Music bubbles render inside toggleRoomAccordion()'s isMusicControl branch
   // now (the accordion generalization), not a bespoke block in openPopup.
   const traStart = source.indexOf("async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx)");
@@ -1874,12 +1904,12 @@ test("the Music chip's initial bubble render also marks a station disabled at bu
 });
 
 test("disabled Music bubble styling reuses the app's existing muted-red 'can't use this' language, not a new color", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.match(cssDeclarations(source, ".popup-scene-icon.disabled"), /255,\s*82,\s*82/, "same red as .popup-item.disabled / .ov3-garden-irr-btn.disabled");
 });
 
 test("openPopup's accordion appends an All Off row for the Music chip only, calling stopAllMusic", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const openStart = source.indexOf("async function openPopup(i)");
   const openEnd = source.indexOf("// ── Flat list or noRoomGrouping subGroups", openStart);
   assert.ok(openStart > -1 && openEnd > openStart, "openPopup's accordion block must be found");
@@ -1897,7 +1927,7 @@ test("openPopup's accordion appends an All Off row for the Music chip only, call
 });
 
 test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bubble, refreshControls, the Overview C sidebar, and the live popup refresh", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Popup bubble render, now toggleRoomAccordion()'s isMusicControl branch.
   const traStart = source.indexOf("async function toggleRoomAccordion(roomId, ctrlIdx, startIdx, count, gIdx)");
@@ -1931,7 +1961,7 @@ test("music on-state (musicStationIsOn/musicChipIsOn) is shared by the popup bub
 });
 
 test("Overview C sidebar pins Settings, Modes, and Security; everything else is the dynamic list", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   for (const id of ["ov3-settings-btn", "ov3-mode-btn", "ov3-security-btn"]) {
@@ -1969,7 +1999,7 @@ test("Escape key's overlay-closing handler calls only functions that actually ex
   // Upstream v4.3.0's full-screen Alarm page then defined closeSecurity()
   // for real and kept closeSecurityOverlay() as a wrapper, so the branch
   // calls closeSecurity() again, now that it exists.
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const handlerStart = source.indexOf("document.addEventListener('keydown', e => {");
   const handlerEnd = source.indexOf("\n});", handlerStart);
   assert.ok(handlerStart > -1 && handlerEnd > handlerStart, "the overlay-closing Escape handler must be found");
@@ -1992,7 +2022,7 @@ test("Escape key's overlay-closing handler calls only functions that actually ex
 });
 
 test("Security buttons open the real Alarmo popup, not the retired not-configured alert", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   // Both topbar entry points call the upstream openSecurity(), restored now
@@ -2004,7 +2034,7 @@ test("Security buttons open the real Alarmo popup, not the retired not-configure
 });
 
 test("alarmAction() and the Overview C status sync resolve against the same configured entity", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // The buttons act on CONFIG.alarmEntity (ALARM_ENTITY in config.js).
   const alarmActionStart = source.indexOf("function alarmAction(service)");
@@ -2027,7 +2057,7 @@ test("alarmAction() and the Overview C status sync resolve against the same conf
 });
 
 test("Overview C's dynamic sidebar controls are unfiltered: Climate and Irrigation get buttons too", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function _buildOv3SidebarControls()");
   const fnEnd = source.indexOf("\n/* Refresh sidebar control button", fnStart);
   assert.ok(fnStart > -1 && fnEnd > fnStart, "_buildOv3SidebarControls must be found");
@@ -2042,7 +2072,7 @@ test("Overview C's dynamic sidebar controls are unfiltered: Climate and Irrigati
 });
 
 test("climateIsActive() is a shared, module-scope check of hvac_action, not just state !== \"off\"", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function climateIsActive(entity)");
   assert.ok(fnStart > -1, "climateIsActive must be found at module scope");
   const fnEnd = source.indexOf("\n}", fnStart);
@@ -2061,7 +2091,7 @@ test("climateIsActive() is a shared, module-scope check of hvac_action, not just
 });
 
 test("Overview C's Climate sidebar glow, and Overview A/B's chip count and glow, all use climateIsActive()", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Overview C's sidebar glow.
   const sbStart = source.indexOf("function _refreshOv3SidebarControls()");
@@ -2085,7 +2115,7 @@ test("Overview C's Climate sidebar glow, and Overview A/B's chip count and glow,
 });
 
 test("Solar is not offered or launched as a Startup view", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Not selectable in the Startup settings list.
   assert.doesNotMatch(source, /applySetting\('startupMode','solar'\)/);
@@ -2109,7 +2139,7 @@ test("Overview C's main column scrolls instead of clipping if its host ever hand
   // user. overflow-y: auto is a defensive fallback only, not the primary fix: if that host chrome
   // is ever un-hidden, content becomes reachable by scroll instead of silently clipping off-screen
   // with no visual signal, the failure mode that made the original overflow hard to notice.
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf(".ov3-main {");
   const rule = source.slice(start, source.indexOf("}", start));
   assert.match(rule, /overflow-y:\s*auto/);
@@ -2378,7 +2408,7 @@ test("control row and popup mappings match the approved design", () => {
 });
 
 test("TV overlay has a second action row for volume/mute, styled like the activity row", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   const volDown = elements.get("tv-action-vol_down");
@@ -2402,7 +2432,7 @@ test("TV overlay has a second action row for volume/mute, styled like the activi
 });
 
 test("tvVolumeAction relays a raw button press to the Integra receiver via remote.send_command", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   assert.match(source, /const TV_VOLUME_DEVICE = "Integra AV Receiver";/);
 
@@ -2419,7 +2449,7 @@ test("tvVolumeAction relays a raw button press to the Integra receiver via remot
 });
 
 test("refreshTVControlUI disables volume/mute at PowerOff and re-enables once an activity is running", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   // Slice from TV_ACTIVITY_LABELS so refreshTVControlUI's own dependencies
   // (the labels map, tvActionIdFor) come along with it, self-contained.
   const start = source.indexOf("const TV_ACTIVITY_LABELS = {");
@@ -2457,15 +2487,25 @@ test("shared UI defaults select Screen A, Steel Blue, and 12-hour time", () => {
     { startupMode: "overview1", clockFormat: "12h", theme: "blue", backgroundMode: "vivid" },
   );
   assert.equal(config.brandName, "HOME");
-  assert.deepEqual(Array.from(config.backgroundImages || []), []);
+  // v5 finds background photos by scanning /config/homie_dashboard/photos/
+  // background/, so config.js no longer lists them.
+  assert.equal("backgroundImages" in config, false);
 });
 
-test("Homie connects to Home Assistant by wss://, real DNS name, no port, not the old mDNS hostname, literal IP, :8123, or plain ws://", () => {
-  const source = fs.readFileSync(path.join(workDir, "config.js"), "utf8");
-  assert.match(source, /const WS_URL = "wss:\/\/hass\.ehlke\.net\/api\/websocket";/);
-  assert.doesNotMatch(source, /const WS_URL = .*homeassistant\.local/);
-  assert.doesNotMatch(source, /const WS_URL = .*192\.168\.4\.125/);
-  assert.doesNotMatch(source, /const WS_URL = .*:8123/);
+test("the house config holds no token or server address; v5 derives both from the HA session", () => {
+  // Through v4 config.js carried a long-lived token placeholder and a
+  // hand-maintained WS_URL (wss://hass.ehlke.net, after the mDNS name, a
+  // literal IP and :8123 had each broken the tablet). v5 signs in with the
+  // panel's session token and builds WS_URL from the page's own origin, so
+  // neither can drift or leak from this file again.
+  const source = fs.readFileSync(configPath, "utf8");
+  for (const name of ["HA_TOKEN", "WS_URL", "BASE"]) {
+    assert.doesNotMatch(source, new RegExp(`^\\s*(?:const|let|var)\\s+${name}\\b`, "m"), `${name} must not be defined in config.js`);
+  }
+  assert.doesNotMatch(source, /wsUrl\s*:/);
+  const runtime = fs.readFileSync(path.join(workDir, "config-runtime.js"), "utf8");
+  assert.match(runtime, /const WS_URL = location\.origin\.replace\(\/\^http\/, "ws"\) \+ "\/api\/websocket";/);
+  assert.match(runtime, /let HA_TOKEN = _homieBridge \? \(_homieBridge\.token \|\| ""\) : "";/);
 });
 
 test("custom actions route Climate and A/V without generic toggles", () => {
@@ -2657,7 +2697,7 @@ test("floorTargetText formats a floor's target the same terse way as its Temp ce
 });
 
 test("Overview C places Garden in the center and Floors in the right column", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   assert.match(elements.get("ov3-garden-card").parent.className, /\bov3-grid\b/);
@@ -2780,7 +2820,7 @@ test("a different dialog closing while the thermostat dialog is still open does 
 });
 
 test("an invalid thermostat filter closes an already-open overlay", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const thermostatSource = source.slice(
     source.indexOf("let _thermEntities"),
     source.indexOf("/** _buildThermTabs"),
@@ -2818,7 +2858,7 @@ test("an invalid thermostat filter closes an already-open overlay", () => {
 });
 
 test("Overview C floors card has an expand button wired to the visible floor's thermostat", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const cardStart = source.indexOf('class="ov3-floors-card"');
   const cardMarkup = source.slice(cardStart, source.indexOf("<!-- Purifier card", cardStart));
 
@@ -2828,7 +2868,7 @@ test("Overview C floors card has an expand button wired to the visible floor's t
 });
 
 test("floors card stat row is a 2x2 grid with Temp/Target on top and Humid/PM2.5 below", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.match(cssDeclarations(source, ".ov3-floors-stat-row"), /display:\s*grid/);
   assert.match(cssDeclarations(source, ".ov3-floors-stat-row"), /grid-template-columns:\s*1fr 1fr/);
 
@@ -2883,7 +2923,7 @@ test("custom defaults migrate each browser once without clobbering later choices
 });
 
 test("Alert indicator surfaces HA persistent_notification via WS subscribe, not the unrelated CONFIG.notifications bar", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   // Both surfaces exist: Overview A/B's floating corner button and Overview
@@ -2915,7 +2955,7 @@ test("Alert indicator surfaces HA persistent_notification via WS subscribe, not 
 });
 
 test("Alert triangle's color is hardcoded against theming, and both indicators stay hidden until a notification is active", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   // Literal hex fill on the icon itself, not currentColor or a --accent var
@@ -2953,7 +2993,7 @@ test("Alert triangle's color is hardcoded against theming, and both indicators s
 });
 
 test("Overview C's alert-triangle hidden rule out-specifies .ov3-sb-btn's display:flex, regardless of source order", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // .ov3-alert-btn shares the .ov3-sb-btn base class, whose own
   // display:flex is declared later in the stylesheet (the shared
@@ -2967,7 +3007,7 @@ test("Overview C's alert-triangle hidden rule out-specifies .ov3-sb-btn's displa
 });
 
 test("Alert overlay lists notifications newest first, dismisses via persistent_notification.dismiss, and closes on Escape", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   const fnStart = source.indexOf("function _renderAlertOverlayList()");
   const fnEnd = source.indexOf("\nfunction openAlertOverlay()", fnStart);
@@ -2988,7 +3028,7 @@ test("Alert overlay lists notifications newest first, dismisses via persistent_n
 });
 
 test("A disabled Rachio zone rewrites its Irrigation popup card in place, since .popup-item has no icon/status slot to toggle", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Scoped to Irrigation specifically — an unrelated switch going unavailable
   // (e.g. a device offline) is not "disabled" in the Rachio sense.
@@ -3019,7 +3059,7 @@ test("A disabled Rachio zone rewrites its Irrigation popup card in place, since 
 });
 
 test("Disabled-zone red is hardcoded against theming, distinct from the alert triangle's amber", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // .popup-item.disabled uses the same red as rgba() (border/background wash);
   // the icon and status text use the literal hex. Neither ever a theme var.
@@ -3038,7 +3078,7 @@ test("Disabled-zone red is hardcoded against theming, distinct from the alert tr
 });
 
 test("Entry-point badges (Overview A chip, Overview B sidebar list, Overview C sidebar icon) surface a disabled zone without opening the popup", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   // Shared source of truth so every entry point agrees on what "disabled" means.
@@ -3083,7 +3123,7 @@ test("Entry-point badges (Overview A chip, Overview B sidebar list, Overview C s
 });
 
 test("Climate entry-point badges reuse the same three dots for a Lennox alert, keyed off alertEntity", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Shared source of truth, mirroring irrigationDisabledZones().
   assert.match(source, /function lennoxAlertActive\(\)/);
@@ -3112,7 +3152,7 @@ test("Climate entry-point badges reuse the same three dots for a Lennox alert, k
 });
 
 test("lennoxAlertActive lights only for moderate/critical severities, matching the phone-notification threshold, not info or minor", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function lennoxAlertActive()");
   assert.ok(fnStart > -1, "lennoxAlertActive must be found");
   const fnEnd = source.indexOf("\n}", fnStart);
@@ -3129,7 +3169,7 @@ test("lennoxAlertActive lights only for moderate/critical severities, matching t
 });
 
 test("Overview C Garden card's irrigation row is a non-scrolling 2x3 grid, and marks disabled zones inert", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Regression check: a single scrolling row was rejected outright (six
   // buttons' natural width summed to ~855px against ~561px available, more
@@ -3156,7 +3196,7 @@ test("Overview C Garden card's irrigation row is a non-scrolling 2x3 grid, and m
 });
 
 test("Garden card's irrigation grid has a static 'Irrigation' heading, not tied to any entity", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Static content, not built by any _buildOv3*/_refreshOv3* function — must
   // appear verbatim in the markup, ahead of the irrigation row it labels.
@@ -3178,7 +3218,7 @@ test("Garden card's irrigation grid has a static 'Irrigation' heading, not tied 
 // <home-assistant> element carries both a `hass` property (for isAdminViewer) and a
 // dispatchEvent method (for nasOpenMoreInfo) so one loader serves every NAS helper.
 function loadNasHelpers({ withParentFrame = true, hass = { user: { is_admin: true } } } = {}) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("function isAdminViewer() {");
   const end = source.indexOf("/**\n * refreshControls", start);
   assert.ok(start > -1 && end > start, "NAS helper functions must be found");
@@ -3328,7 +3368,7 @@ test("controlOnClick routes a NAS-action chip to openNasOverlay(), not the gener
 });
 
 test("Overview C sidebar's NAS icon uses the explicit action-based override, not the generic domain fallback", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const fnStart = source.indexOf("function _sbIcon(ctrl)");
   const fnEnd = source.indexOf("\n  const hasPopup", fnStart);
   assert.ok(fnStart > -1 && fnEnd > fnStart, "_sbIcon must be found");
@@ -3336,7 +3376,7 @@ test("Overview C sidebar's NAS icon uses the explicit action-based override, not
 });
 
 test("NAS chip visibility is gated by isAdminViewer() in every render path, re-checked by both refresh paths, and its glow by nasChipNeedsAttention()", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   // Initial paint (all three chip lists), so the chip never even flashes visible for a
   // non-admin viewer before the first refresh cycle could hide it.
   assert.equal(
@@ -3354,12 +3394,12 @@ test("NAS chip visibility is gated by isAdminViewer() in every render path, re-c
 });
 
 test("Escape key closes the NAS overlay, same as every other popup", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.match(source, /if \(document\.getElementById\("nas-overlay"\)\?\.classList\.contains\("open"\)\)\s+closeNasOverlay\(\);/);
 });
 
 test("openNasOverlay refreshes the overlay before opening it; closeNasOverlay only closes on a genuine backdrop tap", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const openStart = source.indexOf("function openNasOverlay()");
   const openBody = source.slice(openStart, source.indexOf("\n}", openStart) + 2);
   assert.match(openBody, /refreshNasOverlay\(\);/);
@@ -3371,7 +3411,7 @@ test("openNasOverlay refreshes the overlay before opening it; closeNasOverlay on
 });
 
 test("NAS overlay's DSM link opens the exact configured DSM URL in a new browsing context, for the native dashboard's three-state rule", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.match(
     source,
     /id="nas-dsm-btn" onclick="window\.open\('https:\/\/192\.168\.4\.106:5001', '_blank'\)"/,
@@ -3379,7 +3419,7 @@ test("NAS overlay's DSM link opens the exact configured DSM URL in a new browsin
 });
 
 test("NAS overlay's hero, DSM-update tile, and fan-mode tile stay inert -- no onclick, no more-info dispatch", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const heroStart = source.indexOf('<div class="nas-hero" id="nas-hero">');
   const heroEnd = source.indexOf("</div>", source.indexOf('id="nas-hero-label"', heroStart));
   assert.ok(heroStart > -1 && heroEnd > heroStart, "NAS hero markup must be found");
@@ -3394,21 +3434,21 @@ test("NAS overlay's hero, DSM-update tile, and fan-mode tile stay inert -- no on
 });
 
 test("NAS chip's needs-attention glow is hardcoded against theming, distinct from every other chip's accent-based .on state", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const decl = cssDeclarations(source, ".chip.chip-nas.on");
   assert.match(decl, /#ff5252/i);
   assert.doesNotMatch(decl, /var\(--accent/i);
 });
 
 test("NAS overlay scrolls internally rather than overflowing a vertically centered popup -- found live: every row renders expanded at once, unlike the accordion-style popups", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const decl = cssDeclarations(source, ".popup--nas");
   assert.match(decl, /overflow-y:\s*auto/);
   assert.match(decl, /max-height:\s*\d+(\.\d+)?vh/);
 });
 
 test("toggleSubEntity's optimistic label respects a light with no brightness", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // The generic toggle used to write a hardcoded "100%" when switching a light
   // on, which was harmless while every light in the Lights chip was a template
@@ -3427,7 +3467,7 @@ test("toggleSubEntity's optimistic label respects a light with no brightness", (
 });
 
 test("Area Off is offered on Lights accordion rows only, and stops the tap from expanding the room", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const openStart = source.indexOf("async function openPopup(i)");
   const openEnd = source.indexOf("// ── Flat list or noRoomGrouping subGroups", openStart);
   assert.ok(openStart > -1 && openEnd > openStart, "openPopup's accordion block must be found");
@@ -3443,7 +3483,7 @@ test("Area Off is offered on Lights accordion rows only, and stops the tap from 
 });
 
 test("Area Off sends turn_off only to the lights in that room that are on", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("async function areaOff(i, roomId, startIdx, count)");
   assert.ok(start > -1, "areaOff must be found");
   const body = source.slice(start, source.indexOf("\n}\n", start));
@@ -3467,7 +3507,7 @@ test("Area Off sends turn_off only to the lights in that room that are on", () =
 });
 
 test("Area Off repaints its cards and its own row before waiting on HA", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("async function areaOff(i, roomId, startIdx, count)");
   const body = source.slice(start, source.indexOf("\n}\n", start));
 
@@ -3483,7 +3523,7 @@ test("Area Off repaints its cards and its own row before waiting on HA", () => {
 });
 
 test("the 'N on' badge and the Area Off button are written by one function, at every site that updates either", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
 
   // Two views of one number. A visible Area Off on a room the badge says is
   // dark is worse than no button at all, so no call site is allowed to write
@@ -3509,7 +3549,7 @@ test("Screensaver's blank mode has its own overlay and is closed unconditionally
   // dedicated overlay and _ssDismiss() must close it explicitly, the same
   // class of "handler calls a function that doesn't do what's needed" bug
   // the Escape-handler test above guards against.
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
 
   assert.ok(elements.has("screensaver-blank-overlay"), "the blank-mode overlay element must exist");
@@ -3540,7 +3580,7 @@ test("Screensaver defaults to on, 5 minutes, blank-only for any device with no s
   // Only takes effect for a fresh localStorage -- an existing device that
   // already has homie_dashboard_settings saved keeps whatever it was set to,
   // since loadSettings() spreads stored values over these defaults.
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("const SETTINGS_DEFAULTS = {");
   const end = source.indexOf("\n};", start);
   assert.ok(start > -1 && end > start, "SETTINGS_DEFAULTS must be found");
@@ -3559,7 +3599,7 @@ test("Screensaver defaults to on, 5 minutes, blank-only for any device with no s
  */
 
 function loadRenderScheduling(config) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("/* ─── RENDER SCHEDULING");
   const endMarker = "let stateCache = new StateCache();";
   const end = source.indexOf(endMarker);
@@ -3675,7 +3715,7 @@ test("renders are dropped while the blank screensaver covers the screen", () => 
  */
 
 test("closing the weather screen tears its particles down", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const body = source.match(/function closeWeatherFS\(\)\s*\{([\s\S]*?)\n\}/)?.[1];
   assert.ok(body, "closeWeatherFS must exist");
 
@@ -3689,7 +3729,7 @@ test("closing the weather screen tears its particles down", () => {
 });
 
 test("solar flow dots do not animate while the solar screen is closed", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   // stroke-dashoffset cannot be composited, so each frame costs main-thread
   // SVG geometry plus a re-raster. The markup is static and always present.
   assert.match(source, /@keyframes sfs-flow-dot[\s\S]*?stroke-dashoffset/,
@@ -3701,7 +3741,7 @@ test("solar flow dots do not animate while the solar screen is closed", () => {
 });
 
 test("no full-viewport backdrop-filter hides behind near-opaque black", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   // Strip comments first: both rules carry a note saying why the property is
   // absent, and the note names the property.
   const declarationsOnly = (sel) => cssDeclarations(source, sel).replace(/\/\*[\s\S]*?\*\//g, "");
@@ -3724,7 +3764,7 @@ test("no full-viewport backdrop-filter hides behind near-opaque black", () => {
  */
 
 function loadWireHelpers(cache) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("/* ─── COMPRESSED STATE WIRE FORMAT");
   const endMarker = "function _applyCompressedDiff(entityId, diff) {";
   assert.ok(start !== -1, "wire-format block must exist");
@@ -3818,7 +3858,7 @@ test("a delta for an entity with no cached state returns null rather than guessi
 });
 
 test("the handshake subscribes to entities and no longer calls get_states", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   assert.match(source, /type:\s*"subscribe_entities"/, "must use the entity subscription");
   assert.doesNotMatch(source, /type:\s*"get_states"/,
     "the subscription's first message is the snapshot; a get_states round trip is redundant");
@@ -3831,7 +3871,7 @@ test("the handshake subscribes to entities and no longer calls get_states", () =
 });
 
 test("closed overlays are skipped by the renderer", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   // The semicolon matters: the comment above the rule also says
   // "content-visibility: hidden", and matching that finds the prose, not the CSS.
   const at = source.indexOf("content-visibility: hidden;");
@@ -3963,7 +4003,7 @@ test("a shortcut resolves to the service call for its kind", () => {
 // loadTvPanel: the real Samsung block against a fake DOM, a fake state cache
 // and a recording haService, the way loadAvPanel does it.
 function loadTvPanel({ shortcuts } = {}) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("const TV_POWER_TIMEOUT_MS");
   const end = source.indexOf("/* ─── END TV CONTROL (Samsung) ─── */", start);
   assert.ok(start > -1 && end > start, "the Samsung TV block must be found");
@@ -4019,7 +4059,7 @@ function loadTvPanel({ shortcuts } = {}) {
 const TV_PAD_IDS = ["up", "down", "left", "right", "ok", "back", "home", "menu"];
 
 test("the TV overlay has a pad button for every configured key, in the existing button style", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const elements = dashboardElementsById(source);
   const pad = loadConfig().controls.find(c => c.action === "harmony").tv.pad;
   assert.deepEqual(Object.keys(pad).sort(), [...TV_PAD_IDS].sort());
@@ -4222,13 +4262,13 @@ test("the TV chip's glow reads the Samsung screen as well as Harmony", () => {
   tv.set("remote.harmony_hub", "on");
   assert.equal(tv.tvChipIsOn(tv.chip), true);
 
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const chips = source.slice(source.indexOf("function refreshControls()"), source.indexOf("function refreshNotifications()"));
   assert.match(chips, /else if \(c\.tv\) \{\s*isOn = tvChipIsOn\(c\);/);
 });
 
 test("both Samsung entities are reachable by the relevance filter's static CONFIG sweep", () => {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("const _configEntities = (() => {");
   const end = source.indexOf("/**", start);
   assert.ok(start > -1 && end > start);
@@ -4241,7 +4281,7 @@ test("both Samsung entities are reachable by the relevance filter's static CONFI
 });
 
 function loadAlarmAction({ alarmCode = "", attrs = {} } = {}) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("/* Public entry point for all arm/disarm buttons.");
   const end = source.indexOf("const _ALARM_PIN_LABELS", start);
   assert.ok(start > -1 && end > start, "alarmAction() and _alarmNeedsCode() must be found");
@@ -4286,7 +4326,7 @@ test("the keypad opens when the panel asks for a code, and arming honours code_a
 });
 
 function loadAlarmScreen(alarmState) {
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("/* ─── ALARM SCREEN");
   const end = source.indexOf("/* ── Siren (with confirmation", start);
   assert.ok(start > -1 && end > start, "the Alarm screen block must be found");
@@ -4344,9 +4384,80 @@ test("the Alarm screen leaves the siren off screen when no siren is configured",
 test("the full-screen Alarm page closes with the exit gesture like the other dashboards", () => {
   // Upstream v4.3.0 dropped the backdrop-tap close; without this entry the
   // page would have no way out on a tablet.
-  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("const MODE_OVERLAYS = [");
   const end = source.indexOf("];", start);
   assert.match(source.slice(start, end), /\{ id: "security-overlay",\s*close: \(\) => closeSecurity\(\)\s*\}/);
   assert.doesNotMatch(source, /id="security-overlay"[^>]*onclick=/);
+});
+
+function loadSetupWizardControls() {
+  // The control picker from setup.html: KINDS through buildControls(). It runs
+  // on every wizard save (collect() → buildControls()), so it decides what of
+  // the stored controls survives a re-save.
+  const source = fs.readFileSync(path.join(workDir, "setup.html"), "utf8");
+  const start = source.indexOf("var KINDS = [");
+  const end = source.indexOf("var PALETTE = [", start);
+  assert.ok(start > -1 && end > start, "setup.html's control picker must be found");
+  const context = { sceneStyle: () => ({ color: "#000", icon: "" }), nameOf: (id) => id };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.__api = { parseControls, buildControls, setModel: (m) => { model = m; } };`, context);
+  return context.__api;
+}
+
+function wizardResave(controls) {
+  const wizard = loadSetupWizardControls();
+  wizard.setModel(wizard.parseControls(JSON.parse(JSON.stringify(controls))));
+  return JSON.parse(JSON.stringify(wizard.buildControls()));
+}
+
+test("importing config.js into v5 keeps every value the dashboard reads", () => {
+  // serialize() drops functions and getters and sanitize() drops YOUR_*
+  // placeholders. Neither may touch real house data on the way into storage.
+  const { __stored: stored, __imported: imported } = loadV5Config();
+  const source = JSON.parse(JSON.stringify(imported.CONFIG));
+  delete source.welcomeText; // a getter; config-runtime.js redefines it
+  assert.deepEqual(JSON.parse(JSON.stringify(stored)), source);
+  assert.equal(imported.code, "");
+  assert.equal(imported.interval, 20);
+});
+
+test("re-saving the setup wizard leaves the house's control chips intact", () => {
+  const stored = loadV5Config().__stored;
+  const resaved = wizardResave(stored.controls);
+  // The wizard tags chips it rebuilt with _homie; apart from that, a save
+  // must give back exactly what was imported, in the same order.
+  const kinds = Object.fromEntries(resaved.map((c) => [c.label, c._homie]));
+  for (const chip of resaved) delete chip._homie;
+  assert.deepEqual(resaved, JSON.parse(JSON.stringify(stored.controls)));
+  assert.equal(kinds.Lights, "lights", "Lights is plain enough for the picker to rebuild");
+  assert.equal(kinds.Scenes, undefined, "Scenes must stay a custom chip");
+});
+
+test("the wizard keeps a scenes chip it cannot rebuild as a custom chip", () => {
+  // Upstream's picker keyed every scene by sc.entity. This fork's scenes use
+  // entities/activate, so all of them collapsed into one undefined-keyed item.
+  const scenes = {
+    label: "Scenes", isSceneChip: true,
+    subGroups: [{ label: "Scenes", scenes: [
+      { label: "Dinner", entities: ["light.dinner_lights"], activate: "script.scene_dinner", icon: "", color: "#f00" },
+      { label: "Visitors", entities: ["light.a", "light.b"], allMustBeOn: true, icon: "", color: "#0f0" },
+    ] }],
+  };
+  assert.deepEqual(wizardResave([scenes]), [scenes]);
+  // Upstream-format scenes are still managed by the picker.
+  const upstream = { label: "Scenes", subGroups: [{ label: "Living", scenes: [{ label: "Relax", entity: "scene.relax", icon: "", color: "#00f" }] }] };
+  assert.equal(wizardResave([upstream])[0]._homie, "scenes");
+});
+
+test("the wizard keeps chips with duplicate entities or extra group keys as custom chips", () => {
+  const dup = { label: "Lights", subGroups: [
+    { label: "Kitchen", subEntities: [{ label: "Pendant", entity: "light.pendant" }] },
+    { label: "Dining", subEntities: [{ label: "Pendant", entity: "light.pendant" }] },
+  ] };
+  assert.deepEqual(wizardResave([dup]), [dup]);
+  const extra = { label: "Lights", subGroups: [
+    { label: "Patio", areaOff: "script.patio_off", subEntities: [{ label: "Lanterns", entity: "light.lanterns" }] },
+  ] };
+  assert.deepEqual(wizardResave([extra]), [extra]);
 });
