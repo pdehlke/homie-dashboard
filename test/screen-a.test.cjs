@@ -1966,6 +1966,9 @@ test("Escape key's overlay-closing handler calls only functions that actually ex
   // open, once openSecurity() started opening it for real. Fixed alongside
   // the rest of the Alarmo wiring; this test guards every branch of the
   // handler generically so the same class of typo can't recur unnoticed.
+  // Upstream v4.3.0's full-screen Alarm page then defined closeSecurity()
+  // for real and kept closeSecurityOverlay() as a wrapper, so the branch
+  // calls closeSecurity() again, now that it exists.
   const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
   const handlerStart = source.indexOf("document.addEventListener('keydown', e => {");
   const handlerEnd = source.indexOf("\n});", handlerStart);
@@ -1985,7 +1988,7 @@ test("Escape key's overlay-closing handler calls only functions that actually ex
       `${fn}() is called from the Escape handler but never defined`,
     );
   }
-  assert.ok(calledFns.includes("closeSecurityOverlay"), "security-overlay branch must call the real closeSecurityOverlay()");
+  assert.ok(calledFns.includes("closeSecurity"), "security-overlay branch must call closeSecurity()");
 });
 
 test("Security buttons open the real Alarmo popup, not the retired not-configured alert", () => {
@@ -4235,4 +4238,115 @@ test("both Samsung entities are reachable by the relevance filter's static CONFI
   assert.equal(context.__ids.has("media_player.living_room_tv"), true);
   assert.equal(context.__ids.has("remote.living_room_tv"), true);
   assert.equal(context.__ids.has("remote.harmony_hub"), true);
+});
+
+function loadAlarmAction({ alarmCode = "", attrs = {} } = {}) {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("/* Public entry point for all arm/disarm buttons.");
+  const end = source.indexOf("const _ALARM_PIN_LABELS", start);
+  assert.ok(start > -1 && end > start, "alarmAction() and _alarmNeedsCode() must be found");
+  const context = {
+    ALARM_CODE: alarmCode,
+    CONFIG: loadConfig(),
+    haGetCached: () => ({ state: "disarmed", attributes: attrs }),
+    sent: [], keypad: [],
+  };
+  context._alarmSend = (service, code) => context.sent.push([service, code]);
+  context.alarmPinOpen = (service) => context.keypad.push(service);
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.__alarmAction = alarmAction;`, context);
+  return context;
+}
+
+test("arm/disarm skips the keypad when the panel needs no code, as Alarmo here does", () => {
+  // Upstream v4.3.0 opened the keypad whenever ALARM_CODE was empty, and the
+  // keypad rejects an empty submit, so this house could not have armed at all.
+  const ctx = loadAlarmAction({ attrs: { code_format: null, code_arm_required: false } });
+  ctx.__alarmAction("arm_away");
+  ctx.__alarmAction("disarm");
+  assert.deepEqual(ctx.sent, [["arm_away", ""], ["disarm", ""]]);
+  assert.deepEqual(ctx.keypad, []);
+});
+
+test("the keypad opens when the panel asks for a code, and arming honours code_arm_required", () => {
+  const armFree = loadAlarmAction({ attrs: { code_format: "number", code_arm_required: false } });
+  armFree.__alarmAction("arm_home");
+  armFree.__alarmAction("disarm");
+  assert.deepEqual(armFree.sent, [["arm_home", ""]]);
+  assert.deepEqual(armFree.keypad, ["disarm"]);
+
+  const armCoded = loadAlarmAction({ attrs: { code_format: "number", code_arm_required: true } });
+  armCoded.__alarmAction("arm_home");
+  assert.deepEqual(armCoded.keypad, ["arm_home"]);
+
+  const configured = loadAlarmAction({ alarmCode: "1234", attrs: { code_format: "number" } });
+  configured.__alarmAction("disarm");
+  assert.deepEqual(configured.sent, [["disarm", "1234"]]);
+  assert.deepEqual(configured.keypad, []);
+});
+
+function loadAlarmScreen(alarmState) {
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("/* ─── ALARM SCREEN");
+  const end = source.indexOf("/* ── Siren (with confirmation", start);
+  assert.ok(start > -1 && end > start, "the Alarm screen block must be found");
+  const mkEl = () => ({
+    style: { setProperty() {} }, textContent: "", innerHTML: "", className: "",
+    classList: {
+      _set: new Set(),
+      toggle(c, on) { on ? this._set.add(c) : this._set.delete(c); },
+      contains(c) { return this._set.has(c); },
+    },
+    append() {}, appendChild() {},
+  });
+  const els = {};
+  const buttons = [mkEl(), mkEl(), mkEl(), mkEl()];
+  const siren = mkEl();
+  const config = loadConfig();
+  const context = {
+    CONFIG: config,
+    haGetCached: (id) => (id === config.alarmEntity ? alarmState : null),
+    document: {
+      getElementById: (id) => (els[id] ||= mkEl()),
+      querySelectorAll: (sel) => (sel === "#alm-seg .alm-seg-btn" ? buttons : []),
+      querySelector: (sel) => (sel === "#security-overlay .alm-siren" ? siren : null),
+      createElement: mkEl,
+    },
+    setTimeout, clearTimeout,
+  };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.__almRender = almRender;`, context);
+  context.__almRender();
+  return { els, buttons, siren };
+}
+
+test("the Alarm screen hides modes the panel does not offer and keeps the highlight aligned", () => {
+  // Alarmo reports TRIGGER plus each enabled mode; Night is disabled here.
+  const { els, buttons } = loadAlarmScreen({
+    state: "armed_away", last_changed: new Date().toISOString(),
+    attributes: { supported_features: 8 | 1 | 2 },
+  });
+  assert.deepEqual(buttons.map((b) => b.style.display), ["", "", "", "none"]);
+  assert.equal(els["alm-seg-hi"].style.width, "calc((100% - 8px) / 3)");
+  assert.equal(els["alm-seg-hi"].style.left, "calc(4px + 2 * (100% - 8px) / 3)");
+  assert.equal(buttons[2].classList.contains("active"), true);
+
+  // No supported_features at all: fall back to upstream's four modes.
+  const fallback = loadAlarmScreen({ state: "disarmed", last_changed: new Date().toISOString(), attributes: {} });
+  assert.deepEqual(fallback.buttons.map((b) => b.style.display), ["", "", "", ""]);
+});
+
+test("the Alarm screen leaves the siren off screen when no siren is configured", () => {
+  const { siren } = loadAlarmScreen({ state: "disarmed", last_changed: new Date().toISOString(), attributes: {} });
+  assert.equal(siren.style.display, "none");
+});
+
+test("the full-screen Alarm page closes with the exit gesture like the other dashboards", () => {
+  // Upstream v4.3.0 dropped the backdrop-tap close; without this entry the
+  // page would have no way out on a tablet.
+  const source = fs.readFileSync(path.join(workDir, "homie-dashboard.html"), "utf8");
+  const start = source.indexOf("const MODE_OVERLAYS = [");
+  const end = source.indexOf("];", start);
+  assert.match(source.slice(start, end), /\{ id: "security-overlay",\s*close: \(\) => closeSecurity\(\)\s*\}/);
+  assert.doesNotMatch(source, /id="security-overlay"[^>]*onclick=/);
 });

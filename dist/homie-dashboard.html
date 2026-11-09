@@ -879,10 +879,103 @@
     font-size: 13px;
     color: rgba(255,255,255,1);
   }
-  .popup--security {
-    max-width: 380px;
-    width: min(380px, 92vw);
+  /* ─── ALARM FULL PAGE ─── */
+  #security-overlay {
+    --alm-color: #3fd49a;
+    --alm-glow: rgba(63,212,154,0.16);
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #0b0d0e;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+    font-family: inherit;
   }
+  #security-overlay.open { opacity: 1; pointer-events: auto; }
+  .alm-bg { position:absolute; inset:0; z-index:0; pointer-events:none;
+    background: radial-gradient(ellipse 100% 55% at 50% 0%, var(--alm-glow), transparent 100%); }
+  .alm-page { position:relative; z-index:1; flex:1; display:flex; overflow-y:auto; scrollbar-width:none;
+    padding: calc(env(safe-area-inset-top, 0px) + 56px) 22px calc(env(safe-area-inset-bottom, 0px) + 28px); }
+  .alm-page::-webkit-scrollbar { display:none; }
+  .alm-inner { width:100%; max-width:440px; margin:auto; }
+
+  /* ── Alarm screen (hero · mode strip · groups · siren · history) ── */
+  .alm-hero { display:flex; flex-direction:column; align-items:center; gap:12px; text-align:center; }
+  .alm-shield { width:56px; height:56px; stroke:var(--alm-color); transition:stroke .5s ease; }
+  .alm-word { font-size:clamp(40px, 11vw, 60px); font-weight:200; line-height:1; letter-spacing:-0.005em; color:var(--alm-color); transition:color .5s ease; }
+  .alm-sub  { font-size:11px; letter-spacing:0.08em; color:#fff; margin-top:-2px; }
+  .alm-since{ font-size:11px; color:#fff; margin-top:2px; min-height:1em; }
+  .alm-warn { font-size:11px; font-weight:500; color:#ff8c93; min-height:1em; }
+  .alm-trig .alm-shield, .alm-trig .alm-word { animation: alarm-pulse 0.7s infinite alternate; }
+
+  .alm-seg { position:relative; display:flex; margin:30px auto 0; width:100%; max-width:400px; padding:4px; border-radius:30px; background:rgba(255,255,255,0.06); }
+  .alm-seg-hi { position:absolute; top:4px; bottom:4px; left:4px; width:calc((100% - 8px) / 4); border-radius:26px; background:var(--alm-color); opacity:0.85; transition:left .3s cubic-bezier(.3,.9,.4,1), background .5s ease, opacity .3s; }
+  .alm-seg-btn { position:relative; z-index:1; flex:1; padding:11px 4px; background:none; border:none; font-family:inherit; font-size:11px; color:#fff; cursor:pointer; transition:color .2s; }
+  .alm-seg-btn.active { color:#06090a; font-weight:500; }
+  #security-overlay .alarm-feedback { text-align:center; min-height:1.2em; margin-top:10px; }
+
+  .alm-groups { position:relative; display:flex; justify-content:space-between; margin:34px auto 0; max-width:400px; }
+  .alm-groups::before { content:''; position:absolute; top:24px; left:12%; right:12%; height:1px; background:rgba(255,255,255,0.12); }
+  .alm-grp { position:relative; flex:1; display:flex; flex-direction:column; align-items:center; gap:7px; --c:#3fd49a; }
+  .alm-grp.alert { --c:#ff6b73; }
+  .alm-grp.unknown { --c:#6b7075; }
+  .alm-grp-icon { width:48px; height:48px; border-radius:50%; border:1.6px solid var(--c); background:#0b0d0e; display:flex; align-items:center; justify-content:center; transition:border-color .3s, box-shadow .3s; }
+  .alm-grp.alert .alm-grp-icon { box-shadow:0 0 14px rgba(255,107,115,0.45); }
+  .alm-grp-icon svg { width:22px; height:22px; fill:none; stroke:var(--c); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; transition:stroke .3s; }
+  .alm-grp-name  { font-size:10px; letter-spacing:0.03em; color:#fff; margin-top:2px; }
+  .alm-grp-state { font-size:12px; font-weight:600; color:var(--c); margin-top:-3px; transition:color .3s; }
+
+  .alm-siren { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:34px; font-size:11px; color:#fff; }
+  .alm-toggle { position:relative; width:34px; height:19px; border-radius:10px; background:rgba(255,255,255,0.15); cursor:pointer; transition:background .2s; }
+  .alm-toggle::after { content:''; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:.2s; }
+  .alm-toggle.on { background:#ff4d57; }
+  .alm-toggle.on::after { left:17px; }
+
+  .alm-log { margin:30px auto 0; max-width:400px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.08); }
+  .alm-log-toggle { width:100%; display:flex; align-items:center; justify-content:space-between; padding:0; background:none; border:none; cursor:pointer; font-family:inherit; font-size:9px; letter-spacing:0.2em; text-transform:uppercase; color:#fff; }
+  .alm-log-toggle svg { width:16px; height:16px; fill:none; stroke:#fff; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; transition:transform .3s; }
+  .alm-log.open .alm-log-toggle svg { transform:rotate(180deg); }
+  .alm-log-body { max-height:0; overflow:hidden; margin-top:0; transition:max-height .35s ease, margin-top .35s ease; }
+  .alm-log.open .alm-log-body { max-height:420px; margin-top:8px; }
+  .alm-log-row { display:flex; gap:14px; padding:9px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:12px; color:#fff; }
+  .alm-log-row:last-child { border-bottom:none; }
+  .alm-log-time { flex:0 0 108px; font-size:11px; color:rgba(255,255,255,0.8); font-variant-numeric:tabular-nums; }
+  .alm-log-row b { font-weight:500; color:#fff; }
+  .alm-log-empty { padding:10px 0; font-size:11px; color:rgba(255,255,255,0.8); }
+
+  .alm-modal { position:absolute; inset:0; z-index:5; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,0.6); backdrop-filter:blur(6px); opacity:0; pointer-events:none; transition:opacity .25s; }
+  .alm-modal.show { opacity:1; pointer-events:auto; }
+  .alm-modal-sheet { width:min(340px,100%); padding:28px 24px 22px; text-align:center; background:#0f1214; border:1px solid rgba(255,255,255,0.1); border-radius:20px; transform:translateY(12px) scale(.97); transition:transform .25s; }
+  .alm-modal.show .alm-modal-sheet { transform:none; }
+  .alm-modal-icon { width:44px; height:44px; margin:0 auto 14px; display:flex; align-items:center; justify-content:center; border-radius:50%; border:1.6px solid #ff6b73; box-shadow:0 0 16px rgba(255,107,115,0.35); }
+  .alm-modal-icon svg { width:22px; height:22px; fill:none; stroke:#ff6b73; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .alm-modal-title { font-size:17px; font-weight:400; margin-bottom:6px; }
+  .alm-modal-text  { font-size:12px; line-height:1.5; color:rgba(255,255,255,0.85); margin-bottom:22px; }
+  .alm-modal-actions { display:flex; gap:10px; }
+  .alm-modal-btn { flex:1; padding:13px 8px; border-radius:12px; font-family:inherit; font-size:12px; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.75); }
+  .alm-modal-btn.danger { background:#ff4d57; border-color:#ff4d57; color:#fff; font-weight:600; }
+
+  /* ── Alarm PIN keypad (shown when ALARM_CODE is empty in config.js) ── */
+  #alarm-pin { position:fixed; inset:0; z-index:100000; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,0.65); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; pointer-events:none; transition:opacity .2s; }
+  #alarm-pin.show { opacity:1; pointer-events:auto; }
+  .apin-sheet { width:min(320px,100%); padding:24px 22px 20px; text-align:center; background:#0f1214; border:1px solid rgba(255,255,255,0.1); border-radius:22px; transform:translateY(12px) scale(.97); transition:transform .2s; }
+  #alarm-pin.show .apin-sheet { transform:none; }
+  .apin-title { font-size:16px; font-weight:400; margin-bottom:4px; }
+  .apin-sub { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,0.55); margin-bottom:18px; }
+  .apin-dots { display:flex; justify-content:center; gap:12px; min-height:16px; margin-bottom:6px; }
+  .apin-dot { width:12px; height:12px; border-radius:50%; background:var(--accent-hi); box-shadow:0 0 8px var(--accent-glow); }
+  .apin-err { min-height:16px; margin-bottom:10px; font-size:11px; color:#f28a92; }
+  .apin-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .apin-key { height:54px; border-radius:14px; font-family:inherit; font-size:20px; font-weight:300; color:#fff; cursor:pointer; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); transition:background .12s, transform .08s; }
+  .apin-key:active { background:var(--ac-12, rgba(255,255,255,0.14)); transform:scale(.95); }
+  .apin-key--fn { font-size:12px; color:rgba(255,255,255,0.7); background:transparent; }
+  .apin-key--ok { color:var(--accent-hi); border-color:var(--accent); }
+  #alarm-pin.shake .apin-sheet { animation:apin-shake .35s; }
+  @keyframes apin-shake { 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
   .alarm-badge {
     font-size: 8px;
     letter-spacing: 0.2em;
@@ -8691,15 +8784,15 @@
             <!-- Page 1: arm modes + siren -->
             <div class="ov3-sec-panel">
               <div class="ov3-sec-btns" style="margin-top:5px">
-                <button class="ov3-sec-btn" id="ov3-alarm-btn-home" onclick="alarmAction('arm_home');_ov3SecFeedback('Sending…','')">
+                <button class="ov3-sec-btn" id="ov3-alarm-btn-home" onclick="alarmAction('arm_home')">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
                   <span>Arm Home</span>
                 </button>
-                <button class="ov3-sec-btn" id="ov3-alarm-btn-away" onclick="alarmAction('arm_away');_ov3SecFeedback('Sending…','')">
+                <button class="ov3-sec-btn" id="ov3-alarm-btn-away" onclick="alarmAction('arm_away')">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L3 7v6c0 5.25 3.75 10.15 9 11.25C17.25 23.15 21 18.25 21 13V7L12 2z"/><circle cx="12" cy="11" r="2"/></svg>
                   <span>Arm Away</span>
                 </button>
-                <button class="ov3-sec-btn ov3-sec-btn--disarm" id="ov3-alarm-btn-disarm" onclick="alarmAction('disarm');_ov3SecFeedback('Sending…','')">
+                <button class="ov3-sec-btn ov3-sec-btn--disarm" id="ov3-alarm-btn-disarm" onclick="alarmAction('disarm')">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><line x1="12" y1="15" x2="12" y2="17"/></svg>
                   <span>Disarm</span>
                 </button>
@@ -8855,57 +8948,84 @@
   </div>
 </div>
 
+<!-- ─── ALARM PIN KEYPAD (used only when ALARM_CODE is empty) ─── -->
+<div id="alarm-pin" role="dialog" aria-modal="true" aria-labelledby="apin-title" onclick="if(event.target===this)alarmPinCancel()">
+  <div class="apin-sheet">
+    <div class="apin-title" id="apin-title">Enter code</div>
+    <div class="apin-sub" id="apin-sub"></div>
+    <div class="apin-dots" id="apin-dots"></div>
+    <div class="apin-err" id="apin-err"></div>
+    <div class="apin-grid">
+      <button class="apin-key" onclick="alarmPinDigit('1')">1</button>
+      <button class="apin-key" onclick="alarmPinDigit('2')">2</button>
+      <button class="apin-key" onclick="alarmPinDigit('3')">3</button>
+      <button class="apin-key" onclick="alarmPinDigit('4')">4</button>
+      <button class="apin-key" onclick="alarmPinDigit('5')">5</button>
+      <button class="apin-key" onclick="alarmPinDigit('6')">6</button>
+      <button class="apin-key" onclick="alarmPinDigit('7')">7</button>
+      <button class="apin-key" onclick="alarmPinDigit('8')">8</button>
+      <button class="apin-key" onclick="alarmPinDigit('9')">9</button>
+      <button class="apin-key apin-key--fn" onclick="alarmPinCancel()">Cancel</button>
+      <button class="apin-key" onclick="alarmPinDigit('0')">0</button>
+      <button class="apin-key apin-key--fn" onclick="alarmPinBack()">⌫</button>
+    </div>
+    <button class="apin-key apin-key--ok" style="width:100%;margin-top:10px;font-size:13px;letter-spacing:.1em" onclick="alarmPinSubmit()">OK</button>
+  </div>
+</div>
+
 <!-- ─── ALARMO SECURITY OVERLAY ─── -->
-<div class="popup-overlay" id="security-overlay" onclick="closeSecurityOverlay(event)">
-  <div class="popup popup--security">
-    <div class="popup-title popup-title--flex">
-      <span>SECURITY</span>
-      <span id="alarm-status-badge" class="alarm-badge alarm-badge--disarmed">DISARMED</span>
+<div id="security-overlay">
+  <div class="alm-bg"></div>
+  <div class="alm-page"><div class="alm-inner">
+
+    <!-- Status hero -->
+    <div class="alm-hero" id="alm-hero">
+      <svg class="alm-shield" id="alm-shield" viewBox="0 0 24 24" fill="none" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z"/>
+        <g id="alm-glyph"></g>
+      </svg>
+      <div class="alm-word"  id="alm-word">—</div>
+      <div class="alm-sub"   id="alm-sub"></div>
+      <div class="alm-since" id="alm-since"></div>
+      <div class="alm-warn"  id="alm-warn"></div>
     </div>
 
-    <!-- Arm mode buttons -->
-    <div class="alarm-mode-row">
-      <button class="alarm-mode-btn" id="alarm-btn-home" onclick="alarmAction('arm_home')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
-        <span>ARM HOME</span>
-      </button>
-      <button class="alarm-mode-btn" id="alarm-btn-away" onclick="alarmAction('arm_away')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L3 7v6c0 5.25 3.75 10.15 9 11.25C17.25 23.15 21 18.25 21 13V7L12 2z"/><circle cx="12" cy="11" r="2"/></svg>
-        <span>ARM AWAY</span>
-      </button>
-      <button class="alarm-mode-btn alarm-mode-btn--disarm" id="alarm-btn-disarm" onclick="alarmAction('disarm')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><line x1="12" y1="15" x2="12" y2="17"/></svg>
-        <span>DISARM</span>
-      </button>
+    <!-- Mode strip -->
+    <div class="alm-seg" id="alm-seg">
+      <div class="alm-seg-hi" id="alm-seg-hi"></div>
+      <button class="alm-seg-btn" onclick="alarmAction('disarm')">Disarm</button>
+      <button class="alm-seg-btn" onclick="alarmAction('arm_home')">Home</button>
+      <button class="alm-seg-btn" onclick="alarmAction('arm_away')">Away</button>
+      <button class="alm-seg-btn" onclick="alarmAction('arm_night')">Night</button>
     </div>
-
-    <!-- Siren controls -->
-    <div class="alarm-action-section-label">SIREN</div>
-    <div class="alarm-action-row">
-      <button class="alarm-mode-btn alarm-mode-btn--siren-on" onclick="securityAction('siren','turn_on')">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-        <span>SIREN ON</span>
-      </button>
-      <button class="alarm-mode-btn alarm-mode-btn--siren-off" onclick="securityAction('siren','turn_off')">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-        <span>SIREN OFF</span>
-      </button>
-    </div>
-
-    <!-- Garage / Gate controls -->
-    <div class="alarm-action-section-label">GARAGE / GATE</div>
-    <div class="alarm-action-row">
-      <button class="alarm-mode-btn alarm-mode-btn--garage-open" onclick="securityAction('cover','open_cover')">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="13" width="20" height="8" rx="1"/><polyline points="12 3 12 13"/><polyline points="8 7 12 3 16 7"/></svg>
-        <span>OPEN</span>
-      </button>
-      <button class="alarm-mode-btn alarm-mode-btn--garage-close" onclick="securityAction('cover','close_cover')">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="1"/><polyline points="12 21 12 11"/><polyline points="8 17 12 21 16 17"/></svg>
-        <span>CLOSE</span>
-      </button>
-    </div>
-
     <div id="alarm-feedback" class="alarm-feedback"></div>
+
+    <!-- Grouped status line (built from CONFIG.alarmGroups) -->
+    <div class="alm-groups" id="alm-groups"></div>
+
+    <!-- Siren -->
+    <div class="alm-siren">Siren <div class="alm-toggle" id="alm-siren-toggle" onclick="almSirenTap()"></div></div>
+
+    <!-- History (collapsed by default) -->
+    <div class="alm-log" id="alm-log">
+      <button class="alm-log-toggle" onclick="almToggleLog()">Alarm history
+        <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="alm-log-body" id="alm-log-rows"></div>
+    </div>
+  </div></div>
+
+  <!-- Siren confirmation -->
+  <div class="alm-modal" id="alm-modal" role="dialog" aria-modal="true" aria-labelledby="alm-modal-title">
+    <div class="alm-modal-sheet">
+      <div class="alm-modal-icon"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+      <div class="alm-modal-title" id="alm-modal-title">Sound the siren?</div>
+      <div class="alm-modal-text">The siren will start immediately and be very loud. You can switch it off again from this screen.</div>
+      <div class="alm-modal-actions">
+        <button class="alm-modal-btn" onclick="almCloseModal()">Cancel</button>
+        <button class="alm-modal-btn danger" onclick="almSirenConfirm()">Sound siren</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -9210,7 +9330,7 @@ const ICONS = {
       // Kept as the single source of truth for the version, and asserted
       // against the two src attributes below by the test suite so the three
       // can never drift apart.
-      const HOMIE_ASSET_VERSION = "20261004.1";
+      const HOMIE_ASSET_VERSION = "20261104.1";
 </script>
 <!-- Static tags, not document.write(). Both files still have to load and run
      before the main script below (config.js defines CONFIG; homie-custom.js
@@ -9224,8 +9344,8 @@ const ICONS = {
 
      They stay HERE rather than moving to <head> because config.js references
      ICONS, which the inline block just above defines. -->
-<script src="config.js?v=20261004.1"></script>
-<script src="homie-custom.js?v=20261004.1"></script>
+<script src="config.js?v=20261104.1"></script>
+<script src="homie-custom.js?v=20261104.1"></script>
 <script>HOMIE_CUSTOM.installDefaults(window.localStorage, CONFIG.uiDefaults, "screen-a-v1");</script>
 
 <script>
@@ -9772,6 +9892,8 @@ function _wsConnect() {
             _stateCacheSeenAt.set(entityId, Date.now());
             // Keep alarm badge in sync with live WS events
             if (newState.entity_id === CONFIG.alarmEntity) refreshAlarmUI(newState.state);
+            else if (document.getElementById("security-overlay")?.classList.contains("open") &&
+                     almWatches(newState.entity_id)) almScheduleRender();
             // Generic whole-dashboard work, unlike the entity-specific
             // handlers below: skip it entirely for the ~97% of events that
             // come from entities nothing on screen reads. See
@@ -14984,6 +15106,9 @@ function refreshAlarmUI(state) {
   if (state === "armed_home") document.getElementById("ov3-alarm-btn-home")?.classList.add("active");
   if (state === "armed_away") document.getElementById("ov3-alarm-btn-away")?.classList.add("active");
   if (state === "disarmed")   document.getElementById("ov3-alarm-btn-disarm")?.classList.add("active");
+
+  // ── Sync the Alarm screen (security overlay) ──
+  almRender();
 }
 
 async function openSecurity() {
@@ -15001,13 +15126,21 @@ async function openSecurity() {
     );
     setAlarmFeedback("Entity not found — check ALARM_ENTITY in config.js", "error");
   }
+  almRender();
+  if (typeof _closeLauncher === "function") _closeLauncher();
   document.getElementById("security-overlay").classList.add("open");
+  window._showSwipeDownHint?.();
 }
 
-function closeSecurityOverlay(e) {
-  if (e && e.target !== document.getElementById("security-overlay")) return;
+function closeSecurity() {
   haptic("light");
   document.getElementById("security-overlay").classList.remove("open");
+  if (typeof almCloseModal === "function") almCloseModal();
+}
+// Kept for backwards compatibility with any older callers
+function closeSecurityOverlay(e) {
+  if (e && e.target !== document.getElementById("security-overlay")) return;
+  closeSecurity();
 }
 
 /* ─── TV CONTROL (Harmony Hub) ────────────────────────────────────────────
@@ -15408,7 +15541,81 @@ async function tvPowerToggle() {
 let _alarmWsHandler  = null;
 let _alarmWsTimeout  = null;
 
+/* Public entry point for all arm/disarm buttons.
+ * ALARM_CODE set in config.js  → sent silently, no keypad.
+ * ALARM_CODE empty             → keypad is shown and the typed PIN is sent,
+ *                                but only when the panel asks for a code. */
 function alarmAction(service) {
+  if (ALARM_CODE) { _alarmSend(service, ALARM_CODE); return; }
+  if (!_alarmNeedsCode(service)) { _alarmSend(service, ""); return; }
+  alarmPinOpen(service);
+}
+
+/* Fork: upstream v4.3.0 opens the keypad whenever ALARM_CODE is empty, and
+ * the keypad refuses an empty submit, so a panel that needs no code could
+ * not be armed at all. Ask the entity instead, the way HA's own more-info
+ * dialog does: code_format is null when no code is needed (Alarmo sets it
+ * only when its arm or disarm code is required), and code_arm_required false
+ * exempts arming. */
+function _alarmNeedsCode(service) {
+  const attrs = haGetCached(CONFIG.alarmEntity)?.attributes || {};
+  if (!attrs.code_format) return false;
+  return service === "disarm" || attrs.code_arm_required !== false;
+}
+
+const _ALARM_PIN_LABELS = { arm_home:"Arm Home", arm_away:"Arm Away", arm_night:"Arm Night", disarm:"Disarm" };
+let _alarmPinService = null;
+let _alarmPinValue   = "";
+
+function alarmPinOpen(service) {
+  haptic("light");
+  _alarmPinService = service;
+  _alarmPinValue = "";
+  document.getElementById("apin-sub").textContent = _ALARM_PIN_LABELS[service] || service;
+  document.getElementById("apin-err").textContent = "";
+  _alarmPinRender();
+  document.getElementById("alarm-pin").classList.add("show");
+}
+function alarmPinCancel() {
+  _alarmPinService = null;
+  _alarmPinValue = "";
+  document.getElementById("alarm-pin").classList.remove("show");
+}
+function alarmPinDigit(d) {
+  if (_alarmPinValue.length >= 12) return;
+  haptic("light");
+  _alarmPinValue += d;
+  document.getElementById("apin-err").textContent = "";
+  _alarmPinRender();
+}
+function alarmPinBack() {
+  _alarmPinValue = _alarmPinValue.slice(0, -1);
+  _alarmPinRender();
+}
+function alarmPinSubmit() {
+  if (!_alarmPinValue) {
+    document.getElementById("apin-err").textContent = "Enter your code";
+    return;
+  }
+  const svc = _alarmPinService, code = _alarmPinValue;
+  alarmPinCancel();             // clears the PIN from memory + closes pad
+  _alarmSend(svc, code);
+}
+function _alarmPinRender() {
+  document.getElementById("apin-dots").innerHTML =
+    '<span class="apin-dot"></span>'.repeat(_alarmPinValue.length);
+}
+// Physical keyboard support while the keypad is open
+document.addEventListener("keydown", e => {
+  if (!document.getElementById("alarm-pin")?.classList.contains("show")) return;
+  if (/^[0-9]$/.test(e.key)) alarmPinDigit(e.key);
+  else if (e.key === "Backspace") alarmPinBack();
+  else if (e.key === "Enter") alarmPinSubmit();
+  else if (e.key === "Escape") alarmPinCancel();
+});
+
+
+function _alarmSend(service, code) {
   haptic("medium");
   setAlarmFeedback("Sending…", "");
   if (!_ws || _ws.readyState !== WebSocket.OPEN) {
@@ -15427,7 +15634,7 @@ function alarmAction(service) {
   }
 
   const serviceData = { entity_id: CONFIG.alarmEntity };
-  if (ALARM_CODE) serviceData.code = ALARM_CODE;
+  if (code) serviceData.code = code;
   const msgId = _wsNextId();
   // HA 2024.8+ renamed services: arm_home → alarm_arm_home etc.
   const serviceMap = {
@@ -15461,9 +15668,16 @@ function alarmAction(service) {
       // Give the user a clear hint: wrong PIN vs connection/config problem
       const isCodeError = /code|invalid|incorrect/i.test(raw);
       const friendlyMsg = isCodeError
-        ? "Wrong PIN — check ALARM_CODE in config.js"
+        ? (ALARM_CODE ? "Wrong PIN — check ALARM_CODE in config.js" : "Wrong code — try again")
         : "Connection error — check WebSocket status";
       setAlarmFeedback(friendlyMsg, "error");
+      if (isCodeError && !ALARM_CODE) {
+        // Re-open the keypad with an error so the user can retry immediately
+        alarmPinOpen(service);
+        document.getElementById("apin-err").textContent = "Wrong code";
+        const pin = document.getElementById("alarm-pin");
+        pin.classList.remove("shake"); void pin.offsetWidth; pin.classList.add("shake");
+      }
       console.error("[Alarm] WS error:", msg.error);
     }
   };
@@ -15536,6 +15750,266 @@ function securityAction(domain, service) {
   };
   _ws.addEventListener("message", handler);
   setTimeout(() => { _ws.removeEventListener("message", handler); }, 10000);
+}
+
+/* ─── ALARM SCREEN (hero · mode strip · grouped status · siren · history) ─────
+ * Reads CONFIG.alarmEntity (Alarmo) plus the helper groups in CONFIG.alarmGroups.
+ * Arm/disarm reuse alarmAction(); siren reuses securityAction().
+ * ─────────────────────────────────────────────────────────────────────────── */
+const ALM_GLYPHS = {
+  disarm:  '<rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9.5a2 2 0 0 1 3.8-.8"/>',
+  home:    '<path d="M8.5 12L12 8.5l3.5 3.5"/><path d="M9.5 11.5V16h5v-4.5"/>',
+  away:    '<rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9.5a2 2 0 0 1 4 0V11"/>',
+  night:   '<path d="M15 12.5A4 4 0 1 1 11.5 8a3.2 3.2 0 0 0 3.5 4.5z"/>',
+  clock:   '<circle cx="12" cy="11" r="3.4"/><path d="M12 9.3V11l1.3.8"/>',
+  alert:   '<path d="M12 8v4M12 14.5h.01"/>',
+  unknown: '<path d="M10.2 9.6a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.2M12 15h.01"/>',
+};
+const ALM_ICONS = {
+  windows: '<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M12 4v16M4 12h16"/>',
+  doors:   '<rect x="7" y="3" width="10" height="18" rx="1.5"/><circle cx="14.5" cy="12" r="0.8"/>',
+  motion:  '<circle cx="10" cy="5" r="1.6"/><path d="M10 8l-2.5 4.5 3 2.5-1 5M10 8l3 3 2.5.5M7.5 12.5L5 13M17 6.5c1 .8 1.6 1.8 1.8 3M19.5 4.5c1.6 1.3 2.5 3 2.8 5"/>',
+  garage:  '<path d="M3 21V9l9-5 9 5v12"/><path d="M7 21v-8h10v8M7 15.5h10M7 18h10"/>',
+  generic: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/>',
+};
+// state → look. idx = position of the highlight in the mode strip (-1 = none)
+const ALM_STATES = {
+  disarmed:    { color:"#c9cdd3", glow:"rgba(201,205,211,0.10)", word:"Disarmed", sub:"Ready to arm",                glyph:"disarm", idx:0 },
+  armed_home:  { color:"#d4ae78", glow:"rgba(184,150,92,0.18)",  word:"Home",     sub:"Armed · perimeter monitored", glyph:"home",   idx:1 },
+  armed_away:  { color:"#3fd49a", glow:"rgba(63,212,154,0.16)",  word:"Away",     sub:"Armed · all sensors active",  glyph:"away",   idx:2 },
+  armed_night: { color:"#93a6f2", glow:"rgba(147,166,242,0.16)", word:"Night",    sub:"Armed · interior paused",     glyph:"night",  idx:3 },
+  arming:      { color:"#f2cf41", glow:"rgba(242,207,65,0.14)",  word:"Arming",   sub:"Exit delay · leave now",      glyph:"clock",  idx:-1 },
+  pending:     { color:"#f2cf41", glow:"rgba(242,207,65,0.14)",  word:"Pending",  sub:"Entry delay · disarm now",    glyph:"clock",  idx:-1 },
+  triggered:   { color:"#ff4d57", glow:"rgba(255,77,87,0.22)",   word:"Triggered",sub:"The alarm is sounding",       glyph:"alert",  idx:-1 },
+};
+const ALM_UNKNOWN = { color:"#6b7075", glow:"rgba(107,112,117,0.10)", word:"Unavailable", sub:"Can't reach the alarm", glyph:"unknown", idx:-1 };
+const ALM_ARM_IDX = { armed_home:1, armed_away:2, armed_night:3 };
+// Fork: AlarmControlPanelEntityFeature bit per mode-strip button, in strip
+// order (Disarm, Home, Away, Night). 0 = always shown.
+const ALM_MODE_FEATURES = [0, 1, 2, 4];
+const ALM_ACTIVE  = new Set(["on", "open", "opening", "detected", "unlocked"]);
+
+let _almSirenLocal = false;
+let _almRenderTimer = null;
+let _almLastState = null;
+
+function almScheduleRender() {
+  clearTimeout(_almRenderTimer);
+  _almRenderTimer = setTimeout(almRender, 150);
+}
+
+/* Fork: upstream re-renders the open Alarm screen on every state change in
+ * HA. This dashboard filters those (see RENDER SCHEDULING), so only the
+ * entities the screen reads count: the siren, each group, and its members. */
+function almWatches(entityId) {
+  if (CONFIG.alarmUi && CONFIG.alarmUi.sirenEntity === entityId) return true;
+  return (CONFIG.alarmGroups || []).some(g => {
+    if (g.entity === entityId) return true;
+    const members = haGetCached(g.entity)?.attributes?.entity_id;
+    return Array.isArray(members) && members.includes(entityId);
+  });
+}
+
+function almFmtWhen(iso, timeOnly) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return timeOnly ? t : "Today " + t;
+  const y = new Date(now.getTime() - 864e5);
+  if (d.toDateString() === y.toDateString()) return "Yesterday " + t;
+  return d.toLocaleDateString([], { weekday: "short" }) + " " + t;
+}
+
+function almGroupInfo(g) {
+  const st = haGetCached(g.entity);
+  if (!st || st.state === "unavailable" || st.state === "unknown") {
+    return { unknown: true, active: false, count: 0, label: "—" };
+  }
+  const active = ALM_ACTIVE.has(String(st.state).toLowerCase());
+  let count = 0;
+  if (active && g.count !== false) {
+    const members = st.attributes && Array.isArray(st.attributes.entity_id) ? st.attributes.entity_id : [];
+    count = members.filter(id => {
+      const m = haGetCached(id);
+      return m && ALM_ACTIVE.has(String(m.state).toLowerCase());
+    }).length;
+  }
+  let label = active ? (g.bad || "Open") : (g.ok || "Closed");
+  if (active && count > 1) label = count + " " + label;
+  return { unknown: false, active, count, label };
+}
+
+function almRender() {
+  const root = document.getElementById("security-overlay");
+  if (!root) return;
+
+  // ── Alarm state ──
+  const st = haGetCached(CONFIG.alarmEntity);
+  const state = st ? st.state : "unavailable";
+  const look = ALM_STATES[state] || ALM_UNKNOWN;
+  root.style.setProperty("--alm-color", look.color);
+  root.style.setProperty("--alm-glow", look.glow);
+  document.getElementById("alm-hero").classList.toggle("alm-trig", state === "triggered");
+  document.getElementById("alm-word").textContent = look.word;
+  document.getElementById("alm-sub").textContent = look.sub;
+  document.getElementById("alm-glyph").innerHTML = ALM_GLYPHS[look.glyph];
+
+  const since = document.getElementById("alm-since");
+  if (st && ALM_STATES[state]) {
+    const by = st.attributes && st.attributes.changed_by;
+    since.textContent = "Since " + almFmtWhen(st.last_changed, true) + (by ? " · by " + by : "");
+  } else {
+    since.textContent = "";
+  }
+
+  // ── Mode strip highlight (arming/pending follow the target mode) ──
+  let idx = look.idx;
+  if ((state === "arming" || state === "pending") && st && st.attributes) {
+    const target = ALM_ARM_IDX[st.attributes.arm_mode || st.attributes.next_state];
+    if (target !== undefined) idx = target;
+  }
+  // Fork: upstream always shows all four modes. Hide the ones the panel
+  // doesn't offer (Alarmo reports only its enabled modes in
+  // supported_features), so Night can't be tapped while it is turned off.
+  const feats = st && st.attributes ? st.attributes.supported_features : undefined;
+  const btns = [...document.querySelectorAll("#alm-seg .alm-seg-btn")];
+  const shown = btns.filter((b, i) => {
+    const bit = ALM_MODE_FEATURES[i];
+    const on = !bit || typeof feats !== "number" || (feats & bit) !== 0;
+    b.style.display = on ? "" : "none";
+    return on;
+  });
+  const pos = idx >= 0 ? shown.indexOf(btns[idx]) : -1;
+  const hi = document.getElementById("alm-seg-hi");
+  hi.style.opacity = pos < 0 ? "0" : "0.85";
+  hi.style.width = "calc((100% - 8px) / " + shown.length + ")";
+  if (pos >= 0) hi.style.left = "calc(4px + " + pos + " * (100% - 8px) / " + shown.length + ")";
+  btns.forEach((b, i) => b.classList.toggle("active", i === idx));
+
+  // ── Grouped status line ──
+  const wrap = document.getElementById("alm-groups");
+  const groups = CONFIG.alarmGroups || [];
+  wrap.innerHTML = "";
+  const warn = [];
+  groups.forEach(g => {
+    const info = almGroupInfo(g);
+    const el = document.createElement("div");
+    el.className = "alm-grp" + (info.active ? " alert" : "") + (info.unknown ? " unknown" : "");
+    const icon = document.createElement("div");
+    icon.className = "alm-grp-icon";
+    icon.innerHTML = '<svg viewBox="0 0 24 24">' + (ALM_ICONS[g.icon] || ALM_ICONS.generic) + "</svg>";
+    const name = document.createElement("div");
+    name.className = "alm-grp-name";
+    name.textContent = g.label;
+    const stt = document.createElement("div");
+    stt.className = "alm-grp-state";
+    stt.textContent = info.label;
+    el.append(icon, name, stt);
+    wrap.appendChild(el);
+    if (info.active && g.warn !== false) {
+      const n = info.count || 1;
+      warn.push(n + " " + (g.noun || g.label.toLowerCase()) + (n > 1 ? "s" : "") + " open");
+    }
+  });
+  wrap.style.display = groups.length ? "flex" : "none";
+  document.getElementById("alm-warn").textContent = warn.join(" · ");
+
+  // ── Siren toggle ──
+  const sirenEnt = CONFIG.alarmUi && CONFIG.alarmUi.sirenEntity;
+  const sirenOn = sirenEnt ? (haGetCached(sirenEnt)?.state === "on") : _almSirenLocal;
+  document.getElementById("alm-siren-toggle").classList.toggle("on", sirenOn);
+  // Fork: with no siren anywhere in config the toggle would only flip a
+  // local flag and report "Entity not configured", so leave it off screen.
+  const hasSiren = !!sirenEnt || (CONFIG.security || []).some(e => String(e.entity).startsWith("siren."));
+  document.querySelector("#security-overlay .alm-siren").style.display = hasSiren ? "" : "none";
+
+  // ── Keep history fresh if it's open and the alarm just changed ──
+  if (_almLastState !== null && _almLastState !== state &&
+      document.getElementById("alm-log").classList.contains("open")) {
+    setTimeout(almLoadHistory, 600);
+  }
+  _almLastState = state;
+}
+
+/* ── Siren (with confirmation before turning ON) ── */
+function almSirenTap() {
+  const sirenEnt = CONFIG.alarmUi && CONFIG.alarmUi.sirenEntity;
+  const isOn = sirenEnt ? (haGetCached(sirenEnt)?.state === "on") : _almSirenLocal;
+  if (isOn) {                       // turning off needs no confirmation
+    _almSirenLocal = false;
+    securityAction("siren", "turn_off");
+    almRender();
+  } else {
+    haptic("medium");
+    document.getElementById("alm-modal").classList.add("show");
+  }
+}
+function almCloseModal() { document.getElementById("alm-modal").classList.remove("show"); }
+function almSirenConfirm() {
+  almCloseModal();
+  _almSirenLocal = true;
+  securityAction("siren", "turn_on");
+  almRender();
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") almCloseModal(); });
+
+/* ── History (arm / disarm times from HA's recorder) ── */
+function almToggleLog() {
+  haptic("light");
+  const box = document.getElementById("alm-log");
+  const open = box.classList.toggle("open");
+  if (open) almLoadHistory();
+}
+
+async function almLoadHistory() {
+  const body = document.getElementById("alm-log-rows");
+  if (!body || !HA_TOKEN) return;
+  const label = { disarmed:"Disarmed", armed_home:"Armed Home", armed_away:"Armed Away", armed_night:"Armed Night", triggered:"Triggered" };
+  try {
+    const end = new Date();
+    const start = new Date(end.getTime() - 3 * 864e5);
+    const r = await fetch(
+      `${BASE}/api/history/period/${start.toISOString()}?filter_entity_id=${CONFIG.alarmEntity}&end_time=${end.toISOString()}`,
+      { headers: { Authorization: `Bearer ${HA_TOKEN}` } }
+    );
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    const series = (data && data[0]) || [];
+    const rows = [];
+    let prev = null;
+    series.forEach(s => {
+      if (!label[s.state] || s.state === prev) return;
+      prev = s.state;
+      rows.push({ when: s.last_changed, text: label[s.state], by: s.attributes && s.attributes.changed_by });
+    });
+    rows.reverse();
+    body.innerHTML = "";
+    if (!rows.length) {
+      const e = document.createElement("div");
+      e.className = "alm-log-empty";
+      e.textContent = "No alarm activity in the last 3 days";
+      body.appendChild(e);
+      return;
+    }
+    rows.slice(0, 5).forEach(row => {
+      const el = document.createElement("div");
+      el.className = "alm-log-row";
+      const t = document.createElement("span");
+      t.className = "alm-log-time";
+      t.textContent = almFmtWhen(row.when);
+      const d = document.createElement("span");
+      const b = document.createElement("b");
+      b.textContent = row.text;
+      d.appendChild(b);
+      if (row.by) d.appendChild(document.createTextNode(" · " + row.by));
+      el.append(t, d);
+      body.appendChild(el);
+    });
+  } catch (err) {
+    console.warn("[Alarm] history load failed:", err);
+    body.innerHTML = '<div class="alm-log-empty">Couldn\'t load history</div>';
+  }
 }
 
 /* ─── A/V PANEL ─────────────────────────────────────────────────────────────
@@ -18959,7 +19433,7 @@ document.addEventListener('keydown', e => {
   if (document.getElementById("av-overlay")?.classList.contains("open"))          closeAvPanel();
   if (document.getElementById("pet-overlay")?.classList.contains("open"))         closePetStats();
   if (document.getElementById("alert-overlay")?.classList.contains("open"))       closeAlertOverlay();
-  if (document.getElementById("security-overlay")?.classList.contains("open"))    closeSecurityOverlay();
+  if (document.getElementById("security-overlay")?.classList.contains("open"))    closeSecurity();
   if (document.getElementById("tv-control-overlay")?.classList.contains("open"))  closeTVControlOverlay();
   if (document.getElementById("nas-overlay")?.classList.contains("open"))         closeNasOverlay();
   if (document.getElementById("thermostat-overlay")?.classList.contains("open"))  closeThermostat();
@@ -19454,6 +19928,7 @@ const OV3_SWIPE_EXCLUDE_SELECTOR = ".popup-overlay.open, #daily-overlay, #thermo
     { id: "clock-overlay",       close: () => closeClock()        },
     { id: "weather-fs-overlay",  close: () => closeWeatherFS()    },
     { id: "solar-fs-overlay",    close: () => closeSolarFS()      },
+    { id: "security-overlay",    close: () => closeSecurity()     },
   ];
 
   // ── Hint arrow ──────────────────────────────────────────────────────────

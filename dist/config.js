@@ -67,6 +67,13 @@ const CONFIG = {
   alarmEntity: ALARM_ENTITY,
   alarm: { entity: "" },
   security: [],
+  // Upstream v4.3.0's Alarm screen. Each alarmGroups entry is a group helper
+  // (binary_sensor or cover) shown as one status icon. Empty for now: the
+  // binary_sensor.alarm_zone_* entities all read `unknown` until a live DSC
+  // feed exists, and no group helpers over them have been created. With no
+  // siren configured the screen hides its siren toggle.
+  alarmGroups: [],
+  alarmUi: { sirenEntity: "" },
   harmonyEntity: HARMONY_ENTITY,
 
   weather: {

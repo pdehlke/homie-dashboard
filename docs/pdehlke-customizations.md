@@ -401,6 +401,43 @@ only ever persists `dashFont` to `localStorage` when a device's Settings panel i
 touched, and pde confirmed no device (including the Fire HD 10 kiosk) had ever had a font
 explicitly picked, so the new code default took effect everywhere on next load.
 
+## Alarm Screen from Upstream v4.3.0 (release `20261104.1`)
+
+Upstream v4.3.0 replaced the small security popup with a full-screen Alarm page: a state hero
+with "since / by", a Disarm/Home/Away/Night mode strip, a grouped sensor status line
+(`CONFIG.alarmGroups`), a siren toggle with confirmation (`CONFIG.alarmUi.sirenEntity`), a
+collapsible 3-day history read from `/api/history/period`, and a PIN keypad used when
+`ALARM_CODE` is empty. This fork took only that work from v4.3.0. The v4.2.0 redesign it sits on
+(Dashboards launcher, Favorites, new Settings, Calendar, Pet Stats page, WebRTC cameras) was not
+merged.
+
+Ported verbatim: the `#security-overlay` and `#alarm-pin` CSS and markup, the `alm*` render/siren/
+history block, the keypad functions, `alarmAction()` split into `alarmAction()` and
+`_alarmSend(service, code)`, `closeSecurity()` (with `closeSecurityOverlay()` kept as a wrapper),
+and the Overview C alarm buttons no longer writing "Sending…" themselves. The page has no backdrop
+to tap, so it is registered in `MODE_OVERLAYS` and closes with the exit gesture, like Solar and
+Weather. Not ported: the launcher's `alarm-open-btn` (no launcher here), and Alarm as a Startup
+view or Screensaver mode (gesture-only exit, the same trap that took Solar out of Startup).
+
+Fork adaptations, each because the upstream code would misbehave against this house's Alarmo:
+
+- The keypad opens only when the panel asks for a code (`_alarmNeedsCode()`: `code_format` set,
+  and for arming `code_arm_required` not false). Upstream opens it whenever `ALARM_CODE` is empty
+  and rejects an empty submit, so with Alarmo requiring no code nothing could be armed.
+- The mode strip hides modes missing from the entity's `supported_features`. Alarmo reports only
+  enabled modes there, and Night is disabled, so upstream would show a Night button that fails.
+  With no `supported_features` attribute it falls back to all four.
+- The siren row is hidden unless `alarmUi.sirenEntity` or a `siren.*` entry in `CONFIG.security`
+  exists. The house has no siren.
+- Live updates while the page is open go through `almWatches()` (siren, groups, group members)
+  instead of re-rendering on every state change in HA, to keep the render filter's savings.
+
+`alarmGroups` is empty in `config.js`: the `binary_sensor.alarm_zone_*` entities all read
+`unknown` and there are no group helpers over them yet, so the status line is hidden. Known
+upstream defect left as is: `securityAction("siren", …)` looks up `siren.turn_on` /
+`siren.turn_off` in `CONFIG.security` rather than using `alarmUi.sirenEntity`, so a configured
+siren entity would show state but not switch. Fix it if a siren is ever added.
+
 ## Temperature Display Convention
 
 All temperature-related displays in this fork use Fahrenheit and show `°F`. Future integrations
