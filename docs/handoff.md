@@ -1,59 +1,42 @@
 # Handoff: upstream v5.0.0 merge
 
-Updated 2026-11-09.
+Updated 2026-11-10.
 
 ## Where things are
 
-- Worktree `/Users/pde/src/github.com/pdehlke/homie-dashboard-v5`, local branch `merge/v5.0.0`.
-  Nothing is pushed and nothing is deployed.
-  - `0f05bac` holds the v4.3.0 Alarm port that was sitting uncommitted in the main checkout.
-    The content is unchanged; it was copied via `git diff` (patch sha1 `c8089bc6…`).
-  - `ac708c3` is the merge of `upstream/main` (`5683565`, tag `v5.0.0`).
-- The main checkout (`/Users/pde/src/github.com/pdehlke/homie-dashboard`, `main` at `037e765`)
-  is untouched, with its four uncommitted Alarm-port files still there. Once `merge/v5.0.0` is
-  accepted those changes are redundant: they are in `0f05bac`.
+- Merged to `main` and pushed, tagged `v5.0.0` on this fork. The `merge/v5.0.0` and
+  `feat/alarm-dashboard-v4.3.0` branches are deleted.
+- Deployed by SFTP to `/config/custom_components/homie_dashboard/` and running. Manifest version
+  `5.0.0.1`, so `panel.js` and `index.html` load under `?v=5.0.0.1`.
+- The v5 panel is at `/homie-dash`, titled "Homie Dash". The old Lovelace iframe dashboard was
+  recreated at `/homie-dash-v4` ("Homie Dash v4") with an identical config, and the original
+  `homie-dash` dashboard was deleted to free the URL. `PANEL_URL_PATH` in `const.py` is the fork
+  change that puts v5 there.
+- `panel.js` hides HA's sidebar for the `Homie Dashboard` user, and for anyone while
+  `input_boolean.homie_native_dialog_open` is on. kiosk-mode cannot do this: its `run()` returns
+  early on any page without `ha-panel-lovelace`.
+- The `homie` user's per-user default dashboard (`frontend/set_user_data`, key `core`,
+  `default_panel`) is `homie-dash`.
 
 ## Last verified step
 
-- `node --test test/` in the worktree: 201 pass, 0 fail. That includes 4 new tests for the v5
-  import and the wizard round trip; all 4 fail against upstream's unpatched `setup.html`.
-- Local headless render (Chromium via playwright-cli). A fake panel parent page supplied
-  `window.homieBridge` with the imported config. `index.html` booted with no JS exceptions:
-  `DASHBOARD_VERSION` 5.0.0, `WS_URL` derived from the origin, all eight fork chips, and Screen A
-  with Steel Blue and the 12-hour clock. The only errors were the expected WebSocket/REST 404s,
-  because no HA was behind it.
-- The same harness drove the real `setup.html`: Choose config.js… → `config/config.js` → Save.
-  The saved payload equals the expected import exactly, plus `calendarDashboard`.
-- Gitleaks pre-commit hook: no leaks.
+- `node --test test/`: 201 pass.
+- Playwright at 1280x800 as `Homie Dashboard`: `/` lands on `/homie-dash`, v5 renders with live
+  data, no sidebar; the sidebar returns on `/history` and hides again on return. As an admin the
+  sidebar shows, and hides only while the native-dialog helper is on.
 
-Not verified: anything against the real Home Assistant. Integration install, panel load, session
-auth, the tablet.
+Not verified: the Fire HD tablet itself.
 
 ## Exact next action
 
-Decide how the integration reaches HA, then cut over:
-
-1. Copy `custom_components/homie_dashboard/` to `/config/custom_components/homie_dashboard/` on
-   the HA host. SFTP matches how v4 was deployed. HACS (type Integration) would need
-   `merge/v5.0.0` on `origin/main` first.
-2. Restart HA. Then Settings → Devices & services → Add integration → Homie Dashboard.
-3. Open the Homie panel as an admin. In the wizard: Choose config.js… → upload this repo's
-   `config/config.js` (not the auto-detected live copy, which may be stale) → Review → Save.
-4. Check it with the verify skill's approach adapted to the panel URL `/homie-dashboard`. The skill
-   itself still describes v4 (it now carries a banner saying so) and needs a rewrite after cutover.
-5. After cutover: remove `/config/www/community/homie-dashboard/` (its `config.js` holds the
-   live long-lived token and is web-readable), remove the old HACS Dashboard entry and Lovelace
-   resource, and revoke that token.
+1. pde checks the tablet, including a thermostat opened from the Climate chip.
+2. Then retire v4: delete `/config/www/community/homie-dashboard/` (its `config.js` holds the live
+   long-lived token and is web-readable), the `homie-dash-v4` dashboard and the HACS Dashboard
+   entry, and revoke that token.
+3. Rewrite the `verify-homie-dashboard` skill for the v5 panel.
 
 ## Open uncertainty
 
-- **Tablet presentation.** v5 renders as an HA sidebar panel. The Fire HD 10 currently uses the
-  `homie-dash` Lovelace iframe dashboard with a `kiosk_mode` block that hides HA's header and
-  sidebar for the `Homie Dashboard` user. I have not verified whether kiosk-mode can hide chrome on
-  a custom panel. If it cannot, the HA sidebar takes width away from Overview C's 1280x800 layout.
-  The dashboard only signs in when the panel is its parent: `window.homieBridge` is defined by
-  `panel.js`. So pointing the old Lovelace iframe at `/homie_dashboard_static/index.html` shows
-  "Open Homie Dashboard from Home Assistant" instead.
 - **Which account calls HA.** v4 sent every WebSocket/REST call as the dedicated account whose
   token was in `config.js`. v5 uses the session of whoever is logged in to HA. On the tablet that
   is still the `Homie Dashboard` user. For an admin viewing the panel, calls now run as that admin.
@@ -71,5 +54,8 @@ Decide how the integration reaches HA, then cut over:
 ## Do not retry
 
 - Don't let `git merge` auto-resolve `index.html` from the v4.1.1 base: that silently brings in the
-  whole v4.2.0 redesign. Future upstream merges should diff from `v5.0.0` (now the merge base),
-  which works.
+  whole v4.2.0 redesign. Future upstream merges should diff from upstream's v5.0.0, `5683565`
+  (now the merge base), which works.
+- This fork's `v5.0.0` tag is on the fork's merge, not on upstream's `5683565`, which carries the
+  same tag name upstream. `git fetch upstream --tags` reports that tag as rejected ("would clobber
+  existing tag"); that is expected. Do not force-fetch it over the fork's tag.

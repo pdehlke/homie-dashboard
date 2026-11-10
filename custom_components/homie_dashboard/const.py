@@ -2,7 +2,8 @@
 
 DOMAIN = "homie_dashboard"
 
-PANEL_URL_PATH = "homie-dashboard"
+# pde fork: the tablet and bookmarks open /homie-dash, the URL the v4 Lovelace dashboard had.
+PANEL_URL_PATH = "homie-dash"
 PANEL_COMPONENT = "homie-dashboard-panel"
 
 URL_FRONTEND = "/homie_dashboard_static"

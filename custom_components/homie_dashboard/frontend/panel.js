@@ -4,6 +4,18 @@
  * window.homieBridge. No access token is ever written to disk. */
 const FRONTEND = "/homie_dashboard_static";
 
+/* pde fork: hide Home Assistant's sidebar while this panel is showing, for the wall tablet's
+ * account always and for anyone while Homie has HA's native more-info dialog open. These are the
+ * conditions the v4 homie-dash Lovelace dashboard gave kiosk-mode, which cannot act here: its
+ * run() returns early on any page without ha-panel-lovelace. The selectors are the ones
+ * kiosk-mode itself uses on this HA version. */
+const KIOSK_USER = "Homie Dashboard";
+const NATIVE_DIALOG_HELPER = "input_boolean.homie_native_dialog_open";
+const KIOSK_STYLE_ID = "homie-kiosk-sidebar";
+const KIOSK_CSS = ":host{--ha-sidebar-width:0px !important;--mdc-drawer-width:0px !important}"
+  + "ha-drawer > ha-sidebar{display:none !important}"
+  + "partial-panel-resolver{--mdc-top-app-bar-width:100% !important}";
+
 class HomieDashboardPanel extends HTMLElement {
   constructor() {
     super();
@@ -25,6 +37,34 @@ class HomieDashboardPanel extends HTMLElement {
     this._watchdog = setTimeout(() => {
       if (!this._iframe) this._fail("Startup is taking too long. Check Settings → System → Logs for 'homie_dashboard' and the browser console for errors.");
     }, 10000);
+    this._kiosk = undefined;
+    if (this._hass) this._syncKiosk();
+  }
+
+  disconnectedCallback() {
+    this._setKiosk(false);
+  }
+
+  _syncKiosk() {
+    const h = this._hass;
+    const helper = h.states && h.states[NATIVE_DIALOG_HELPER];
+    const want = (h.user && h.user.name === KIOSK_USER) || (helper && helper.state === "on");
+    if (want !== this._kiosk) this._setKiosk(want);
+  }
+
+  _setKiosk(hide) {
+    this._kiosk = hide;
+    const ha = document.querySelector("home-assistant");
+    const main = ha && ha.shadowRoot && ha.shadowRoot.querySelector("home-assistant-main");
+    const root = main && main.shadowRoot;
+    if (!root) return;
+    const existing = root.getElementById(KIOSK_STYLE_ID);
+    if (!hide) { if (existing) existing.remove(); return; }
+    if (existing) return;
+    const style = document.createElement("style");
+    style.id = KIOSK_STYLE_ID;
+    style.textContent = KIOSK_CSS;
+    root.appendChild(style);
   }
 
   _fail(msg) {
@@ -34,6 +74,7 @@ class HomieDashboardPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (this.isConnected) this._syncKiosk();
     if (!this._started) { this._started = true; this._init(); }
   }
   set panel(p) { this._panelInfo = p; }
