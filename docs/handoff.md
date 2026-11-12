@@ -1,35 +1,45 @@
-# Handoff: upstream v5.0.0 merge
+# Handoff: upstream v5.0.0 and v5.1.0 merges
 
-Updated 2026-11-10.
+Updated 2026-11-12.
 
 ## Where things are
 
 - Merged to `main` and pushed, tagged `v5.0.0` on this fork. The `merge/v5.0.0` and
   `feat/alarm-dashboard-v4.3.0` branches are deleted.
-- Deployed by SFTP to `/config/custom_components/homie_dashboard/` and running. Manifest version
-  `5.0.0.1`, so `panel.js` and `index.html` load under `?v=5.0.0.1`.
+- Upstream v5.1.0 (security release, `b83e9da`) is merged locally as `7e32490`, **not pushed**.
+  On top of it, uncommitted: the homie-only sidebar fix in `panel.js` and manifest `5.1.0.1`.
+- Deployed by SFTP to `/config/custom_components/homie_dashboard/` as the whole directory, md5
+  identical on all 86 files, and running at manifest `5.1.0.1`. The previous directory is backed up
+  on the host as `/config/homie_dashboard.bak-20261112-085231.tar.gz`.
+- v5.1.0 keeps the alarm code server-side. None is stored here (`alarmCodeSet` false), so arm and
+  disarm still go through the fork's `_alarmNeedsCode()` check. If one is ever saved, the tablet's
+  non-admin account only gets it with the wizard's "non-administrators may use it" option on.
+- The fork's default font, Goudy Bookletter 1911, is bundled in `fonts/` like upstream's ten, so
+  the page makes no Google requests.
 - The v5 panel is at `/homie-dash`, titled "Homie Dash". The old Lovelace iframe dashboard was
   recreated at `/homie-dash-v4` ("Homie Dash v4") with an identical config, and the original
   `homie-dash` dashboard was deleted to free the URL. `PANEL_URL_PATH` in `const.py` is the fork
   change that puts v5 there.
-- `panel.js` hides HA's sidebar for the `Homie Dashboard` user, and for anyone while
-  `input_boolean.homie_native_dialog_open` is on. kiosk-mode cannot do this: its `run()` returns
-  early on any page without `ha-panel-lovelace`.
+- `panel.js` hides HA's sidebar for the `Homie Dashboard` user only. kiosk-mode cannot do this:
+  its `run()` returns early on any page without `ha-panel-lovelace`. The native-dialog helper no
+  longer affects v5; v4's kiosk-mode config still reads it.
 - The `homie` user's per-user default dashboard (`frontend/set_user_data`, key `core`,
   `default_panel`) is `homie-dash`.
 
 ## Last verified step
 
 - `node --test test/`: 201 pass.
-- Playwright at 1280x800 as `Homie Dashboard`: `/` lands on `/homie-dash`, v5 renders with live
-  data, no sidebar; the sidebar returns on `/history` and hides again on return. As an admin the
-  sidebar shows, and hides only while the native-dialog helper is on.
+- 2026-11-12, after the v5.1.0 deploy, Playwright at 1280x800 on `/homie-dash`: as `Homie
+  Dashboard` the panel renders with live data and no sidebar; as an admin the sidebar shows. Both
+  load Goudy from `fonts/` and make zero requests to Google. `/homie_dashboard_media/` returns 404.
+  No `homie` entries in the system log.
 
 Not verified: the Fire HD tablet itself.
 
 ## Exact next action
 
-1. pde checks the tablet, including a thermostat opened from the Climate chip.
+1. pde checks the tablet, including a thermostat opened from the Climate chip and arm/disarm.
+   Then, on approval, commit the sidebar fix and push `main`.
 2. Then retire v4: delete `/config/www/community/homie-dashboard/` (its `config.js` holds the live
    long-lived token and is web-readable), the `homie-dash-v4` dashboard and the HACS Dashboard
    entry, and revoke that token.
@@ -54,8 +64,8 @@ Not verified: the Fire HD tablet itself.
 ## Do not retry
 
 - Don't let `git merge` auto-resolve `index.html` from the v4.1.1 base: that silently brings in the
-  whole v4.2.0 redesign. Future upstream merges should diff from upstream's v5.0.0, `5683565`
-  (now the merge base), which works.
+  whole v4.2.0 redesign. Future upstream merges should diff from the last merged upstream
+  release, now v5.1.0 `b83e9da` (the merge base), which works.
 - This fork's `v5.0.0` tag is on the fork's merge, not on upstream's `5683565`, which carries the
   same tag name upstream. `git fetch upstream --tags` reports that tag as rejected ("would clobber
   existing tag"); that is expected. Do not force-fetch it over the fork's tag.

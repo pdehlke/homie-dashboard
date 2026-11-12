@@ -5,12 +5,10 @@
 const FRONTEND = "/homie_dashboard_static";
 
 /* pde fork: hide Home Assistant's sidebar while this panel is showing, for the wall tablet's
- * account always and for anyone while Homie has HA's native more-info dialog open. These are the
- * conditions the v4 homie-dash Lovelace dashboard gave kiosk-mode, which cannot act here: its
- * run() returns early on any page without ha-panel-lovelace. The selectors are the ones
- * kiosk-mode itself uses on this HA version. */
+ * account only; every other account keeps it. kiosk-mode did this for the v4 homie-dash Lovelace
+ * dashboard but cannot act here: its run() returns early on any page without ha-panel-lovelace.
+ * The selectors are the ones kiosk-mode itself uses on this HA version. */
 const KIOSK_USER = "Homie Dashboard";
-const NATIVE_DIALOG_HELPER = "input_boolean.homie_native_dialog_open";
 const KIOSK_STYLE_ID = "homie-kiosk-sidebar";
 const KIOSK_CSS = ":host{--ha-sidebar-width:0px !important;--mdc-drawer-width:0px !important}"
   + "ha-drawer > ha-sidebar{display:none !important}"
@@ -47,8 +45,7 @@ class HomieDashboardPanel extends HTMLElement {
 
   _syncKiosk() {
     const h = this._hass;
-    const helper = h.states && h.states[NATIVE_DIALOG_HELPER];
-    const want = (h.user && h.user.name === KIOSK_USER) || (helper && helper.state === "on");
+    const want = !!(h.user && h.user.name === KIOSK_USER);
     if (want !== this._kiosk) this._setKiosk(want);
   }
 
