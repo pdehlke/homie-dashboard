@@ -4280,18 +4280,19 @@ test("both Samsung entities are reachable by the relevance filter's static CONFI
   assert.equal(context.__ids.has("remote.harmony_hub"), true);
 });
 
-function loadAlarmAction({ alarmCode = "", attrs = {} } = {}) {
+function loadAlarmAction({ codeStored = false, attrs = {} } = {}) {
   const source = fs.readFileSync(path.join(workDir, "index.html"), "utf8");
   const start = source.indexOf("/* Public entry point for all arm/disarm buttons.");
   const end = source.indexOf("const _ALARM_PIN_LABELS", start);
   assert.ok(start > -1 && end > start, "alarmAction() and _alarmNeedsCode() must be found");
   const context = {
-    ALARM_CODE: alarmCode,
+    ALARM_CODE_STORED: codeStored,
     CONFIG: loadConfig(),
     haGetCached: () => ({ state: "disarmed", attributes: attrs }),
     sent: [], keypad: [],
   };
-  context._alarmSend = (service, code) => context.sent.push([service, code]);
+  context._alarmSend = (service, code, useStoredCode) =>
+    context.sent.push(useStoredCode ? [service, "stored"] : [service, code]);
   context.alarmPinOpen = (service) => context.keypad.push(service);
   vm.createContext(context);
   vm.runInContext(`${source.slice(start, end)}\nglobalThis.__alarmAction = alarmAction;`, context);
@@ -4299,7 +4300,7 @@ function loadAlarmAction({ alarmCode = "", attrs = {} } = {}) {
 }
 
 test("arm/disarm skips the keypad when the panel needs no code, as Alarmo here does", () => {
-  // Upstream v4.3.0 opened the keypad whenever ALARM_CODE was empty, and the
+  // Upstream opens the keypad whenever no usable code is stored, and the
   // keypad rejects an empty submit, so this house could not have armed at all.
   const ctx = loadAlarmAction({ attrs: { code_format: null, code_arm_required: false } });
   ctx.__alarmAction("arm_away");
@@ -4319,9 +4320,10 @@ test("the keypad opens when the panel asks for a code, and arming honours code_a
   armCoded.__alarmAction("arm_home");
   assert.deepEqual(armCoded.keypad, ["arm_home"]);
 
-  const configured = loadAlarmAction({ alarmCode: "1234", attrs: { code_format: "number" } });
+  // v5.1.0: a stored code is added by Home Assistant on the server; the page only learns one exists.
+  const configured = loadAlarmAction({ codeStored: true, attrs: { code_format: "number" } });
   configured.__alarmAction("disarm");
-  assert.deepEqual(configured.sent, [["disarm", "1234"]]);
+  assert.deepEqual(configured.sent, [["disarm", "stored"]]);
   assert.deepEqual(configured.keypad, []);
 });
 
